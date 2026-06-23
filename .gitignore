@@ -1,0 +1,13 @@
+# VST3 build artifacts
+*.obj
+*.dll
+*.dll.recipe
+*.exp
+*.iobj
+*.lib
+*.pdb
+*.log
+*.tlog/
+*.vcxproj.FileListAbsolute.txt
+*.res
+Build.CppClean.log
