@@ -1,10 +1,10 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-06-27 (Guardian Agent morning report)
-Working copy: `C:\Projects\Corvus VST`
-Source root: `C:\Users\ethan\Downloads\DrippyFX_v1.0.0_Complete\DrippyFX\`
+Last updated: 2026-06-28 (overnight maintenance pass)
+Working copy: `C:\\Projects\\Corvus VST`
+Source root: `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`
 
-Quick status: **No planning docs existed — creating baseline from corvus-cron skill improvement log**
+Quick status: **Planning docs in place; recent DSP focus on oversampling + block caching + modulation repair**
 
 ---
 
