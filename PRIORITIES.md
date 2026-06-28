@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-06-28 (overnight maintenance pass)
+Last updated: 2026-06-28 (evening maintenance pass)
 Working copy: `C:\\Projects\\Corvus VST`
 Source root: `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`
 
@@ -17,6 +17,7 @@ Quick status: **Planning docs in place; recent DSP focus on oversampling + block
 | **P1** | Rename "NewProject" → "CorvusFX" in Jucer/solution | Boilerplate names leak into DAW plugin lists, installer paths | ⬜ Pending |
 | **P1** | Verify 2x oversampling on all saturation stages (Distortion + Master) | Alias-free saturation at any drive — latest major improvement | ✅ Done (2026-06-27, `a66f658`) |
 | **P1** | Hermite interpolation on Reverb CombFilter | Modulated delay reads artifact-free — matches Delay/Chorus | ✅ Done (2026-06-26, `7c37e20`) |
+| **P1** | 2x oversampling on Delay tape saturation | Eliminates aliasing in feedback loop tail | ✅ Done (2026-06-28, `83b59a0`) |
 | **P1** | Block-level coefficient caching on all hot paths | 4–5 exp/sample → 1/block across Distortion, Delay, Reverb, Master | ✅ Done (2026-06-24 to 2026-06-26) |
 | **P1** | Merge master output + limiter into single per-sample pass | 4→2 buffer passes in processBlock | ✅ Done (2026-06-26, `b3b4f21`) |
 | **P2** | Push-pull asymmetrical saturation (even harmonics) | Musical warmth via 2nd/4th harmonic asymmetry | ✅ Done (2026-06-26, `f7ed642`) |
@@ -44,6 +45,7 @@ Quick status: **Planning docs in place; recent DSP focus on oversampling + block
 | 2026-06-26 | `f7ed642` | MasterOutputStage | Push-pull asymmetrical saturation: even-harmonic warmth, drive=1.8x, safety clamp |
 | 2026-06-26 | `7c37e20` | UpgradedReverb | Hermite cubic interpolation for modulated reads (replaces linear) |
 | 2026-06-27 | `a66f658` | Distortion + Master | **2x oversampling** for zero aliasing: Oversampling2x (2nd-order half-band FIR, 8 taps) |
+| 2026-06-28 | `83b59a0` | EnhancedDelay | **2x oversampling** for tape saturation in feedback loop — eliminates aliasing in delay tail |
 
 ---
 
