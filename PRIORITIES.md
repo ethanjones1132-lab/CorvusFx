@@ -1,10 +1,10 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-06-29 (afternoon quality pass — parameter smoothing)
+Last updated: 2026-06-29 (evening quality pass — reverb allpass scaling + coefficient hoist)
 Working copy: `C:\\Projects\\Corvus VST`
 Source root: `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`
 
-Quick status: **Planning docs in place; recent DSP focus on oversampling + block caching + modulation repair**
+Quick status: **DSP quality focus — allpass diffusion now scales with room size, comb coefficient loop hoisted to beginBlock()**
 
 ---
 
@@ -25,8 +25,9 @@ Quick status: **Planning docs in place; recent DSP focus on oversampling + block
 | **P2** | Activate Reverb modulation (`reverb_mod` knob) | Knob existed but was dead code | ✅ Done (2026-06-24, `cf33942`) |
 | **P2** | Preset system: fix `setCurrentProgram` bounds for all 18 presets | DAWs crashed on program change >17 | ✅ Done (2026-06-24, `b0e960a`) |
 | **P3** | SIMD (SSE/AVX) for hot inner loops | Further CPU reduction if profiling warrants | ⬜ Deferred |
-| **P2** | Parameter smoothing (LinearSmoothedValue) on all 13 params | Zipper noise eliminated on knob/automation changes | ✅ Done (2026-06-29, this pass) |
-| **P3** | New presets beyond current 18 | Expand creative palette | ⬜ Deferred |
+|| **P2** | Parameter smoothing (LinearSmoothedValue) on all 13 params | Zipper noise eliminated on knob/automation changes | ✅ Done (2026-06-29, `b99b59c`) |
+|| **P2** | Reverb allpass feedback scaling with room size | Size knob now varies spatial diffusion character | ✅ Done (2026-06-29, `1c3652e`) |
+|| **P3** | New presets beyond current 18 | Expand creative palette | ⬜ Deferred |
 
 ---
 
@@ -46,7 +47,8 @@ Quick status: **Planning docs in place; recent DSP focus on oversampling + block
 | 2026-06-26 | `7c37e20` | UpgradedReverb | Hermite cubic interpolation for modulated reads (replaces linear) |
 | 2026-06-27 | `a66f658` | Distortion + Master | **2x oversampling** for zero aliasing: Oversampling2x (2nd-order half-band FIR, 8 taps) |
 || 2026-06-28 | `83b59a0` | EnhancedDelay | **2x oversampling** for tape saturation in feedback loop — eliminates aliasing in delay tail ||
-|| 2026-06-29 | *(this pass)* | processBlock | **Parameter smoothing (LinearSmoothedValue)** on all 13 audio parameters — 20ms smoothing eliminates zipper noise from knob movement and host automation. Previously, raw atomic reads jumped instantly between blocks. ||
+||| 2026-06-29 | `b99b59c` | processBlock | **Parameter smoothing (LinearSmoothedValue)** on all 13 audio parameters — 20ms smoothing eliminates zipper noise from knob movement and host automation. Previously, raw atomic reads jumped instantly between blocks. ||
+||| 2026-06-29 | `1c3652e` | UpgradedReverb | **Allpass feedback scales with room size** (0.50→0.70) — Size knob now varies diffusion character. Also hoisted comb setFeedback/setDamp loop from per-sample to per-block in beginBlock(). ||
 
 ---
 
