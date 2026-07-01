@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-06-30 (overnight quality pass — processBlock ScopedNoDenormals fix)
+Last updated: 2026-07-01 (evening quality pass — EnhancedChorus feedback oversampling)
 Working copy: `C:\\Projects\\Corvus VST`
 Source root: `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`
 
@@ -18,7 +18,8 @@ Quick status: **DSP quality focus — allpass diffusion now scales with room siz
 | **P1** | Verify 2x oversampling on all saturation stages (Distortion + Master) | Alias-free saturation at any drive — latest major improvement | ✅ Done (2026-06-27, `a66f658`) |
 | **P1** | Hermite interpolation on Reverb CombFilter | Modulated delay reads artifact-free — matches Delay/Chorus | ✅ Done (2026-06-26, `7c37e20`) |
 | **P1** | 2x oversampling on Delay tape saturation | Eliminates aliasing in feedback loop tail | ✅ Done (2026-06-28, `83b59a0`) |
-| **P1** | Block-level coefficient caching on all hot paths | 4–5 exp/sample → 1/block across Distortion, Delay, Reverb, Master | ✅ Done (2026-06-24 to 2026-06-26) |
+|| **P1** | 2x oversampling on Chorus feedback tanh | Eliminates aliasing in chorus feedback loop | ✅ Done (2026-07-01, `37bc0c2`) |
+|| **P1** | Block-level coefficient caching on all hot paths | 4–5 exp/sample → 1/block across Distortion, Delay, Reverb, Master | ✅ Done (2026-06-24 to 2026-06-26) |
 | **P1** | Merge master output + limiter into single per-sample pass | 4→2 buffer passes in processBlock | ✅ Done (2026-06-26, `b3b4f21`) |
 | **P2** | Push-pull asymmetrical saturation (even harmonics) | Musical warmth via 2nd/4th harmonic asymmetry | ✅ Done (2026-06-26, `f7ed642`) |
 | **P2** | Exponential feedback mapping on Delay | Musical response across full knob range | ✅ Done (2026-06-24, `bc8e816`) |
@@ -47,9 +48,10 @@ Quick status: **DSP quality focus — allpass diffusion now scales with room siz
 | 2026-06-26 | `7c37e20` | UpgradedReverb | Hermite cubic interpolation for modulated reads (replaces linear) |
 | 2026-06-27 | `a66f658` | Distortion + Master | **2x oversampling** for zero aliasing: Oversampling2x (2nd-order half-band FIR, 8 taps) |
 || 2026-06-28 | `83b59a0` | EnhancedDelay | **2x oversampling** for tape saturation in feedback loop — eliminates aliasing in delay tail ||
-||| 2026-06-29 | `b99b59c` | processBlock | **Parameter smoothing (LinearSmoothedValue)** on all 13 audio parameters — 20ms smoothing eliminates zipper noise from knob movement and host automation. Previously, raw atomic reads jumped instantly between blocks. ||
+|| 2026-06-29 | `b99b59c` | processBlock | **Parameter smoothing (LinearSmoothedValue)** on all 13 audio parameters — 20ms smoothing eliminates zipper noise from knob movement and host automation. Previously, raw atomic reads jumped instantly between blocks. ||
 |||| 2026-06-29 | `1c3652e` | UpgradedReverb | **Allpass feedback scales with room size** (0.50→0.70) — Size knob now varies diffusion character. Also hoisted comb setFeedback/setDamp loop from per-sample to per-block in beginBlock(). ||
-|||| 2026-06-30 | `3936329` | processBlock | **ScopedNoDenormals fix** — moved from outer function scope into per-sample loop, fixing redundant reconstruction on every iteration. Single RAII object per block eliminates per-sample stack object creation/destruction overhead. ||
+||||| 2026-06-30 | `3936329` | processBlock | **ScopedNoDenormals fix** — moved from outer function scope into per-sample loop, fixing redundant reconstruction on every iteration. Single RAII object per block eliminates per-sample stack object creation/destruction overhead. ||
+||||| 2026-07-01 | `37bc0c2` | EnhancedChorus | **2x oversampling for feedback tanh anti-aliasing** — wrapped the tanh feedback saturation in Oversampling2x (8-tap half-band FIR). Eliminates aliasing artifacts from the non-linear feedback loop that compound with each iteration. Now all 4 saturation stages (Distortion, Chorus, Delay, Master) run at 2x sample rate. ||
 
 ---
 
