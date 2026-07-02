@@ -1,4 +1,6 @@
-# VST3 build artifacts
+# ── Visual Studio build artifacts ──────────────────────────────
+# These are produced by the MSBuild rebuild process and live alongside
+# the source in drippy/ and DrippyMk2/ directories.
 *.obj
 *.dll
 *.dll.recipe
@@ -8,6 +10,30 @@
 *.pdb
 *.log
 *.tlog/
-*.vcxproj.FileListAbsolute.txt
 *.res
+*.vcxproj.FileListAbsolute.txt
 Build.CppClean.log
+*.lastbuildstate
+
+# ── IDE / editor files ──────────────────────────────────────────
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# ── OS junk ─────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# ── Build output directories (CMake) ───────────────────────────
+build/
+cmake-build-*/
+
+# ── JUCE / Projucer (may create temp files) ────────────────────
+*.jucer.user
+JUCE/modules/
