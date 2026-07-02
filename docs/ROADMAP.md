@@ -3,7 +3,7 @@
 **Project:** Corvus VST / DrippyFX — JUCE 8.0.12 VST3 audio plugin suite  
 **Source:** `C:\Users\ethan\Downloads\DrippyFX_v1.0.0_Complete\DrippyFX\`  
 **Repo (binaries):** `C:\Projects\Corvus VST`  
-**Last updated:** 2026-06-27
+**Last updated:** 2026-07-02
 
 ---
 
@@ -13,12 +13,12 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 
 ---
 
-## Phase 0 — Foundation (Week 1) ✅ *In Progress*
+## Phase 0 — Foundation (Week 1) ✅ *Complete*
 
-- [ ] Create PRIORITIES.md (this cycle)
-- [ ] Create AGENTS.md (this cycle)
-- [ ] Create ROADMAP.md (this file)
-- [ ] Rename "NewProject" → "CorvusFX" in Jucer, regenerate solution
+- [x] Create PRIORITIES.md (this cycle)
+- [x] Create AGENTS.md (this cycle)
+- [x] Create ROADMAP.md (this file)
+- [x] Rename "NewProject" → "CorvusFX" in Jucer, regenerate solution
 
 ---
 

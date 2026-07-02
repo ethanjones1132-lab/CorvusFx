@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-01 (evening quality pass — EnhancedChorus feedback oversampling)
+Last updated: 2026-07-02 (afternoon quality pass — NewProject → CorvusFX rename)
 Working copy: `C:\\Projects\\Corvus VST`
 Source root: `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`
 
@@ -12,9 +12,9 @@ Quick status: **DSP quality focus — allpass diffusion now scales with room siz
 
 | Priority | Item | Why it Matters | Status |
 |----------|------|----------------|--------|
-| **P0** | Create PRIORITIES.md + ROADMAP.md (this file) | No planning docs; cron agents fly blind | ⬜ Pending |
-| **P0** | Create AGENTS.md for autonomous agent context | Corvus has no AGENTS.md — agents lack project rules | ⬜ Pending |
-| **P1** | Rename "NewProject" → "CorvusFX" in Jucer/solution | Boilerplate names leak into DAW plugin lists, installer paths | ⬜ Pending |
+| **P0** | Create PRIORITIES.md + ROADMAP.md (this file) | No planning docs; cron agents fly blind | ✅ Done (2026-07-02) |
+| **P0** | Create AGENTS.md for autonomous agent context | Corvus has no AGENTS.md — agents lack project rules | ✅ Done (2026-07-02) |
+| **P1** | Rename "NewProject" → "CorvusFX" in Jucer/solution | Boilerplate names leak into DAW plugin lists, installer paths | ✅ Done (2026-07-02, rebuilt) |
 | **P1** | Verify 2x oversampling on all saturation stages (Distortion + Master) | Alias-free saturation at any drive — latest major improvement | ✅ Done (2026-06-27, `a66f658`) |
 | **P1** | Hermite interpolation on Reverb CombFilter | Modulated delay reads artifact-free — matches Delay/Chorus | ✅ Done (2026-06-26, `7c37e20`) |
 | **P1** | 2x oversampling on Delay tape saturation | Eliminates aliasing in feedback loop tail | ✅ Done (2026-06-28, `83b59a0`) |
@@ -99,12 +99,16 @@ cp ".../NewProject.vst3" "C:/Projects/Corvus VST/drippy/NewProject.vst3/Contents
 
 ---
 
-## Suggested Next Target: P0 — Planning Docs
+## Suggested Next Target: P2 — Polish & Professionalization
 
-1. **Create AGENTS.md** (project rules for autonomous agents — see corvus-cron skill for template)
-2. **Finalize this PRIORITIES.md** as living roadmap
-3. **Create ROADMAP.md** (consolidated view for humans)
-4. **Rename "NewProject" → "CorvusFX"** in `.jucer`, regenerate solution — cleans DAW metadata
+1. **UI responsiveness pass** — Resize handling, knob feel, visual feedback
+2. **Parameter smoothing audit** — No zipper noise, musical taper on all knobs
+3. **Preset refinement** — Adjust 18 preset values by ear; add 6 more
+4. **Tooltip / parameter info system** — Hover help for every control
+5. **Factory preset categorization** — Group by vibe: Clean, Warm, Creative, Extreme
+6. **SIMD (SSE/AVX) for hot inner loops** — Profile first to identify bottlenecks
+
+Phase 0 (Foundation) is now complete. The project has all three core planning docs and a clean "CorvusFX" brand identity in the Jucer/build system.
 
 ---
 
