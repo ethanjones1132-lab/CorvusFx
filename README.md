@@ -6,10 +6,12 @@
 
 Built with [JUCE 8](https://juce.com) for Windows (x64). Free and open-source.
 
-[![Plugin Type](https://img.shields.io/badge/VST3-x64--win-8A2BE2)](#)
+[![Release](https://img.shields.io/github/v/release/ethanjones1132-lab/CorvusFx?color=8A2BE2&label=version)](https://github.com/ethanjones1132-lab/CorvusFx/releases)
+[![Downloads](https://img.shields.io/github/downloads/ethanjones1132-lab/CorvusFx/total?color=blue)](https://github.com/ethanjones1132-lab/CorvusFx/releases)
 [![JUCE](https://img.shields.io/badge/JUCE-8.0.12-00B4D8)](https://juce.com)
 [![C++](https://img.shields.io/badge/C%2B%2B-17-00599C)](https://isocpp.org)
-[![License](https://img.shields.io/badge/license-MIT-green)](#)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D7)]()
 
 </div>
 
@@ -20,6 +22,36 @@ Built with [JUCE 8](https://juce.com) for Windows (x64). Free and open-source.
 Corvus FX is a **5-module cascade VST3 plugin** that chains **Distortion → Chorus → Delay → Reverb → Master Output** in a single, efficient processing pass. Each module is independently controllable, and 18 factory presets take you from subtle bus glue to massive ambient textures.
 
 Whether you're a producer looking for analog-style warmth, a sound designer chasing otherworldly modulation, or a mixing engineer wanting a cohesive channel strip, Corvus FX delivers transparent, musical processing with **zero compromise on audio quality**.
+
+---
+
+## Screenshots
+
+<!-- TODO: Add a UI screenshot once the UI is finalized. Suggested location:
+     assets/screenshot.png
+
+     ![Corvus FX UI](assets/screenshot.png)
+
+     The plugin features a dark space-themed interface with animated nebula
+     background, glass rotary knobs with purple glow effects, and a clean
+     2×2 module layout.
+-->
+
+> 🎨 **Screenshot coming soon.** The plugin features a dark space-themed UI with animated nebula background, glass knobs with specular highlights and purple glow effects, organized in a clean 2×2 module grid layout.
+
+---
+
+## Audio Demos
+
+<!-- TODO: Add SoundCloud / Bandcamp / YouTube demo links once recordings are made.
+     Example:
+     - [Clean Sparkle demo on SoundCloud](https://soundcloud.com/...)
+     - [Thick Sauce guitar riff on YouTube](https://youtube.com/...)
+-->
+
+> 🎵 **Audio demos coming soon.** Listen to Corvus FX in action across all 18 factory presets.
+
+---
 
 ### Signal Flow
 
@@ -271,7 +303,55 @@ For the full engineering change log, see `docs/PRIORITIES.md`.
 
 ---
 
-## License
+## Compatibility
+
+| DAW | Status |
+|-----|--------|
+| **Reaper** | ✅ Tested |
+| **Ableton Live 11/12** | ✅ Tested |
+| **FL Studio** | ✅ Tested |
+| **Cubase** | ✅ Tested |
+| **Studio One** | ⚠️ Community reports welcome |
+| **Bitwig** | ⚠️ Community reports welcome |
+
+Tested on **Windows 10 & 11 (x64)**. macOS support is not yet available.
+
+---
+
+## FAQ
+
+**Q: Is this plugin free?**
+A: Yes! Corvus FX is free and open-source under the MIT license.
+
+**Q: Will there be a macOS version?**
+A: Not currently, but the JUCE framework supports macOS builds. If there's demand, a Mac build can be added.
+
+**Q: Can I use Corvus FX in commercial productions?**
+A: Yes. The MIT license permits commercial use — no attribution required.
+
+**Q: Why "Corvus"?**
+A: Corvus (Latin: crow/raven) — intelligent, adaptable birds known for their tool use and problem-solving. The name reflects the plugin's flexible signal chain and thoughtful DSP design.
+
+**Q: Where can I report bugs or request features?**
+A: Open an [issue](https://github.com/ethanjones1132-lab/CorvusFx/issues) or start a [discussion](https://github.com/ethanjones1132-lab/CorvusFx/discussions).
+
+---
+
+## Contributing
+
+Contributions are welcome! Whether it's bug fixes, DSP improvements, new presets, or documentation — every bit helps.
+
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feature/amazing-idea`)
+3. Commit your changes (`git commit -m 'feat: add amazing idea'`)
+4. Push to the branch (`git push origin feature/amazing-idea`)
+5. Open a Pull Request
+
+For major changes, please open a discussion first to align on approach.
+
+See `docs/AGENTS.md` for the engineering workflow used by autonomous coding agents on this project.
+
+---
 
 This project is distributed as pre-built binaries for evaluation. The source code is available under the MIT License (see `LICENSE`).
 
@@ -281,6 +361,6 @@ This project is distributed as pre-built binaries for evaluation. The source cod
 
 **Corvus FX** — Crafted with ❤️ and a lot of tanh()
 
-[JUCE](https://juce.com) · [Report a Bug](https://github.com/ethanjones1132-lab/CorvusFx/issues) · [Request a Feature](https://github.com/ethanjones1132-lab/CorvusFx/discussions)
+[JUCE](https://juce.com) · [Report a Bug](https://github.com/ethanjones1132-lab/CorvusFx/issues) · [Request a Feature](https://github.com/ethanjones1132-lab/CorvusFx/discussions) · [Website](https://jonesinsrc.com)
 
 </div>
