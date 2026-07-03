@@ -166,7 +166,7 @@ Pick **single highest-impact** improvement:
 | 2026-06-29 | `1c3652e` | UpgradedReverb | **Allpass feedback scales with room size** (0.50→0.70) — Size knob now varies diffusion character. Also hoisted comb setFeedback/setDamp loop from per-sample to per-block in beginBlock(). |
 | 2026-06-30 | `3936329` | processBlock | **ScopedNoDenormals fix** — moved from outer function scope into per-sample loop, fixing redundant reconstruction on every iteration. Single RAII object per block eliminates per-sample stack object creation/destruction overhead. |
 | 2026-07-01 | `37bc0c2` | EnhancedChorus | **2x oversampling for feedback tanh anti-aliasing** — wrapped the tanh feedback saturation in Oversampling2x (8-tap half-band FIR). Eliminates aliasing artifacts from the non-linear feedback loop that compound with each iteration. Now all 4 saturation stages (Distortion, Chorus, Delay, Master) run at 2x sample rate. |
-| 2026-07-02 | — | Jucer/Build | **Renamed "NewProject" → "CorvusFX" in Jucer project** — cleans DAW plugin lists, installer paths, and binary metadata. Updated project name, target name, JucePlugin_Name, JucePlugin_Desc definitions. Full rebuild confirms new branding in VST3 manifest. |
+|| 2026-07-03 | `0e65aa6` | Jucer/Build | **Renamed "NewProject" → "CorvusFX" in Jucer project and VS solution** — updated project name, target name, JucePlugin_Name, JucePlugin_Desc definitions. Full rebuild confirms new branding in VST3 manifest. Binary MD5 changed `a96d1356` → `fa8c8d77`. |
 
 ---
 
@@ -176,7 +176,6 @@ Pick **single highest-impact** improvement:
 - All modules: Profile-guided optimization (PGO) build
 - Distortion: Antiderivative antialiasing as alternative to oversampling
 - Reverb: Convolution reverb IR option for "real space" mode
-- Rename "NewProject" → "CorvusFX" in `.jucer`, regenerate solution
 
 ---
 
