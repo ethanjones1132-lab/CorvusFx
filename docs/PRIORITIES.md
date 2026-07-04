@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-03 (evening quality pass — NewProject → CorvusFX rename complete with VS solution rebuild)
+Last updated: 2026-07-04 (overnight pass — EnhancedDelay per-sample constant cache, rebuild + deploy verified)
 Working copy: `C:\\Projects\\Corvus VST`
 Source root: `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`
 
