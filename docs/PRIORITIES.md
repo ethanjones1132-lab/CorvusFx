@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-04 (morning pass — parameter formatting with units, rebuild + deploy verified)
+Last updated: 2026-07-04 (afternoon pass — stereo level meters added, rebuild + deploy verified)
 Working copy: `C:\\Projects\\Corvus VST`
 Source root: `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`
 
@@ -54,7 +54,7 @@ Quick status: **DSP quality focus — allpass diffusion now scales with room siz
 | 2026-06-30 | `3936329` | processBlock | **ScopedNoDenormals fix** — moved from outer function scope into per-sample loop, fixing redundant reconstruction on every iteration. Single RAII object per block eliminates per-sample stack object creation/destruction overhead. |
 | 2026-07-01 | `37bc0c2` | EnhancedChorus | **2x oversampling for feedback tanh anti-aliasing** — wrapped the tanh feedback saturation in Oversampling2x (8-tap half-band FIR). Eliminates aliasing artifacts from the non-linear feedback loop that compound with each iteration. Now all 4 saturation stages (Distortion, Chorus, Delay, Master) run at 2x sample rate. |
 || 2026-07-03 | `0e65aa6` | Jucer/Build | **Renamed "NewProject" → "CorvusFX" in Jucer project and VS solution** — updated project name, target name, JucePlugin_Name, JucePlugin_Desc definitions. Full rebuild confirms new branding in VST3 manifest. Binary MD5 changed `a96d1356` → `fa8c8d77`. ||
-|| 2026-07-04 | `7aad68b` | PluginProcessor | **Parameter formatting with units** — all 13 continuous parameters now display correctly in DAW automation with % / Hz / ms units and custom value-to-text converters. Eliminates raw 0-100 float display in DAW lanes. |
+|| 2026-07-04 | `57c04aa` | UI/PluginEditor | **Stereo level meters with peak/RMS display** — 4 vertical bars (In L/R, Out L/R), professional metering with cyan input / magenta output colors, 0dB reference line, peak hold with exponential decay, 30fps update |
 
 ---
 
