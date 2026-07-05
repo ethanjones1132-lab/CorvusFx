@@ -1,10 +1,10 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-04 (evening pass — Overall parameter smoothing added, rebuild + deploy verified)
+Last updated: 2026-07-05 (overnight pass — Chorus LFO rate caching, rebuild + deploy verified)
 Working copy: `C:\\Projects\\Corvus VST`
 Source root: `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`
 
-Quick status: **DSP quality focus — allpass diffusion now scales with room size, comb coefficient loop hoisted to beginBlock()**
+Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached**
 
 ---
 
@@ -18,7 +18,6 @@ Quick status: **DSP quality focus — allpass diffusion now scales with room siz
 | **P1** | Verify 2x oversampling on all saturation stages (Distortion + Master) | Alias-free saturation at any drive — latest major improvement | ✅ Done (2026-06-27, `a66f658`) |
 | **P1** | Hermite interpolation on Reverb CombFilter | Modulated delay reads artifact-free — matches Delay/Chorus | ✅ Done (2026-06-26, `7c37e20`) |
 | **P1** | 2x oversampling on Delay tape saturation | Eliminates aliasing in feedback loop tail | ✅ Done (2026-06-28, `83b59a0`) |
-||0`) |
 | **P1** | 2x oversampling on Chorus feedback tanh | Eliminates aliasing in chorus feedback loop | ✅ Done (2026-07-01, `37bc0c2`) |
 | **P1** | Block-level coefficient caching on all hot paths | 4–5 exp/sample → 1/block across Distortion, Delay, Reverb, Master | ✅ Done (2026-06-24 to 2026-06-26) |
 | **P1** | Merge master output + limiter into single per-sample pass | 4→2 buffer passes in processBlock | ✅ Done (2026-06-26, `b3b4f21`) |
@@ -26,9 +25,10 @@ Quick status: **DSP quality focus — allpass diffusion now scales with room siz
 | **P2** | Exponential feedback mapping on Delay | Musical response across full knob range | ✅ Done (2026-06-24, `bc8e816`) |
 | **P2** | Activate Reverb modulation (`reverb_mod` knob) | Knob existed but was dead code | ✅ Done (2026-06-24, `cf33942`) |
 | **P2** | Preset system: fix `setCurrentProgram` bounds for all 18 presets | DAWs crashed on program change >17 | ✅ Done (2026-06-24, `b0e960a`) |
-| **P3** | SIMD (SSE/AVX) for hot inner loops | Further CPU reduction if profiling warrants | ⬜ Deferred |
-| **P2** | Parameter smoothing (LinearSmoothedValue) on all 13 params | Zipper noise eliminated on knob/automation changes | ✅ Done (2026-06-29, `b99b59c`) |
+| **P2** | Parameter smoothing (LinearSmoothedValue) on all 14 params | Zipper noise eliminated on knob/automation changes | ✅ Done (2026-06-29, `b99b59c`) |
 | **P2** | Reverb allpass feedback scaling with room size | Size knob now varies spatial diffusion character | ✅ Done (2026-06-29, `1c3652e`) |
+| **P2** | Chorus LFO rate caching (rateToIncrement in beginBlock) | 6 divides/sample → 0; last remaining per-sample /sr | ✅ Done (2026-07-05, `d48eaf0`) |
+| **P3** | SIMD (SSE/AVX) for hot inner loops | Further CPU reduction if profiling warrants | ⬜ Deferred |
 | **P3** | New presets beyond current 18 | Expand creative palette | ⬜ Deferred |
 
 ---
@@ -53,9 +53,10 @@ Quick status: **DSP quality focus — allpass diffusion now scales with room siz
 | 2026-06-29 | `1c3652e` | UpgradedReverb | **Allpass feedback scales with room size** (0.50→0.70) — Size knob now varies diffusion character. Also hoisted comb setFeedback/setDamp loop from per-sample to per-block in beginBlock(). |
 | 2026-06-30 | `3936329` | processBlock | **ScopedNoDenormals fix** — moved from outer function scope into per-sample loop, fixing redundant reconstruction on every iteration. Single RAII object per block eliminates per-sample stack object creation/destruction overhead. |
 | 2026-07-01 | `37bc0c2` | EnhancedChorus | **2x oversampling for feedback tanh anti-aliasing** — wrapped the tanh feedback saturation in Oversampling2x (8-tap half-band FIR). Eliminates aliasing artifacts from the non-linear feedback loop that compound with each iteration. Now all 4 saturation stages (Distortion, Chorus, Delay, Master) run at 2x sample rate. |
-|| 2026-07-03 | `0e65aa6` | Jucer/Build | **Renamed "NewProject" → "CorvusFX" in Jucer project and VS solution** — updated project name, target name, JucePlugin_Name, JucePlugin_Desc definitions. Full rebuild confirms new branding in VST3 manifest. Binary MD5 changed `a96d1356` → `fa8c8d77`. ||
+| 2026-07-03 | `0e65aa6` | Jucer/Build | **Renamed "NewProject" → "CorvusFX" in Jucer project and VS solution** — updated project name, target name, JucePlugin_Name, JucePlugin_Desc definitions. Full rebuild confirms new branding in VST3 manifest. Binary MD5 changed `a96d1356` → `fa8c8d77`. |
 | 2026-07-04 | `57c04aa` | UI/PluginEditor | **Stereo level meters with peak/RMS display** — 4 vertical bars (In L/R, Out L/R), professional metering with cyan input / magenta output colors, 0dB reference line, peak hold with exponential decay, 30fps update via timerCallback reading relaxed atomics |
 | 2026-07-04 | `0b1c4d8` | processBlock | **Per-sample Overall parameter smoothing** — moved Overall wet/dry from block-level `getCurrentValue()` into per-sample loop using `smoothOverall.getNextValue()`. All 14 audio parameters now have 20ms LinearSmoothedValue smoothing. Eliminates zipper noise on global wet/dry knob during automation/knob movement. |
+| 2026-07-05 | `d48eaf0` | EnhancedChorus | **Cache LFO rate→increment in beginBlock()** — precompute `twoPi/sr` once per block, replacing 6 per-sample divides with cached multiplies in the hot inner loop. Same behavior, fewer arithmetic ops per voice. |
 
 ---
 
@@ -101,13 +102,14 @@ cp ".../NewProject.vst3" "C:/Projects/Corvus VST/drippy/NewProject.vst3/Contents
 - All modules: Profile-guided optimization (PGO) build
 - Distortion: Antiderivative antialiasing as alternative to oversampling
 - Reverb: Convolution reverb IR option for "real space" mode
+- Presets: Add 6+ new presets beyond the current 18
 
 ---
 
 ## Suggested Next Target: P2 — Polish & Professionalization
 
 1. **UI responsiveness pass** — Resize handling, knob feel, visual feedback
-2. **Parameter smoothing audit** — No zipper noise, musical taper on all knobs
+2. **Parameter smoothing audit** — No zipper noise, musical taper on all knobs ✅ DONE
 3. **Preset refinement** — Adjust 18 preset values by ear; add 6 more
 4. **Tooltip / parameter info system** — Hover help for every control
 5. **Factory preset categorization** — Group by vibe: Clean, Warm, Creative, Extreme
@@ -119,12 +121,12 @@ Phase 0 (Foundation) is now complete. The project has all three core planning do
 
 ## Environment Notes
 
-- JUCE 8.0.12 at `C:\Users\ethan\Downloads\juce-8.0.12-windows\JUCE`
+- JUCE 8.0.12 at `C:\\Users\\ethan\\Downloads\\juce-8.0.12-windows\\JUCE`
 - VS 2026 (v18) — generator must be `"Visual Studio 18 2026"`
-- Jucer: `C:\Users\ethan\Downloads\DrippyFX_v1.0.0_Complete\NewProject\NewProject.jucer`
-- Solution: `...NewProject\Builds\VisualStudio2026\NewProject.sln`
+- Jucer: `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\NewProject\\NewProject.jucer`
+- Solution: `...NewProject\\Builds\\VisualStudio2026\\NewProject.sln`
 - CMake: `C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe`
-- Repo workdir: `C:\Projects\Corvus VST` (binaries only — source lives in Downloads)
+- Repo workdir: `C:\\Projects\\Corvus VST` (binaries only — source lives in Downloads)
 - Cron: `corvus-cron` skill runs 3×/day (9:45am, 1:45pm, 5:45pm) + overnight (6:30am)
 - Model: `opencode-go/xiaomi/mimo-v2.5-pro`
 - **Always quote paths** — space in "Corvus VST" breaks unquoted commands

@@ -3,7 +3,7 @@
 **Project:** Corvus VST / DrippyFX — JUCE 8.0.12 VST3 audio plugin suite  
 **Source:** `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`  
 **Repo (binaries):** `C:\\Projects\\Corvus VST`  
-**Last updated:** 2026-07-04 (Overall parameter smoothing complete — Phase 2 polish advancing)
+**Last updated:** 2026-07-05 (Chorus LFO rate caching — hot-loop optimization complete)
 
 ---
 
@@ -34,6 +34,11 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 | Exponential feedback mapping (Delay) | Musical response across full range | ✅ Done (`bc8e816`) |
 | Activate Reverb modulation (`reverb_mod` knob) | Dead knob → working control | ✅ Done (`cf33942`) |
 | Fix preset system bounds (18 presets) | DAW program change crash fix | ✅ Done (`b0e960a`) |
+| 2x oversampling on Delay tape saturation | Alias-free feedback loop | ✅ Done (`83b59a0`) |
+| 2x oversampling on Chorus feedback tanh | Alias-free chorus feedback | ✅ Done (`37bc0c2`) |
+| Parameter smoothing (LinearSmoothedValue) all 14 params | Zipper noise elimination | ✅ Done (`b99b59c`) |
+| Reverb allpass feedback scaling with room size | Musical diffusion | ✅ Done (`1c3652e`) |
+| Chorus LFO rate caching in beginBlock() | 6 divides/sample → 0 | ✅ Done (`d48eaf0`) |
 
 **Remaining P1:**
 - [ ] SIMD (SSE/AVX) for hot inner loops — profile first
@@ -48,7 +53,7 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 | ~~Rename "NewProject" → "CorvusFX" everywhere~~ | Jucer, solution, binary names, DAW metadata | ~~M~~ ✅ Done (`0e65aa6`) |
 | ~~Stereo level meters (peak/RMS)~~ | Professional metering with In/Out L/R | ~~M~~ ✅ Done (`57c04aa`) |
 | UI responsiveness pass | Resize handling, knob feel, visual feedback | M |
-| **Parameter smoothing audit (Overall knob)** | No zipper noise, musical taper on all knobs | S | ✅ Done (`0b1c4d8`) |
+| ~~Parameter smoothing audit (Overall knob)~~ | No zipper noise, musical taper on all knobs | ~~S~~ ✅ Done (`0b1c4d8`) |
 | Preset refinement | Adjust 18 preset values by ear; add 6 more | M |
 | Tooltip / parameter info system | Hover help for every control | S |
 | Factory preset categorization | Group by vibe: Clean, Warm, Creative, Extreme | S |
