@@ -56,9 +56,9 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 | **UI responsiveness pass** | Resize handling, knob feel, visual feedback | ~~M~~ ✅ Done (`2897782`) |
 | ~~Parameter smoothing audit (Overall knob)~~ | No zipper noise, musical taper on all knobs | ~~S~~ ✅ Done (`0b1c4d8`) |
 | Preset refinement | Adjust 18 preset values by ear; add 6 more | M |
-| Tooltip / parameter info system | Hover help for every control | S |
-| Factory preset categorization | Group by vibe: Clean, Warm, Creative, Extreme | S |
-
+| Tooltip / parameter info system | Hover help for every control | S | ✅ Done |
+| Factory preset categorization | Group by vibe: Clean, Warm, Creative, Extreme | S | ✅ Done |
+| SIMD (SSE/AVX) for hot inner loops | Profile first to identify bottlenecks | M |
 ---
 
 ## Phase 3 — Advanced DSP (Month 2)

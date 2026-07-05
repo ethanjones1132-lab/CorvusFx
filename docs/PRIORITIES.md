@@ -28,7 +28,7 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 | **P2** | Parameter smoothing (LinearSmoothedValue) on all 14 params | Zipper noise eliminated on knob/automation changes | ✅ Done (2026-06-29, `b99b59c`) |
 | **P2** | Reverb allpass feedback scaling with room size | Size knob now varies spatial diffusion character | ✅ Done (2026-06-29, `1c3652e`) |
 | **P2** | Chorus LFO rate caching (rateToIncrement in beginBlock) | 6 divides/sample → 0; last remaining per-sample /sr | ✅ Done (2026-07-05, `d48eaf0`) |
-| **P3** | SIMD (SSE/AVX) for hot inner loops | Further CPU reduction if profiling warrants | ⬜ Deferred |
+| **P3** | Factory preset categorization | Group by vibe: Clean, Warm, Creative, Extreme | ✅ Done (2026-07-05) |
 | **P3** | New presets beyond current 18 | Expand creative palette | ⬜ Deferred |
 
 ---
@@ -59,6 +59,7 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 | 2026-07-05 | `d48eaf0` | EnhancedChorus | **Cache LFO rate→increment in beginBlock()** — precompute `twoPi/sr` once per block, replacing 6 per-sample divides with cached multiplies in the hot inner loop. Same behavior, fewer arithmetic ops per voice. |
 | 2026-07-05 | `0c36943` | UpgradedReverb | **Cache modPhase increment in beginBlock()** — precompute `0.37f/sr` once per block, replacing 1 per-sample divide with cached multiply. Last remaining per-sample `/sr` in the entire plugin — all hot-path sample-rate divides are now cached at block level. |
 | 2026-07-05 | `2897782` | UI/PluginEditor | **Proportional layout scaling for responsive resize** — all hardcoded pixel values in resized() now scale via `min(width/1200, height/700)` factor with minimum size guards. Full 1000-1600w × 600-900h range supported with uniform aspect-ratio preservation, 60fps animated background maintained. |
+| 2026-07-05 | `4e43c77` | UI/PluginEditor | **Factory preset categorization** — group 18 presets into 4 vibe categories (CLEAN, WARM, CREATIVE, EXTREME) with disabled separator items in preset selector; adds selector-to-preset mapping in loadPreset(). |
 
 ---
 
@@ -112,8 +113,8 @@ cp ".../NewProject.vst3" "C:/Projects/Corvus VST/drippy/NewProject.vst3/Contents
 
 1. **Preset refinement** — Adjust 18 preset values by ear; add 6 more
 2. **Tooltip / parameter info system** — Hover help for every control
-3. **Factory preset categorization** — Group by vibe: Clean, Warm, Creative, Extreme
-4. **SIMD (SSE/AVX) for hot inner loops** — Profile first to identify bottlenecks
+| **P3** | Factory preset categorization | Group by vibe: Clean, Warm, Creative, Extreme | ✅ Done (2026-07-05) |
+| **P3** | New presets beyond current 18 | Expand creative palette | ⬜ Deferred |
 
 Phase 0 (Foundation) is now complete. The project has all three core planning docs and a clean "CorvusFX" brand identity in the Jucer/build system.
 
