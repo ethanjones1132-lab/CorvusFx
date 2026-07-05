@@ -1,0 +1,36 @@
+{
+  "digest_pending": false,
+  "digest_reason": "",
+  "dirty_since": {
+    "Jarvis (Daedalus candidate)": "2026-07-05T19:16:51Z",
+    "jonesinsrc": "2026-07-05T19:16:51Z",
+    "wallslayer-desktop": "2026-07-05T19:16:51Z"
+  },
+  "last_cycle": "A",
+  "last_digest_tick": null,
+  "notes": [
+    "Bootstrap: state created from null. Fresh A-rotation started.",
+    "financial-assistant path resolves but is not a git repo (verified with quoting).",
+    "kalshi-build and kalshi-monster share last-commit hash - likely shared git dir / worktree relationship.",
+    "home-base-recovered on non-default branch codex/jarvis-live-p0a. wall-slayer-desktop on non-default branch claude/elated-golick-af12cf.",
+    "Jarvis primary: stale head 96d (last commit 2026-03-31) + lone untracked .lnk artifact."
+  ],
+  "repos_missing": [],
+  "repos_not_git": [
+    "financial-assistant (paused)"
+  ],
+  "repos_seen_clean": {
+    "as_of": "2026-07-05T19:16:51Z",
+    "names": [
+      "home-base-recovered",
+      "kalshi-monster",
+      "prizepicks-monster",
+      "kalshi-build",
+      "wallslayer-shopify",
+      "snitch-llc",
+      "corvus-vst"
+    ]
+  },
+  "schema_version": "0.3.0",
+  "tick_id": "2026-07-05T19:16:51Z"
+}

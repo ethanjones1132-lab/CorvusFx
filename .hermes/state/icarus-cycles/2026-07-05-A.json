@@ -1,0 +1,180 @@
+{
+  "cycle": "A",
+  "date": "2026-07-05",
+  "tick_id": "2026-07-05T19:16:51Z",
+  "repos": [
+    {
+      "name": "Jarvis (Daedalus candidate)",
+      "path": "C:\\Users\\ethan\\OneDrive\\Desktop\\Jarvis",
+      "tier": "primary",
+      "class": "dirty (7d+)",
+      "last_commit": {
+        "hash": "7bf233a8",
+        "date": "2026-03-31T20:24:51+0530",
+        "subject": "Add detailed README with architecture, tools, disclaimers"
+      },
+      "dirty_files": [
+        "?? Jarvis.lnk"
+      ],
+      "notes": "Lone untracked .lnk symlink artifact. Branch=main (default). HEAD 96 days stale - primary repo dormant since March. Single highest-priority stall signal."
+    },
+    {
+      "name": "home-base (Daedalus frontend)",
+      "path": "C:\\Projects\\home-base-recovered",
+      "tier": "primary",
+      "class": "clean",
+      "last_commit": {
+        "hash": "75ceebf0",
+        "date": "2026-07-05T12:58:38-0400",
+        "subject": "fix(jarvis): retain external workspace affinity"
+      },
+      "dirty_files": [],
+      "notes": "Clean but on non-default branch codex/jarvis-live-p0a. Last commit ~6h old - actively shipping. Branch state signals dev/feature work not yet merged to main."
+    },
+    {
+      "name": "kalshi-monster",
+      "path": "C:\\Users\\ethan\\kalshi-build\\kalshi-monster",
+      "tier": "primary",
+      "class": "clean",
+      "last_commit": {
+        "hash": "526aa7ce",
+        "date": "2026-07-05T08:16:56-0400",
+        "subject": "chore(kalshi): gitignore local predictions.db; maintenance pass note"
+      },
+      "dirty_files": [],
+      "notes": "Clean on master. Anomaly: shares identical last-commit hash with kalshi-build worktree entry (same git object db / worktree)."
+    },
+    {
+      "name": "prizepicks-monster",
+      "path": "C:\\Projects\\prizepicks-monster",
+      "tier": "primary",
+      "class": "clean",
+      "last_commit": {
+        "hash": "07bec5a3",
+        "date": "2026-07-05T12:39:04-0400",
+        "subject": "docs(priorities): record 2026-07-05 morning pass #2 (structured logging foundation)"
+      },
+      "dirty_files": [],
+      "notes": "Clean on master. ~6h since last commit - actively maintained."
+    },
+    {
+      "name": "kalshi-build (alt worktree)",
+      "path": "C:\\Users\\ethan\\kalshi-build",
+      "tier": "support",
+      "class": "clean",
+      "last_commit": {
+        "hash": "526aa7ce",
+        "date": "2026-07-05T08:16:56-0400",
+        "subject": "chore(kalshi): gitignore local predictions.db; maintenance pass note"
+      },
+      "dirty_files": [],
+      "notes": "Shares last-commit hash with kalshi-monster entry above - this is the parent worktree of the consolidated Kalshi clone. Same HEAD as kalshi-monster."
+    },
+    {
+      "name": "jonesinsrc",
+      "path": "C:\\Projects\\JonesinSRC",
+      "tier": "primary",
+      "class": "dirty (<24h)",
+      "last_commit": {
+        "hash": "172ae512",
+        "date": "2026-07-05T14:13:34-0400",
+        "subject": "chore: refresh preview timestamps"
+      },
+      "dirty_files": [
+        "preview/index.html",
+        "preview/projects.html"
+      ],
+      "notes": "Dirty preview mirror only - theme files untouched. preview/ is local-visual-QA per AGENTS.md. Source of truth (sections, theme.css) clean. Likely a build/refresh cron left working-tree uncommitted. Branch=master."
+    },
+    {
+      "name": "wallslayer-shopify",
+      "path": "C:\\Projects\\Wall Slayer Shopify",
+      "tier": "primary",
+      "class": "clean",
+      "last_commit": {
+        "hash": "0567028c",
+        "date": "2026-07-05T13:36:35-0400",
+        "subject": "feat(landing): add Blog Content Hub section with 4 article cards (WSL2 setup, RTX 4060, WE vs AI, Privacy) between comparison table and FAQ"
+      },
+      "dirty_files": [],
+      "notes": "Clean on master. ~6h since last commit - actively shipping Blog Content Hub."
+    },
+    {
+      "name": "wallslayer-desktop",
+      "path": "C:\\Users\\ethan\\OneDrive\\Desktop\\Claude Wall Slayer\\wall-slayer",
+      "tier": "primary",
+      "class": "dirty (<24h)",
+      "last_commit": {
+        "hash": "3b86381b",
+        "date": "2026-07-05T09:08:29-0400",
+        "subject": "refactor(css): fold design-system classes from runtime-fixes.css into design-system.css"
+      },
+      "dirty_files": [
+        "src/pages/Settings.tsx",
+        "src/styles/design-system.css"
+      ],
+      "notes": "Dirty 2 files (Settings.tsx + design-system.css). On non-default branch claude/elated-golick-af12cf (agent-generated branch name). CSS refactor last commit ~10h old, in-flight edits since."
+    },
+    {
+      "name": "snitch-llc",
+      "path": "C:\\Projects\\snitch-llc",
+      "tier": "support",
+      "class": "clean",
+      "last_commit": {
+        "hash": "baeb1082",
+        "date": "2026-07-05T14:34:21-0400",
+        "subject": "docs(priorities): afternoon pass update 2026-07-05 - Gemma4 batch 9/10 rate limited, P6 active"
+      },
+      "dirty_files": [],
+      "notes": "Clean on master. Actively committing - recently logged Gemma4 rate-limiting and P6 work."
+    },
+    {
+      "name": "corvus-vst",
+      "path": "C:\\Projects\\Corvus VST",
+      "tier": "support",
+      "class": "clean",
+      "last_commit": {
+        "hash": "db6ad7aa",
+        "date": "2026-07-05T15:06:00-0400",
+        "subject": "docs: update PRIORITIES.md and ROADMAP.md for UI responsiveness pass (2897782)"
+      },
+      "dirty_files": [],
+      "notes": "Clean on master. Most recent commit in the fleet (~10 min ago). UI responsiveness pass active per cron target."
+    },
+    {
+      "name": "financial-assistant (paused)",
+      "path": "C:\\Projects\\trader\\financial assistant",
+      "tier": "support",
+      "class": "not-a-git-repo",
+      "last_commit": null,
+      "dirty_files": [],
+      "notes": "Path resolves but rev-parse fails on .git. Verified with careful quoting (MSYS space-handling). Pause tag in name does not exempt per repos.yaml. repos_not_git entry recorded."
+    }
+  ],
+  "drift_vs_last_tick": {
+    "newly_dirty": [
+      "Jarvis (Daedalus candidate)",
+      "jonesinsrc",
+      "wallslayer-desktop"
+    ],
+    "still_dirty_long": [],
+    "newly_clean": []
+  },
+  "anomalies": [
+    "Jarvis (primary): HEAD 96 days stale (2026-03-31) with lone untracked .lnk - deepest stall in fleet.",
+    "home-base-recovered: on feature branch codex/jarvis-live-p0a, not merged to main.",
+    "wall-slayer-desktop: on agent-generated branch claude/elated-golick-af12cf with dirty Settings.tsx + design-system.css.",
+    "kalshi-build and kalshi-monster share identical last-commit hash 526aa7ce - worktree/shared git dir, not two independent repos.",
+    "jonesinsrc: dirty preview mirror only - source-of-truth theme files clean. Likely a build cron artifact, low priority.",
+    "financial-assistant: path exists but is not a git repo - verify whether intentionally decommissioned or missing .git."
+  ],
+  "fleet_capability": [
+    "6 of 10 reachable repos actively shipping commits within 24h (corvus, snitch, jonesinsrc head, wallslayer-shopify, home-base, prizepicks, kalshi - shared).",
+    "1 primary stall: Jarvis dormant 96d on main branch.",
+    "2 primary repos on non-default branches undergoing active work (home-base, wall-slayer-desktop).",
+    "1 support repo not a git repo (financial-assistant, paused).",
+    "JonesinSRC and wall-slayer-desktop carry dirty working trees - active-edit signal, not committed yet.",
+    "Fleet is NOT in a stalled state - the only genuine stall is Jarvis, the rest are mid-flight."
+  ],
+  "schema_version": "0.3.0"
+}
