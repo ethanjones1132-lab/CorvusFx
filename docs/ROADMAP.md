@@ -38,7 +38,8 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 | 2x oversampling on Chorus feedback tanh | Alias-free chorus feedback | ✅ Done (`37bc0c2`) |
 | Parameter smoothing (LinearSmoothedValue) all 14 params | Zipper noise elimination | ✅ Done (`b99b59c`) |
 | Reverb allpass feedback scaling with room size | Musical diffusion | ✅ Done (`1c3652e`) |
-| Chorus LFO rate caching in beginBlock() | 6 divides/sample → 0 | ✅ Done (`d48eaf0`) |
+| Chorus LFO rate caching (rateToIncrement in beginBlock) | 6 divides/sample → 0 | ✅ Done (`d48eaf0`) |
+| Reverb modPhase caching (modPhaseIncrement in beginBlock) | 1 divide/sample → 0; last per-sample /sr | ✅ Done (`0c36943`) |
 
 **Remaining P1:**
 - [ ] SIMD (SSE/AVX) for hot inner loops — profile first
