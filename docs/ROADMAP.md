@@ -3,7 +3,7 @@
 **Project:** Corvus VST / DrippyFX — JUCE 8.0.12 VST3 audio plugin suite  
 **Source:** `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`  
 **Repo (binaries):** `C:\\Projects\\Corvus VST`  
-**Last updated:** 2026-07-05 (Chorus LFO rate caching — hot-loop optimization complete)
+**Last updated:** 2026-07-05 (UI responsiveness — proportional layout scaling complete)
 
 ---
 
@@ -53,7 +53,7 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 |------|--------|--------|
 | ~~Rename "NewProject" → "CorvusFX" everywhere~~ | Jucer, solution, binary names, DAW metadata | ~~M~~ ✅ Done (`0e65aa6`) |
 | ~~Stereo level meters (peak/RMS)~~ | Professional metering with In/Out L/R | ~~M~~ ✅ Done (`57c04aa`) |
-| UI responsiveness pass | Resize handling, knob feel, visual feedback | M |
+| **UI responsiveness pass** | Resize handling, knob feel, visual feedback | ~~M~~ ✅ Done (`2897782`) |
 | ~~Parameter smoothing audit (Overall knob)~~ | No zipper noise, musical taper on all knobs | ~~S~~ ✅ Done (`0b1c4d8`) |
 | Preset refinement | Adjust 18 preset values by ear; add 6 more | M |
 | Tooltip / parameter info system | Hover help for every control | S |

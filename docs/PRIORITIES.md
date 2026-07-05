@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-05 (overnight pass — Chorus LFO rate caching, rebuild + deploy verified)
+Last updated: 2026-07-05 (afternoon pass — UI responsiveness: proportional layout scaling for 1000-1600w × 600-900h, rebuild + deploy verified)
 Working copy: `C:\\Projects\\Corvus VST`
 Source root: `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`
 
@@ -53,14 +53,12 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 | 2026-06-29 | `1c3652e` | UpgradedReverb | **Allpass feedback scales with room size** (0.50→0.70) — Size knob now varies diffusion character. Also hoisted comb setFeedback/setDamp loop from per-sample to per-block in beginBlock(). |
 | 2026-06-30 | `3936329` | processBlock | **ScopedNoDenormals fix** — moved from outer function scope into per-sample loop, fixing redundant reconstruction on every iteration. Single RAII object per block eliminates per-sample stack object creation/destruction overhead. |
 | 2026-07-01 | `37bc0c2` | EnhancedChorus | **2x oversampling for feedback tanh anti-aliasing** — wrapped the tanh feedback saturation in Oversampling2x (8-tap half-band FIR). Eliminates aliasing artifacts from the non-linear feedback loop that compound with each iteration. Now all 4 saturation stages (Distortion, Chorus, Delay, Master) run at 2x sample rate. |
-| 2026-07-03 | `0e65aa6` | Jucer/Build | **Renamed "NewProject" → "CorvusFX" in Jucer project and VS solution** — updated project name, target name, JucePlugin_Name, JucePlugin_Desc definitions. Full rebuild confirms new branding in VST3 manifest. Binary MD5 changed `a96d1356` → `fa8c8d77`. ||
+| 2026-07-03 | `0e65aa6` | Jucer/Build | **Renamed "NewProject" → "CorvusFX" in Jucer project and VS solution** — updated project name, target name, JucePlugin_Name, JucePlugin_Desc definitions. Full rebuild confirms new branding in VST3 manifest. Binary MD5 changed `a96d1356` → `fa8c8d77`. |
 | 2026-07-04 | `57c04aa` | UI/PluginEditor | **Stereo level meters with peak/RMS display** — 4 vertical bars (In L/R, Out L/R), professional metering with cyan input / magenta output colors, 0dB reference line, peak hold with exponential decay, 30fps update via timerCallback reading relaxed atomics |
 | 2026-07-04 | `0b1c4d8` | processBlock | **Per-sample Overall parameter smoothing** — moved Overall wet/dry from block-level `getCurrentValue()` into per-sample loop using `smoothOverall.getNextValue()`. All 14 audio parameters now have 20ms LinearSmoothedValue smoothing. Eliminates zipper noise on global wet/dry knob during automation/knob movement. |
 | 2026-07-05 | `d48eaf0` | EnhancedChorus | **Cache LFO rate→increment in beginBlock()** — precompute `twoPi/sr` once per block, replacing 6 per-sample divides with cached multiplies in the hot inner loop. Same behavior, fewer arithmetic ops per voice. |
 | 2026-07-05 | `0c36943` | UpgradedReverb | **Cache modPhase increment in beginBlock()** — precompute `0.37f/sr` once per block, replacing 1 per-sample divide with cached multiply. Last remaining per-sample `/sr` in the entire plugin — all hot-path sample-rate divides are now cached at block level. |
-| 2026-07-04 | `57c04aa` | UI/PluginEditor | **Stereo level meters with peak/RMS display** — 4 vertical bars (In L/R, Out L/R), professional metering with cyan input / magenta output colors, 0dB reference line, peak hold with exponential decay, 30fps update via timerCallback reading relaxed atomics |
-| 2026-07-04 | `0b1c4d8` | processBlock | **Per-sample Overall parameter smoothing** — moved Overall wet/dry from block-level `getCurrentValue()` into per-sample loop using `smoothOverall.getNextValue()`. All 14 audio parameters now have 20ms LinearSmoothedValue smoothing. Eliminates zipper noise on global wet/dry knob during automation/knob movement. |
-| 2026-07-05 | `d48eaf0` | EnhancedChorus | **Cache LFO rate→increment in beginBlock()** — precompute `twoPi/sr` once per block, replacing 6 per-sample divides with cached multiplies in the hot inner loop. Same behavior, fewer arithmetic ops per voice. |
+| 2026-07-05 | `2897782` | UI/PluginEditor | **Proportional layout scaling for responsive resize** — all hardcoded pixel values in resized() now scale via `min(width/1200, height/700)` factor with minimum size guards. Full 1000-1600w × 600-900h range supported with uniform aspect-ratio preservation, 60fps animated background maintained. |
 
 ---
 
@@ -112,12 +110,10 @@ cp ".../NewProject.vst3" "C:/Projects/Corvus VST/drippy/NewProject.vst3/Contents
 
 ## Suggested Next Target: P2 — Polish & Professionalization
 
-1. **UI responsiveness pass** — Resize handling, knob feel, visual feedback
-2. **Parameter smoothing audit** — No zipper noise, musical taper on all knobs ✅ DONE
-3. **Preset refinement** — Adjust 18 preset values by ear; add 6 more
-4. **Tooltip / parameter info system** — Hover help for every control
-5. **Factory preset categorization** — Group by vibe: Clean, Warm, Creative, Extreme
-6. **SIMD (SSE/AVX) for hot inner loops** — Profile first to identify bottlenecks
+1. **Preset refinement** — Adjust 18 preset values by ear; add 6 more
+2. **Tooltip / parameter info system** — Hover help for every control
+3. **Factory preset categorization** — Group by vibe: Clean, Warm, Creative, Extreme
+4. **SIMD (SSE/AVX) for hot inner loops** — Profile first to identify bottlenecks
 
 Phase 0 (Foundation) is now complete. The project has all three core planning docs and a clean "CorvusFX" brand identity in the Jucer/build system.
 
