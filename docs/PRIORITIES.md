@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-06 (overnight pass — fixed broken loadPreset selectorToPreset double-mapping bug, rebuild + deploy verified)
+Last updated: 2026-07-06 (morning pass — expanded factory presets from 18 → 24)
 Working copy: `C:\\Projects\\Corvus VST`
 Source root: `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`
 
@@ -29,7 +29,7 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 | **P2** | Reverb allpass feedback scaling with room size | Size knob now varies spatial diffusion character | ✅ Done (2026-06-29, `1c3652e`) |
 | **P2** | Chorus LFO rate caching (rateToIncrement in beginBlock) | 6 divides/sample → 0; last remaining per-sample /sr | ✅ Done (2026-07-05, `d48eaf0`) |
 | **P3** | Factory preset categorization | Group by vibe: Clean, Warm, Creative, Extreme | ✅ Done (2026-07-05) |
-| **P3** | New presets beyond current 18 | Expand creative palette | ⬜ Deferred |
+| **P3** | New presets beyond current 18 | Expand creative palette | ✅ Done (2026-07-06, `3e16739` — 24 total: Glass Canon, Air Lift, Cozy Hiss, Tube Glow, Shimmerfall, Obliterator; idToPreset[] lookup fixes ComboBoxAttachment mapping with separators) |
 
 ---
 
@@ -115,7 +115,7 @@ cp ".../NewProject.vst3" "C:/Projects/Corvus VST/drippy/NewProject.vst3/Contents
 1. **Preset refinement** — Adjust 18 preset values by ear; add 6 more
 2. **Tooltip / parameter info system** — Hover help for every control
 | **P3** | Factory preset categorization | Group by vibe: Clean, Warm, Creative, Extreme | ✅ Done (2026-07-05) |
-| **P3** | New presets beyond current 18 | Expand creative palette | ⬜ Deferred |
+| **P3** | New presets beyond current 18 | Expand creative palette | ✅ Done (2026-07-06, `3e16739` — 24 total: Glass Canon, Air Lift, Cozy Hiss, Tube Glow, Shimmerfall, Obliterator; idToPreset[] lookup fixes ComboBoxAttachment mapping with separators) |
 
 Phase 0 (Foundation) is now complete. The project has all three core planning docs and a clean "CorvusFX" brand identity in the Jucer/build system.
 
