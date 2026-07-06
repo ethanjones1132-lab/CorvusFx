@@ -3,7 +3,7 @@
 **Project:** Corvus VST / DrippyFX — JUCE 8.0.12 VST3 audio plugin suite  
 **Source:** `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`  
 **Repo (binaries):** `C:\\Projects\\Corvus VST`  
-**Last updated:** 2026-07-06 (overnight pass — fixed broken loadPreset selectorToPreset double-mapping, rebuild + deploy verified)
+**Last updated:** 2026-07-06 (afternoon pass — added Master Drive parameter for user-controllable push-pull saturation)
 
 ---
 
@@ -39,7 +39,8 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 | Parameter smoothing (LinearSmoothedValue) all 14 params | Zipper noise elimination | ✅ Done (`b99b59c`) |
 | Reverb allpass feedback scaling with room size | Musical diffusion | ✅ Done (`1c3652e`) |
 | Chorus LFO rate caching (rateToIncrement in beginBlock) | 6 divides/sample → 0 | ✅ Done (`d48eaf0`) |
-| Reverb modPhase caching (modPhaseIncrement in beginBlock) | 1 divide/sample → 0; last per-sample /sr | ✅ Done (`0c36943`) |
+|| Reverb modPhase caching (modPhaseIncrement in beginBlock) | 1 divide/sample → 0; last per-sample /sr | ✅ Done (`0c36943`) ||
+|| Master Drive parameter (user-controllable push-pull saturation) | 15th parameter, 0-100% drive control | ✅ Done (`e379f2d`) |
 
 **Remaining P1:**
 - [ ] SIMD (SSE/AVX) for hot inner loops — profile first

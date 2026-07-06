@@ -1,10 +1,10 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-06 (morning pass — expanded factory presets from 18 → 24)
+Last updated: 2026-07-06 (afternoon pass — added Master Drive parameter for user-controllable push-pull saturation)
 Working copy: `C:\\Projects\\Corvus VST`
 Source root: `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`
 
-Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached**
+Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached, 15 parameters (Master Drive added)**
 
 ---
 
@@ -60,7 +60,8 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 | 2026-07-05 | `0c36943` | UpgradedReverb | **Cache modPhase increment in beginBlock()** — precompute `0.37f/sr` once per block, replacing 1 per-sample divide with cached multiply. Last remaining per-sample `/sr` in the entire plugin — all hot-path sample-rate divides are now cached at block level. |
 | 2026-07-05 | `2897782` | UI/PluginEditor | **Proportional layout scaling for responsive resize** — all hardcoded pixel values in resized() now scale via `min(width/1200, height/700)` factor with minimum size guards. Full 1000-1600w × 600-900h range supported with uniform aspect-ratio preservation, 60fps animated background maintained. |
 | 2026-07-05 | `4e43c77` | UI/PluginEditor | **Factory preset categorization** — group 18 presets into 4 vibe categories (CLEAN, WARM, CREATIVE, EXTREME) with disabled separator items in preset selector; adds selector-to-preset mapping in loadPreset(). |
-| 2026-07-06 | `252d2ff` | Presets | **Reorder presets[] to match categorized combo box layout** — removed broken ID-based selectorToPreset table; instead reordered presets[] + getProgramName() to match CLEAN[0-3]/WARM[4-7]/CREATIVE[8-12]/EXTREME[13-17] layout. All three paths (combo attachment, DAW host interface, program names) now use identity mapping with no translation table. Binary MD5: c872564e → b7a435c7. |
+|| 2026-07-06 | `252d2ff` | Presets | **Reorder presets[] to match categorized combo box layout** — removed broken ID-based selectorToPreset table; instead reordered presets[] + getProgramName() to match CLEAN[0-3]/WARM[4-7]/CREATIVE[8-12]/EXTREME[13-17] layout. All three paths (combo attachment, DAW host interface, program names) now use identity mapping with no translation table. Binary MD5: c872564e → b7a435c7. ||
+|| 2026-07-06 | `e379f2d` | MasterOutputStage | **Add Master Drive parameter** — user-controllable push-pull saturation (0-100%, mapped to drive 0.0-1.8). Added LinearSmoothedValue (20ms), UI knob below Overall, updated all 24 presets with master_drive values. Binary MD5: 525f3ffd → 588a94cc. 15 total parameters now. |
 
 ---
 
