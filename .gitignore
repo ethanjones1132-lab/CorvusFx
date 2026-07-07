@@ -15,6 +15,9 @@
 Build.CppClean.log
 *.lastbuildstate
 
+# ── Fleet / tool state ───────────────────────────────────────────
+.hermes/
+
 # ── IDE / editor files ──────────────────────────────────────────
 .vs/
 .vscode/
