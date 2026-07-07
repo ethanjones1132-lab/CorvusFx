@@ -1,10 +1,10 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-07 (afternoon pass — delay LFO phase recurrence optimization)
+Last updated: 2026-07-07 (evening pass — professional dB scale markings on level meters)
 Working copy: `C:\\\\Projects\\\\Corvus VST`
 Source root: `C:\\\\Users\\\\ethan\\\\Downloads\\\\DrippyFX_v1.0.0_Complete\\\\DrippyFX\\\\`
 
-Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached, 15 parameters (Master Drive added), reverb comb modulation optimized 8→2 sin()/sample, chorus LFO optimized 18→0 sin()/sample, delay LFO optimized 2→0 sin()/sample**
+Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached, 15 parameters (Master Drive added), reverb comb modulation optimized 8→2 sin()/sample, chorus LFO optimized 18→0 sin()/sample, delay LFO optimized 2→0 sin()/sample. UI polish — professional dB-scale metering with -6/-12/-18/-24/-30/-40/-50/-60 markings, proportional layout scaling, tooltips on all controls, 24 categorized presets.**
 
 ---
 
