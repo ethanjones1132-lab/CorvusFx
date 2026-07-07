@@ -1,10 +1,10 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-06 (afternoon pass — added Master Drive parameter for user-controllable push-pull saturation)
-Working copy: `C:\\Projects\\Corvus VST`
-Source root: `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`
+Last updated: 2026-07-07 (overnight pass — reverb LFO phase recurrence optimization)
+Working copy: `C:\\\\Projects\\\\Corvus VST`
+Source root: `C:\\\\Users\\\\ethan\\\\Downloads\\\\DrippyFX_v1.0.0_Complete\\\\DrippyFX\\\\`
 
-Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached, 15 parameters (Master Drive added)**
+Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached, 15 parameters (Master Drive added), reverb comb modulation optimized 8→2 sin()/sample**
 
 ---
 
@@ -62,6 +62,7 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 | 2026-07-05 | `4e43c77` | UI/PluginEditor | **Factory preset categorization** — group 18 presets into 4 vibe categories (CLEAN, WARM, CREATIVE, EXTREME) with disabled separator items in preset selector; adds selector-to-preset mapping in loadPreset(). |
 || 2026-07-06 | `252d2ff` | Presets | **Reorder presets[] to match categorized combo box layout** — removed broken ID-based selectorToPreset table; instead reordered presets[] + getProgramName() to match CLEAN[0-3]/WARM[4-7]/CREATIVE[8-12]/EXTREME[13-17] layout. All three paths (combo attachment, DAW host interface, program names) now use identity mapping with no translation table. Binary MD5: c872564e → b7a435c7. ||
 || 2026-07-06 | `e379f2d` | MasterOutputStage | **Add Master Drive parameter** — user-controllable push-pull saturation (0-100%, mapped to drive 0.0-1.8). Added LinearSmoothedValue (20ms), UI knob below Overall, updated all 24 presets with master_drive values. Binary MD5: 525f3ffd → 588a94cc. 15 total parameters now. |
+|| 2026-07-07 | `c23e1c3` | UpgradedReverb | **LFO phase recurrence for comb modulation** — replaces 8 std::sin()/sample with 2 + 16 multiplies via precomputed sin(Δi)/cos(Δi) per comb in beginBlock(). ~4x reduction in modulation cost. Binary MD5: c88ea5c6 → ca2f5535. |
 
 ---
 
