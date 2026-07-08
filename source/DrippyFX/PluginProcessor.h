@@ -1,0 +1,1402 @@
+﻿#pragma once
+
+#include <JuceHeader.h>
+#include <cmath>
+#include <cstring>
+#include <algorithm>
+
+//==============================================================================
+// UTILITY: Hermite cubic interpolation — artifact-free delay reads
+//==============================================================================
+inline float hermiteInterp(const float* buf, int bufSize, float readPos)
+{
+    int idx = static_cast<int>(std::floor(readPos));
+    float frac = readPos - static_cast<float>(idx);
+    auto wrap = [bufSize](int p) -> int { return ((p % bufSize) + bufSize) % bufSize; };
+    float xm1 = buf[wrap(idx - 1)];
+    float x0 = buf[wrap(idx)];
+    float x1 = buf[wrap(idx + 1)];
+    float x2 = buf[wrap(idx + 2)];
+    float c0 = x0;
+    float c1 = 0.5f * (x1 - xm1);
+    float c2 = xm1 - 2.5f * x0 + 2.0f * x1 - 0.5f * x2;
+    float c3 = 0.5f * (x2 - xm1) + 1.5f * (x0 - x1);
+    return ((c3 * frac + c2) * frac + c1) * frac + c0;
+}
+
+//==============================================================================
+// UTILITY: DC blocker — Julius O. Smith topology
+//==============================================================================
+struct DCBlocker
+{
+    float x1 = 0.0f, y1 = 0.0f;
+    float process(float in)
+    {
+        // Coefficient 0.9995 → ~3.5Hz cutoff. Prevents cascaded HF resonance
+        // when multiple DC blockers are in series across the signal chain.
+        float out = in - x1 + 0.9995f * y1;
+        x1 = in;
+        y1 = out;
+        return out;
+    }
+    void reset() { x1 = y1 = 0.0f; }
+};
+
+//==============================================================================
+// UTILITY: One-pole filter
+//==============================================================================
+struct OnePole
+{
+    float z1 = 0.0f;
+    float processLP(float in, float coeff) { z1 = in + coeff * (z1 - in); return z1; }
+    float processHP(float in, float coeff) { z1 = in + coeff * (z1 - in); return in - z1; }
+    void reset() { z1 = 0.0f; }
+};
+
+//==============================================================================
+// 2x OVERSAMPLING WRAPPER — Anti-aliasing for non-linear waveshaping
+// Eliminates aliasing from tanh/tape saturation by processing at 2x sample rate.
+// Uses a 2nd-order half-band FIR filter for up/down sampling (8 coefficients).
+//==============================================================================
+struct Oversampling2x
+{
+    static constexpr int FILTER_TAPS = 8;
+    // 2nd-order half-band FIR, cutoff at 0.25*fs (half Nyquist at 2x rate)
+    // Normalized so sum = 1.0 for unity gain at DC
+    static constexpr float coeffs[FILTER_TAPS] =
+    {
+        -0.006289f, 0.000000f, 0.088024f, 0.418265f,
+        0.418265f,  0.088024f, 0.000000f, -0.006289f
+    };
+
+    float stateL[FILTER_TAPS] = {};
+    float stateR[FILTER_TAPS] = {};
+    int idx = 0;
+    double sampleRate = 44100.0;
+
+    void prepare(double sr) { sampleRate = sr; reset(); }
+
+    void reset()
+    {
+        std::memset(stateL, 0, sizeof(stateL));
+        std::memset(stateR, 0, sizeof(stateR));
+        idx = 0;
+    }
+
+    // Process one input sample at base rate, produce one output sample at base rate.
+    // Internally runs the DSP callback at 2x rate with anti-alias filtering.
+    template <typename ProcessFn>
+    void processSample(float inL, float inR, float& outL, float& outR, ProcessFn&& dsp)
+    {
+        // ── UP SAMPLE 2x: Insert zero, filter (polyphase branch 0) ──
+        // Input at n -> output at 2n (even phase)
+        float upL_even = 0.0f, upR_even = 0.0f;
+        stateL[idx] = inL;
+        stateR[idx] = inR;
+        for (int i = 0; i < FILTER_TAPS; ++i)
+        {
+            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
+            upL_even += stateL[s] * coeffs[i];
+            upR_even += stateR[s] * coeffs[i];
+        }
+
+        // Input at n -> output at 2n+1 (odd phase) — zero inserted, only even taps contribute
+        // Half-band filter: even-indexed taps (0,2,4,6) are non-zero, odd are zero
+        // Odd phase uses the same state but shifted coefficient indexing
+        float upL_odd = 0.0f, upR_odd = 0.0f;
+        for (int i = 0; i < FILTER_TAPS; i += 2)
+        {
+            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
+            upL_odd += stateL[s] * coeffs[i] * 2.0f;  // *2 compensates for zero-insertion
+            upR_odd += stateR[s] * coeffs[i] * 2.0f;
+        }
+
+        idx = (idx + 1) % FILTER_TAPS;
+
+        // ── DSP at 2x rate ──
+        float dspL1, dspR1, dspL2, dspR2;
+        dsp(upL_even, upR_even, dspL1, dspR1);
+        dsp(upL_odd,  upR_odd,  dspL2, dspR2);
+
+        // ── DOWN SAMPLE 2x: Filter, decimate ──
+        // Even output: filter even+odd pair, take even phase
+        stateL[idx] = dspL1;
+        stateR[idx] = dspR1;
+        float downL_even = 0.0f, downR_even = 0.0f;
+        for (int i = 0; i < FILTER_TAPS; ++i)
+        {
+            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
+            downL_even += stateL[s] * coeffs[i];
+            downR_even += stateR[s] * coeffs[i];
+        }
+
+        // Odd output: filter, take odd phase (half-band)
+        stateL[idx] = dspL2;
+        stateR[idx] = dspR2;
+        float downL_odd = 0.0f, downR_odd = 0.0f;
+        for (int i = 0; i < FILTER_TAPS; i += 2)
+        {
+            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
+            downL_odd += stateL[s] * coeffs[i] * 2.0f;
+            downR_odd += stateR[s] * coeffs[i] * 2.0f;
+        }
+
+        idx = (idx + 1) % FILTER_TAPS;
+
+        // Average the two phases for final output (or just use even phase)
+        // Using even phase maintains exact latency alignment
+        outL = downL_even;
+        outR = downR_even;
+    }
+
+    // ── MONO OVERSAMPLING — For single-channel feedback paths (e.g., chorus feedback)
+    // Avoids ~50% CPU waste of stereo polyphase filtering when only one channel is needed.
+    template <typename ProcessFn>
+    void processSampleMono(float in, float& out, ProcessFn&& dsp)
+    {
+        // ── UP SAMPLE 2x ──
+        float up_even = 0.0f;
+        stateL[idx] = in;  // reuse L state for mono
+        for (int i = 0; i < FILTER_TAPS; ++i)
+        {
+            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
+            up_even += stateL[s] * coeffs[i];
+        }
+
+        float up_odd = 0.0f;
+        for (int i = 0; i < FILTER_TAPS; i += 2)
+        {
+            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
+            up_odd += stateL[s] * coeffs[i] * 2.0f;
+        }
+
+        idx = (idx + 1) % FILTER_TAPS;
+
+        // ── DSP at 2x rate ──
+        float dsp1, dsp2;
+        dsp(up_even, dsp1);
+        dsp(up_odd,  dsp2);
+
+        // ── DOWN SAMPLE 2x ──
+        stateL[idx] = dsp1;
+        float down_even = 0.0f;
+        for (int i = 0; i < FILTER_TAPS; ++i)
+        {
+            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
+            down_even += stateL[s] * coeffs[i];
+        }
+
+        stateL[idx] = dsp2;
+        float down_odd = 0.0f;
+        for (int i = 0; i < FILTER_TAPS; i += 2)
+        {
+            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
+            down_odd += stateL[s] * coeffs[i] * 2.0f;
+        }
+
+        idx = (idx + 1) % FILTER_TAPS;
+
+        // Use even phase for latency alignment
+        out = down_even;
+    }
+};
+
+//==============================================================================
+// PROFESSIONAL SATURATION / DISTORTION
+// Clean analog-modeled waveshaping. 2x oversampling for zero aliasing.
+// Tape saturation at low drive, tube harmonics at high drive.
+//==============================================================================
+struct ProfessionalDistortion
+{
+    OnePole preLPL, preLPR;       // Pre-emphasis
+    OnePole postLP1L, postLP1R;   // Post tone control — pole 1
+    OnePole postLP2L, postLP2R;   // Post tone control — pole 2 (12dB/oct cascade)
+    OnePole preHPL, preHPR;       // Remove DC before clipping
+    OnePole warmthL, warmthR;     // Post-saturation warmth shelf
+    DCBlocker dcL, dcR;
+    Oversampling2x oversample;    // 2x oversampling for zero aliasing
+    double sampleRate = 44100.0;
+
+    void prepare(double sr)
+    {
+        sampleRate = sr;
+        oversample.prepare(sr);
+        reset();
+    }
+
+    void reset()
+    {
+        preLPL.reset(); preLPR.reset();
+        postLP1L.reset(); postLP1R.reset();
+        postLP2L.reset(); postLP2R.reset();
+        preHPL.reset(); preHPR.reset();
+        warmthL.reset(); warmthR.reset();
+        dcL.reset(); dcR.reset();
+        oversample.reset();
+    }
+
+    // Tube-style waveshaper: asymmetric, warm even harmonics
+    static inline float tubeShape(float x, float drive)
+    {
+        if (x >= 0.0f)
+            return std::tanh(x * drive);
+        else
+            return std::tanh(x * drive * 1.15f) / 1.15f;
+    }
+
+    // Tape saturation: symmetric, preserves dynamics
+    static inline float tapeShape(float x, float drive)
+    {
+        float d = x * drive;
+        return d / (1.0f + std::abs(d));
+    }
+
+    // Block-level coefficient cache — avoids recomputing std::exp() every sample.
+    // Call beginBlock() once per audio block with the current drive amount,
+    // then call process() for each sample. This eliminates 4 redundant
+    // transcendental function calls per sample (320 wasted calls per 64-sample block).
+    struct BlockCoeffs
+    {
+        float drive = 1.0f;
+        float hpCoeff = 0.0f;
+        float empCoeff = 0.0f;
+        float postCoeff = 0.0f;
+        float warmCoeff = 0.0f;
+        float empAmount = 0.0f;
+        float warmAmt = 0.0f;
+        float makeup = 1.0f;
+        float blend = 0.0f;
+        bool bypass = true;
+        float tapeBlend = 0.0f;    // 0-1 blend for tape-only region (below 0.3)
+        float tubeBlend = 0.0f;    // 0-1 blend for tube region (0.3-0.7 smooth crossfade)
+        float driveScaled = 1.0f;  // drive * 0.7 for tape side at high amounts
+    } blockCoeffs;
+
+    void beginBlock(float amount)
+    {
+        if (amount < 0.001f)
+        {
+            blockCoeffs.bypass = true;
+            return;
+        }
+        blockCoeffs.bypass = false;
+        float sr = static_cast<float>(sampleRate);
+        blockCoeffs.drive = 1.0f + amount * amount * 7.0f;
+        blockCoeffs.hpCoeff = std::exp(-6.2832f * 30.0f / sr);
+        blockCoeffs.empCoeff = std::exp(-6.2832f * 4500.0f / sr);
+        float postFreq = 6000.0f + (1.0f - amount) * 10000.0f;
+        blockCoeffs.postCoeff = std::exp(-6.2832f * postFreq / sr);
+        blockCoeffs.warmCoeff = std::exp(-6.2832f * 5500.0f / sr);
+        blockCoeffs.empAmount = amount * 0.18f;
+        blockCoeffs.warmAmt = amount * 0.12f;
+        blockCoeffs.makeup = 1.0f + amount * 0.8f;
+        blockCoeffs.blend = std::min(1.0f, amount * 1.2f);
+        // Smooth tube crossfade: 0 below 0.3, 1 above 0.7, smoothstep in between
+        float rawTube = (amount - 0.3f) / 0.4f;
+        blockCoeffs.tubeBlend = (rawTube > 0.0f) ? ((rawTube < 1.0f) ? (rawTube * rawTube * (3.0f - 2.0f * rawTube)) : 1.0f) : 0.0f;
+        // tapeBlend ramps linearly 0→1 across full drive range
+        // Low path: dry→tape(drive), High path: tape(drive70)→tube(drive)
+        blockCoeffs.tapeBlend = amount;
+        blockCoeffs.driveScaled = blockCoeffs.drive * 0.7f;
+    }
+
+    void process(float inL, float inR, float /*amount*/,
+        float& outL, float& outR)
+    {
+        // Process at 2x sample rate with anti-alias filtering for zero aliasing
+        oversample.processSample(inL, inR, outL, outR, [this](float inL_os, float inR_os, float& outL_os, float& outR_os) {
+            if (blockCoeffs.bypass)
+            {
+                outL_os = inL_os;
+                outR_os = inR_os;
+                return;
+            }
+
+            // Pre-filter: remove subsonic content before clipping
+            float preL = preHPL.processHP(inL_os, blockCoeffs.hpCoeff);
+            float preR = preHPR.processHP(inR_os, blockCoeffs.hpCoeff);
+
+            // Pre-emphasis: gentle HF lift before clipping (4.5kHz center, reduced amount)
+            float hfL = preL - preLPL.processLP(preL, blockCoeffs.empCoeff);
+            float hfR = preR - preLPR.processLP(preR, blockCoeffs.empCoeff);
+            float empL = preL + hfL * blockCoeffs.empAmount;
+            float empR = preR + hfR * blockCoeffs.empAmount;
+
+            // Waveshaping: blend tape → tube based on amount with smooth transition
+            // Low amount (0–0.3): pure tape saturation
+            // Mid amount (0.3–0.7): smooth tube crossfade
+            // High amount (0.7–1.0): tube-dominant blend
+            float satL, satR;
+            {
+                float t = blockCoeffs.tapeBlend;
+                float u = blockCoeffs.tubeBlend;
+                float tL = tapeShape(empL, blockCoeffs.drive);
+                float tR = tapeShape(empR, blockCoeffs.drive);
+                float lowL = empL * (1.0f - t) + tL * t;
+                float lowR = empR * (1.0f - t) + tR * t;
+
+                float tsL = tapeShape(empL, blockCoeffs.driveScaled);
+                float tsR = tapeShape(empR, blockCoeffs.driveScaled);
+                float tuL = tubeShape(empL, blockCoeffs.drive);
+                float tuR = tubeShape(empR, blockCoeffs.drive);
+                float highL = tsL * (1.0f - t) + tuL * t;
+                float highR = tsR * (1.0f - t) + tuR * t;
+
+                // Smooth blend between low-drive tape and high-drive tube
+                satL = lowL + (highL - lowL) * u;
+                satR = lowR + (highR - lowR) * u;
+            }
+
+            // Post tone: 2-pole cascade (12dB/oct) — analog-realistic rolloff
+            satL = postLP1L.processLP(satL, blockCoeffs.postCoeff);
+            satR = postLP1R.processLP(satR, blockCoeffs.postCoeff);
+            satL = postLP2L.processLP(satL, blockCoeffs.postCoeff);
+            satR = postLP2R.processLP(satR, blockCoeffs.postCoeff);
+
+            // Warmth shelf: gently tame 5-8kHz harshness from waveshaping
+            float warmL_lp = warmthL.processLP(satL, blockCoeffs.warmCoeff);
+            float warmR_lp = warmthR.processLP(satR, blockCoeffs.warmCoeff);
+            satL = satL * (1.0f - blockCoeffs.warmAmt) + warmL_lp * blockCoeffs.warmAmt;
+            satR = satR * (1.0f - blockCoeffs.warmAmt) + warmR_lp * blockCoeffs.warmAmt;
+
+            // DC removal
+            satL = dcL.process(satL);
+            satR = dcR.process(satR);
+
+            // Makeup gain: compensate volume loss from waveshaping
+            satL *= blockCoeffs.makeup;
+            satR *= blockCoeffs.makeup;
+
+            // Output blend
+            outL_os = inL_os * (1.0f - blockCoeffs.blend) + satL * blockCoeffs.blend;
+            outR_os = inR_os * (1.0f - blockCoeffs.blend) + satR * blockCoeffs.blend;
+
+            outL_os = juce::jlimit(-2.0f, 2.0f, outL_os);
+            outR_os = juce::jlimit(-2.0f, 2.0f, outR_os);
+        });
+    }
+};
+
+//==============================================================================
+// PROFESSIONAL CHORUS — Studio-grade 6-voice architecture
+//
+// Pitch-stable at all mix levels via:
+//   • Subliminal dry bleed at high wet (prevents detuned perception)
+//   • Mix-adaptive depth compression (less excursion when more wet)
+//   • Multi-shape LFOs: sine + smoothed triangle (less time at extremes)
+//   • Decorrelated rate ratios (prime-inspired, never align)
+//   • Per-voice 1-pole allpass for pitch transition smoothing
+//   • tanh feedback saturation — now 2x oversampled to eliminate aliasing in feedback loop
+//   • Equal-power crossfade (no hollow mid-range dip)
+//==============================================================================
+struct EnhancedChorus
+{
+    static constexpr int NUM_VOICES = 6;
+    static constexpr int BUFFER_SIZE = 32768;
+
+    float delayBuffer[2][BUFFER_SIZE] = {};
+    int writePos = 0;
+    double sampleRate = 44100.0;
+
+    struct Voice
+    {
+        float phase = 0.0f;
+        float centerDelay = 0.0f;   // ms
+        float phaseOffset = 0.0f;
+        float panL = 1.0f, panR = 1.0f;
+        float rateScale = 1.0f;
+        float depthScale = 1.0f;
+        float triBlend = 0.5f;      // 0 = pure sine, 1 = pure smoothed triangle
+        // Per-voice allpass for pitch smoothing
+        float apState[2] = {};
+    };
+
+    Voice voices[NUM_VOICES];
+    float feedbackState[2] = {};
+    DCBlocker dcBlock[2];
+    OnePole outputSmooth[2];
+    OnePole inputTone[2];        // Gentle pre-filter for cleaner modulation
+    float driftPhase[NUM_VOICES] = {};
+    // LFO phase recurrence: replaces 2 std::sin() calls/voice/sample with 4 multiplies
+    // sin(x+d) = sin(x)cos(d) + cos(x)sin(d)
+    // cos(x+d) = cos(x)cos(d) - sin(x)sin(d)
+    float lfoSin[NUM_VOICES] = {};  // Current sin(phase) per voice
+    float lfoCos[NUM_VOICES] = {};  // Current cos(phase) per voice
+
+    // Drift phase recurrence: replaces 2 std::sin() calls/voice/sample with 4 multiplies
+    // Drift uses two frequencies: 2.32x and 5.71x the base driftDelta
+    float driftSin1[NUM_VOICES] = {};  // sin(2.32 * driftPhase + offset1) per voice
+    float driftCos1[NUM_VOICES] = {};  // cos(2.32 * driftPhase + offset1) per voice
+    float driftSin2[NUM_VOICES] = {};  // sin(5.71 * driftPhase + offset2) per voice
+    float driftCos2[NUM_VOICES] = {};  // cos(5.71 * driftPhase + offset2) per voice
+    Oversampling2x oversample;    // 2x oversampling for feedback tanh anti-aliasing
+
+    // Block-level coefficient cache — avoids redundant per-sample transcendental calls.
+    // beginBlock() precomputes tone/smooth filter coefficients plus chorus-specific
+    // parameters (allpass coeff, mix-adaptive depth, drift increment) that were
+    // previously recomputed for every voice on every sample.
+    struct ChorusBlockCoeffs
+        {
+            float toneCoeff = 0.0f;
+            float smoothCoeff = 0.0f;
+            float apCoeff = 0.0f;           // allpass coefficient (0.3 + depth*0.15)
+            float mixDepthScale = 1.0f;     // 1.0 at 0% mix → 0.65 at 100% mix
+            float maxSwingMs = 2.8f;        // max modulation swing in ms
+            float driftDelta = 0.0f;        // drift phase increment per sample
+            float rateToIncrement = 0.0f;   // twoPi / sr — cached for LFO rate→phase step
+            // Phase recurrence constants per voice — replaces 2× std::sin()/sample with 4 multiplies
+                    float voiceCosDelta[NUM_VOICES] = {};  // cos(rate * rateScale * rateToIncrement) per voice
+                    float voiceSinDelta[NUM_VOICES] = {};  // sin(rate * rateScale * rateToIncrement) per voice
+
+                    // Drift phase recurrence constants — replaces 2 std::sin()/voice/sample with 4 multiplies
+                    // Drift uses two sine frequencies: 2.32x and 5.71x the base driftDelta
+                    float driftCosDelta1[NUM_VOICES] = {};  // cos(2.32 * driftDelta) per voice
+                    float driftSinDelta1[NUM_VOICES] = {};  // sin(2.32 * driftDelta) per voice
+                    float driftCosDelta2[NUM_VOICES] = {};  // cos(5.71 * driftDelta) per voice
+                    float driftSinDelta2[NUM_VOICES] = {};  // sin(5.71 * driftDelta) per voice
+                    float driftPhaseOffset1[NUM_VOICES] = {};  // i * 2.1f * 2.32 per voice
+                    float driftPhaseOffset2[NUM_VOICES] = {};  // i * 1.3f * 5.71 per voice
+
+                    // Equal-power dry/wet crossfade gains — cached per-block
+                    // Replaces 2 std::sin()+std::cos()/sample with single block-level computation.
+                    // mix changes at block rate (via parameter smoothing), NOT per-sample.
+                    float dryGain = 1.0f;  // cos(effectiveMix * halfPi) — default to dry-only
+                    float wetGain = 0.0f;  // sin(effectiveMix * halfPi) — default to dry-only
+                } chorusBlockCoeffs;
+
+    void beginBlock(float depth, float mix, float rate)
+    {
+        float sr = static_cast<float>(sampleRate);
+        chorusBlockCoeffs.toneCoeff = std::exp(-6.2832f * 16000.0f / sr);
+        chorusBlockCoeffs.smoothCoeff = std::exp(-6.2832f * 14000.0f / sr);
+        chorusBlockCoeffs.apCoeff = 0.3f + depth * 0.15f;
+        chorusBlockCoeffs.mixDepthScale = 1.0f - mix * 0.35f;
+        chorusBlockCoeffs.maxSwingMs = 2.8f * chorusBlockCoeffs.mixDepthScale;
+        chorusBlockCoeffs.driftDelta = 0.07f / sr;
+        chorusBlockCoeffs.rateToIncrement = juce::MathConstants<float>::twoPi / sr;
+        // Precompute per-voice phase recurrence constants
+        // sin/cos of per-voice phase delta → 4 multiplies/sample instead of 2 std::sin()/sample
+        for (int i = 0; i < NUM_VOICES; ++i)
+        {
+            float delta = rate * voices[i].rateScale * chorusBlockCoeffs.rateToIncrement;
+            chorusBlockCoeffs.voiceSinDelta[i] = std::sin(delta);
+            chorusBlockCoeffs.voiceCosDelta[i] = std::cos(delta);
+        }
+        // Precompute drift phase recurrence constants
+        // Drift uses two sine frequencies: 2.32x and 5.71x the base driftDelta
+        float dDelta = chorusBlockCoeffs.driftDelta;
+        for (int i = 0; i < NUM_VOICES; ++i)
+        {
+            // Frequency multipliers for the two drift components
+            float delta1 = 2.32f * dDelta;
+            float delta2 = 5.71f * dDelta;
+            chorusBlockCoeffs.driftCosDelta1[i] = std::cos(delta1);
+            chorusBlockCoeffs.driftSinDelta1[i] = std::sin(delta1);
+            chorusBlockCoeffs.driftCosDelta2[i] = std::cos(delta2);
+            chorusBlockCoeffs.driftSinDelta2[i] = std::sin(delta2);
+            // Phase offsets per voice for the two drift frequencies
+            chorusBlockCoeffs.driftPhaseOffset1[i] = static_cast<float>(i) * 2.1f * 2.32f;
+            chorusBlockCoeffs.driftPhaseOffset2[i] = static_cast<float>(i) * 1.3f * 5.71f;
+        }
+
+        // Precompute equal-power crossfade gains — eliminates 2 std::sin()+std::cos() per sample
+        // effectiveMix = mix * 0.90f (10% dry anchor at full wet for pitch stability)
+        float effectiveMix = mix * 0.90f;
+        chorusBlockCoeffs.dryGain = std::cos(effectiveMix * juce::MathConstants<float>::halfPi);
+        chorusBlockCoeffs.wetGain = std::sin(effectiveMix * juce::MathConstants<float>::halfPi);
+    }
+
+    void prepare(double sr)
+    {
+        sampleRate = sr;
+        oversample.prepare(sr);
+        std::memset(delayBuffer, 0, sizeof(delayBuffer));
+        writePos = 0;
+        feedbackState[0] = feedbackState[1] = 0.0f;
+        dcBlock[0].reset(); dcBlock[1].reset();
+        outputSmooth[0].reset(); outputSmooth[1].reset();
+        inputTone[0].reset(); inputTone[1].reset();
+
+        // Voice configuration:
+        // centerDelay (ms), panL, panR, rateScale, depthScale, triBlend
+        // Rate scales use prime-inspired ratios to prevent alignment:
+        //   0.71, 0.89, 1.0, 1.13, 1.31, 0.79
+        struct Cfg { float c, pL, pR, rs, ds, tb; };
+        static constexpr Cfg cfg[NUM_VOICES] = {
+            { 3.8f, 1.0f, 0.35f, 0.71f, 0.75f, 0.6f },  // slow, left, more triangle
+            { 6.1f, 0.35f, 1.0f, 0.89f, 1.0f,  0.4f },  // moderate, right
+            { 8.5f, 0.85f, 0.55f, 1.00f, 1.05f, 0.3f },  // center rate, slight left
+            { 5.3f, 0.55f, 0.85f, 1.13f, 0.9f,  0.5f },  // slightly fast, slight right
+            {11.0f, 0.95f, 0.25f, 1.31f, 1.15f, 0.7f },  // fast, hard left, more triangle
+            { 4.5f, 0.25f, 0.95f, 0.79f, 0.65f, 0.55f }, // slow, hard right
+        };
+        for (int i = 0; i < NUM_VOICES; ++i)
+        {
+            voices[i].phase = 0.0f;
+            voices[i].phaseOffset = (juce::MathConstants<float>::twoPi / NUM_VOICES) * i
+                + i * 0.37f; // extra offset to break symmetry
+            voices[i].centerDelay = cfg[i].c;
+            voices[i].panL = cfg[i].pL;
+            voices[i].panR = cfg[i].pR;
+            voices[i].rateScale = cfg[i].rs;
+            voices[i].depthScale = cfg[i].ds;
+            voices[i].triBlend = cfg[i].tb;
+            voices[i].apState[0] = voices[i].apState[1] = 0.0f;
+            driftPhase[i] = i * 0.73f; // prime-ish spacing
+            // Initialize LFO recurrence state: sin(v.phase+offset), cos(v.phase+offset)
+            float initPhase = voices[i].phaseOffset;
+            lfoSin[i] = std::sin(initPhase);
+            lfoCos[i] = std::cos(initPhase);
+            // Initialize drift phase recurrence state
+            float driftPhase1 = driftPhase[i] * 2.32f + static_cast<float>(i) * 2.1f * 2.32f;
+            float driftPhase2 = driftPhase[i] * 5.71f + static_cast<float>(i) * 1.3f * 5.71f;
+            driftSin1[i] = std::sin(driftPhase1);
+            driftCos1[i] = std::cos(driftPhase1);
+            driftSin2[i] = std::sin(driftPhase2);
+            driftCos2[i] = std::cos(driftPhase2);
+        }
+    }
+
+    // Smoothed triangle: spends more time near center, less at extremes
+    static inline float smoothTriangle(float phase)
+    {
+        // Triangle wave from phase, then smooth with cubic
+        float t = std::fmod(phase / juce::MathConstants<float>::twoPi, 1.0f);
+        if (t < 0.0f) t += 1.0f;
+        float tri = (t < 0.5f) ? (4.0f * t - 1.0f) : (3.0f - 4.0f * t);
+        // Cubic smoothing: keeps more time near zero
+        return tri * (1.5f - 0.5f * tri * tri);
+    }
+
+    // 1-pole allpass for pitch transition smoothing
+    static inline float allpassSmooth(float input, float& state, float coeff)
+    {
+        float output = state + coeff * (input - state);
+        state = input + coeff * (output - input);
+        return output;
+    }
+
+    float process(float input, int channel, float rate, float depth,
+        float mix, float feedback)
+    {
+        input = juce::jlimit(-4.0f, 4.0f, input);
+        feedback = std::min(feedback, 0.45f);
+
+        // Pre-filter: gentle HF rolloff on input before writing to delay
+        // Reduces aliasing artifacts from modulated reads of HF content
+        float filtered = inputTone[channel].processLP(input, chorusBlockCoeffs.toneCoeff);
+
+        // Saturated feedback (prevents compound pitch runaway) — 2x oversampled to eliminate aliasing
+        // Without oversampling, harmonics from tanh in the feedback loop fold back and compound
+        // with each iteration, creating metallic artifacts in the chorus tail.
+        float fbIn = feedbackState[channel];
+        float fbOut;
+        oversample.processSampleMono(fbIn, fbOut, [](float in, float& out) {
+            // Soft saturation: tanh(x * 1.2) / 1.2 — gentle, pitch-stable
+            out = std::tanh(in * 1.2f) / 1.2f;
+        });
+        delayBuffer[channel][writePos] = filtered + fbOut * feedback;
+
+        // ── Mix-adaptive depth compression ──
+        // At high mix, less modulation excursion is needed (you hear more of it)
+        // and pitch stability matters more. Pre-computed once per block.
+        // NOTE: modMs is computed per-voice inside the loop below since it depends on lfo, v.depthScale, and drift
+
+        float wetOut = 0.0f;
+        const float voiceGain = 1.0f / std::sqrt(static_cast<float>(NUM_VOICES));
+
+        for (int i = 0; i < NUM_VOICES; ++i)
+        {
+            Voice& v = voices[i];
+
+            // ── Multi-shape LFO: blend sine + smoothed triangle ──
+            // Use phase recurrence to replace 2× std::sin()/voice/sample with 4 multiplies.
+            // sin(phase+d) = sin(phase)cos(d) + cos(phase)sin(d)
+            // cos(phase+d) = cos(phase)cos(d) - sin(phase)sin(d)
+            // sd/cd are computed once per voice per block (in beginBlock, not here).
+            float phase = v.phase + v.phaseOffset;
+            if (channel == 0)
+            {
+                float newSin = lfoSin[i] * chorusBlockCoeffs.voiceCosDelta[i] + lfoCos[i] * chorusBlockCoeffs.voiceSinDelta[i];
+                float newCos = lfoCos[i] * chorusBlockCoeffs.voiceCosDelta[i] - lfoSin[i] * chorusBlockCoeffs.voiceSinDelta[i];
+                lfoSin[i] = newSin;
+                lfoCos[i] = newCos;
+            }
+            float sineVal = lfoSin[i];
+            float triVal = smoothTriangle(phase);
+            float lfo = sineVal * (1.0f - v.triBlend) + triVal * v.triBlend;
+
+            // Slow organic drift (very low frequency, per-voice)
+            // driftDelta pre-computed once per block
+            if (channel == 0)
+            {
+                driftPhase[i] += chorusBlockCoeffs.driftDelta;
+                if (driftPhase[i] > 1.0f) driftPhase[i] -= 1.0f;
+
+                // Drift phase recurrence: replaces 2 std::sin()/voice/sample with 4 multiplies
+                // sin(φ + Δ) = sin(φ)cos(Δ) + cos(φ)sin(Δ)
+                float newDriftSin1 = driftSin1[i] * chorusBlockCoeffs.driftCosDelta1[i] + driftCos1[i] * chorusBlockCoeffs.driftSinDelta1[i];
+                float newDriftCos1 = driftCos1[i] * chorusBlockCoeffs.driftCosDelta1[i] - driftSin1[i] * chorusBlockCoeffs.driftSinDelta1[i];
+                driftSin1[i] = newDriftSin1;
+                driftCos1[i] = newDriftCos1;
+
+                float newDriftSin2 = driftSin2[i] * chorusBlockCoeffs.driftCosDelta2[i] + driftCos2[i] * chorusBlockCoeffs.driftSinDelta2[i];
+                float newDriftCos2 = driftCos2[i] * chorusBlockCoeffs.driftCosDelta2[i] - driftSin2[i] * chorusBlockCoeffs.driftSinDelta2[i];
+                driftSin2[i] = newDriftSin2;
+                driftCos2[i] = newDriftCos2;
+            }
+            // Multi-frequency drift for organic feel — uses precomputed sin/cos
+            float drift = driftSin1[i] * 0.12f + driftSin2[i] * 0.06f;
+
+            // ── Modulation with mix-adaptive depth ──
+            // maxSwingMs pre-computed once per block
+            float modMs = lfo * depth * v.depthScale * chorusBlockCoeffs.maxSwingMs * (1.0f + drift);
+            float delayMs = juce::jlimit(1.0f, 25.0f, v.centerDelay + modMs);
+            float delaySmp = juce::jlimit(1.0f, static_cast<float>(BUFFER_SIZE - 4),
+                static_cast<float>(delayMs * 0.001 * sampleRate));
+
+            float chGain = (channel == 0) ? v.panL : v.panR;
+
+            float readPosF = static_cast<float>(writePos) - delaySmp;
+            if (readPosF < 0.0f) readPosF += static_cast<float>(BUFFER_SIZE);
+
+            float delayed = hermiteInterp(delayBuffer[channel], BUFFER_SIZE, readPosF);
+
+            // ── Per-voice allpass pitch smoothing ──
+            // apCoeff pre-computed once per block
+            float apCoeff = chorusBlockCoeffs.apCoeff;
+            delayed = allpassSmooth(delayed, v.apState[channel], apCoeff);
+
+            wetOut += delayed * voiceGain * chGain;
+
+            // Advance phase (only on first channel to keep L/R coherent)
+            if (channel == 0)
+            {
+                v.phase += rate * v.rateScale * chorusBlockCoeffs.rateToIncrement;
+                if (v.phase > juce::MathConstants<float>::twoPi * 4.0f)
+                    v.phase -= juce::MathConstants<float>::twoPi * 2.0f;
+            }
+        }
+
+        // Feedback from wet sum with reduced gain and saturation
+        feedbackState[channel] = wetOut * 0.55f;
+
+        wetOut = dcBlock[channel].process(wetOut);
+
+        // Output smoothing: tame metallic comb-filter peaks above ~14kHz
+        wetOut = outputSmooth[channel].processLP(wetOut, chorusBlockCoeffs.smoothCoeff);
+
+        // ── Equal-power crossfade with subliminal dry bleed ──
+        // At 100% mix, keep 10% dry as subliminal pitch anchor
+        // This is the key to pitch-stable chorus at high mix settings
+        // Use cached equal-power crossfade gains from beginBlock()
+        // Eliminates 2 std::sin()+std::cos() per sample per channel — computed once per block
+        float dryGain = chorusBlockCoeffs.dryGain;
+        float wetGain = chorusBlockCoeffs.wetGain;
+
+        return input * dryGain + wetOut * wetGain;
+    }
+
+    void advanceWritePos()
+    {
+        writePos = (writePos + 1) % BUFFER_SIZE;
+    }
+};
+
+//==============================================================================
+// PROFESSIONAL DELAY — Tape-style, Hermite interpolation, filtered feedback
+//==============================================================================
+struct EnhancedDelay
+{
+    static constexpr int MAX_DELAY = 192000;
+
+    float buffer[2][MAX_DELAY] = {};
+    int writePos[2] = {};
+    double sampleRate = 44100.0;
+
+    OnePole fbLP[2], fbHP[2];
+    float smoothedDelay[2] = {};
+    DCBlocker dcBlock[2];
+    Oversampling2x oversample;    // 2x oversampling for tape saturation anti-aliasing
+
+    // Block-level coefficient cache — avoids recomputing 2× std::exp() every sample.
+    // Call beginBlock() once per audio block with current damping,
+    // then call processSample() for each sample.
+    struct BlockCoeffs
+    {
+        float fbLPCoeff = 0.0f;
+        float fbHPCoeff = 0.0f;
+        float invSr = 0.0f;
+        float modPhaseInc = 0.0f;
+        float lfoCoeff = 0.0f;
+        float sampleRateK = 0.0f;
+        float maxDelayF = 0.0f;
+        float smooth = 0.9997f;
+
+        // LFO phase recurrence: replaces 2 std::sin() calls/sample with 4 multiplies.
+        // sin(φ + d) = sin(φ)cos(d) + cos(φ)sin(d)
+        // cos(φ + d) = cos(φ)cos(d) - sin(φ)sin(d)
+        // LFO has two frequencies: base and 5.13x base
+        float lfoSin = 0.0f;     // sin(modPhase * lfoCoeff)
+        float lfoCos = 0.0f;     // cos(modPhase * lfoCoeff)
+        float lfo2Sin = 0.0f;    // sin(modPhase * lfoCoeff * 5.13)
+        float lfo2Cos = 0.0f;    // cos(modPhase * lfoCoeff * 5.13)
+        float lfoCosDelta = 0.0f;  // cos(lfoCoeff * modPhaseInc)
+        float lfoSinDelta = 0.0f;  // sin(lfoCoeff * modPhaseInc)
+        float lfo2CosDelta = 0.0f; // cos(lfoCoeff * modPhaseInc * 5.13)
+        float lfo2SinDelta = 0.0f; // sin(lfoCoeff * modPhaseInc * 5.13)
+    } blockCoeffs;
+
+    void prepare(double sr)
+    {
+        sampleRate = sr;
+        oversample.prepare(sr);
+        std::memset(buffer, 0, sizeof(buffer));
+        writePos[0] = writePos[1] = 0;
+        smoothedDelay[0] = smoothedDelay[1] = 0.0f;
+        // Initialize LFO phase recurrence state: sin(0)=0, cos(0)=1
+        blockCoeffs.lfoSin = 0.0f;
+        blockCoeffs.lfoCos = 1.0f;
+        blockCoeffs.lfo2Sin = 0.0f;
+        blockCoeffs.lfo2Cos = 1.0f;
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            fbLP[ch].reset(); fbHP[ch].reset(); dcBlock[ch].reset();
+        }
+    }
+
+    void beginBlock(float damping)
+    {
+        float sr = static_cast<float>(sampleRate);
+        // Feedback high-cut: 2kHz at max damping → 18kHz at min damping
+        blockCoeffs.fbLPCoeff = std::exp(-6.2832f * (2000.0f + (1.0f - damping) * 16000.0f) / sr);
+        // Feedback low-cut: fixed at 80Hz
+        blockCoeffs.fbHPCoeff = std::exp(-6.2832f * 80.0f / sr);
+
+        // Block-level constant cache — eliminates redundant per-sample divides/multiplies.
+        blockCoeffs.invSr = 1.0f / sr;
+        blockCoeffs.modPhaseInc = 0.55f * blockCoeffs.invSr;
+        blockCoeffs.lfoCoeff = 6.2832f * blockCoeffs.invSr;
+        blockCoeffs.sampleRateK = sr * 0.0006f;
+        blockCoeffs.maxDelayF = (float)(MAX_DELAY - 4);
+        blockCoeffs.smooth = 0.9997f;
+
+        // ── LFO phase recurrence: precompute sin/cos of phase increments ──
+        // Replaces 2 std::sin() calls per sample with 4 multiplies.
+        // LFO has two sine components: base frequency and 5.13x base.
+        // sin(φ + Δ) = sin(φ)cos(Δ) + cos(φ)sin(Δ)
+        // cos(φ + Δ) = cos(φ)cos(Δ) - sin(φ)sin(Δ)
+        float delta1 = blockCoeffs.lfoCoeff * blockCoeffs.modPhaseInc;
+        float delta2 = delta1 * 5.13f;
+        blockCoeffs.lfoCosDelta = std::cos(delta1);
+        blockCoeffs.lfoSinDelta = std::sin(delta1);
+        blockCoeffs.lfo2CosDelta = std::cos(delta2);
+        blockCoeffs.lfo2SinDelta = std::sin(delta2);
+    }
+
+    void processSample(float inL, float inR, float& outL, float& outR,
+        float delayTimeMs, float feedback, float mix,
+        float pingPong, float modAmount, float damping)
+    {
+        feedback = std::min(feedback, 0.92f);
+
+        // Tape wow/flutter — phase increment cached per-block
+        // LFO phase recurrence: replaces 2 std::sin() calls/sample with 4 multiplies.
+        // sin(φ + Δ) = sin(φ)cos(Δ) + cos(φ)sin(Δ)
+        // cos(φ + Δ) = cos(φ)cos(Δ) - sin(φ)sin(Δ)
+        float newLfoSin = blockCoeffs.lfoSin * blockCoeffs.lfoCosDelta + blockCoeffs.lfoCos * blockCoeffs.lfoSinDelta;
+        float newLfoCos = blockCoeffs.lfoCos * blockCoeffs.lfoCosDelta - blockCoeffs.lfoSin * blockCoeffs.lfoSinDelta;
+        blockCoeffs.lfoSin = newLfoSin;
+        blockCoeffs.lfoCos = newLfoCos;
+
+        float newLfo2Sin = blockCoeffs.lfo2Sin * blockCoeffs.lfo2CosDelta + blockCoeffs.lfo2Cos * blockCoeffs.lfo2SinDelta;
+        float newLfo2Cos = blockCoeffs.lfo2Cos * blockCoeffs.lfo2CosDelta - blockCoeffs.lfo2Sin * blockCoeffs.lfo2SinDelta;
+        blockCoeffs.lfo2Sin = newLfo2Sin;
+        blockCoeffs.lfo2Cos = newLfo2Cos;
+
+        float lfo = blockCoeffs.lfoSin + blockCoeffs.lfo2Sin * 0.25f;
+        float modSamples = lfo * modAmount * blockCoeffs.sampleRateK;
+
+        float targetSmp = juce::jlimit(1.0f, blockCoeffs.maxDelayF,
+            delayTimeMs * blockCoeffs.invSr);
+
+        smoothedDelay[0] = smoothedDelay[0] * blockCoeffs.smooth + (targetSmp + modSamples) * (1.0f - blockCoeffs.smooth);
+        smoothedDelay[1] = smoothedDelay[1] * blockCoeffs.smooth +
+            (targetSmp + targetSmp * 0.027f + modSamples * 0.65f) * (1.0f - blockCoeffs.smooth);
+
+        for (int ch = 0; ch < 2; ++ch)
+            smoothedDelay[ch] = juce::jlimit(1.0f, blockCoeffs.maxDelayF, smoothedDelay[ch]);
+
+        // Read with Hermite interpolation
+        float readL = static_cast<float>(writePos[0]) - smoothedDelay[0];
+        if (readL < 0.0f) readL += static_cast<float>(MAX_DELAY);
+        float delayedL = hermiteInterp(buffer[0], MAX_DELAY, readL);
+
+        float readR = static_cast<float>(writePos[1]) - smoothedDelay[1];
+        if (readR < 0.0f) readR += static_cast<float>(MAX_DELAY);
+        float delayedR = hermiteInterp(buffer[1], MAX_DELAY, readR);
+
+        // Feedback with ping-pong cross-feed
+        float fbL = delayedL * (1.0f - pingPong) + delayedR * pingPong;
+        float fbR = delayedR * (1.0f - pingPong) + delayedL * pingPong;
+
+        // Soft tape saturation — 2x oversampled to eliminate aliasing in feedback loop
+        // Without oversampling, harmonics from tanh-style clipping fold back and compound
+        // with each feedback iteration, creating metallic artifacts in the tail.
+        oversample.processSample(fbL, fbR, fbL, fbR, [](float inL, float inR, float& outL, float& outR) {
+            auto tapeSat = [](float x) -> float { return x / (1.0f + std::abs(x) * 0.4f); };
+            outL = tapeSat(inL);
+            outR = tapeSat(inR);
+        });
+
+        // High-cut on feedback - use cached coefficient
+        fbL = fbLP[0].processLP(fbL, blockCoeffs.fbLPCoeff);
+        fbR = fbLP[1].processLP(fbR, blockCoeffs.fbLPCoeff);
+
+        // Low-cut on feedback - use cached coefficient
+        fbL = fbHP[0].processHP(fbL, blockCoeffs.fbHPCoeff);
+        fbR = fbHP[1].processHP(fbR, blockCoeffs.fbHPCoeff);
+
+        // Write to buffers
+        buffer[0][writePos[0]] = juce::jlimit(-4.0f, 4.0f, inL + fbL * feedback);
+        buffer[1][writePos[1]] = juce::jlimit(-4.0f, 4.0f, inR + fbR * feedback);
+
+        if (++writePos[0] >= MAX_DELAY) writePos[0] = 0;
+        if (++writePos[1] >= MAX_DELAY) writePos[1] = 0;
+
+        outL = inL * (1.0f - mix) + delayedL * mix;
+        outR = inR * (1.0f - mix) + delayedR * mix;
+    }
+};
+
+//==============================================================================
+// PROFESSIONAL REVERB — Freeverb-inspired, stable at all parameter values
+// Proper gain staging, early reflections, correct DC blocking
+//==============================================================================
+struct UpgradedReverb
+{
+    static constexpr int NUM_COMBS = 8;
+    static constexpr int NUM_AP = 4;
+
+    struct CombFilter
+    {
+        static constexpr int MAX_SIZE = 8192;
+        float buf[MAX_SIZE] = {};
+        int size = 1, pos = 0;
+        float filterState = 0.0f;
+        float damp1 = 0.0f, damp2 = 1.0f, fb = 0.0f;
+
+        void setSize(int s) { size = juce::jlimit(1, MAX_SIZE - 1, s); }
+        void setDamp(float d) { damp1 = d; damp2 = 1.0f - d; }
+        void setFeedback(float f) { fb = f; }
+        void mute() { std::memset(buf, 0, sizeof(buf)); filterState = 0.0f; pos = 0; }
+
+        // modOffset: sub-sample read offset for reverb tail modulation.
+        // Positive = longer delay (reads older data), negative = shorter.
+        // Hermite cubic interpolation (from hermiteInterp utility) eliminates
+        // modulation artifacts and aliasing in the reverb tail that linear
+        // interpolation introduces when reading at fractional sample positions.
+        inline float process(float input, float modOffset = 0.0f)
+        {
+            float readF = static_cast<float>(pos) - modOffset;
+            // Wrap into [0, size)
+            if (readF < 0.0f) readF += static_cast<float>(size);
+            else if (readF >= static_cast<float>(size)) readF -= static_cast<float>(size);
+
+            // Use Hermite cubic interpolation for artifact-free modulated reads
+            float output = hermiteInterp(buf, size, readF);
+
+            filterState = output * damp2 + filterState * damp1;
+            buf[pos] = input + filterState * fb;
+            if (++pos >= size) pos = 0;
+            return output;
+        }
+    };
+
+    struct AllpassDiffuser
+    {
+        static constexpr int MAX_SIZE = 4096;
+        float buf[MAX_SIZE] = {};
+        int size = 1, pos = 0;
+        float fb = 0.5f;
+        float modOffset = 0.0f;  // Sub-sample modulation offset for organic diffusion
+
+        void setSize(int s) { size = juce::jlimit(1, MAX_SIZE - 1, s); }
+        void setFeedback(float f) { fb = f; }
+        void setModOffset(float m) { modOffset = m; }
+        void mute() { std::memset(buf, 0, sizeof(buf)); pos = 0; }
+
+        // modOffset: sub-sample read offset for allpass modulation.
+        // Positive = longer delay (reads older data), negative = shorter.
+        // Hermite cubic interpolation eliminates modulation artifacts and aliasing.
+        inline float process(float input, float modOffset_ = 0.0f)
+        {
+            float readF = static_cast<float>(pos) - modOffset_;
+            // Wrap into [0, size)
+            if (readF < 0.0f) readF += static_cast<float>(size);
+            else if (readF >= static_cast<float>(size)) readF -= static_cast<float>(size);
+
+            // Use Hermite cubic interpolation for artifact-free modulated reads
+            float delayed = hermiteInterp(buf, size, readF);
+
+            float output = -input + delayed;
+            buf[pos] = input + delayed * fb;
+            if (++pos >= size) pos = 0;
+            return output;
+        }
+    };
+
+    struct EarlyReflections
+    {
+        static constexpr int MAX_SIZE = 9600;
+        float buf[MAX_SIZE] = {};
+        int pos = 0;
+        int tapDelay[8] = {};
+        float tapGain[8] = {};
+
+        void prepare(double sr)
+        {
+            const float ms[8] = { 2.3f, 5.8f, 11.2f, 17.5f, 23.1f, 31.7f, 41.3f, 53.0f };
+            const float g[8] = { 0.85f, 0.72f, 0.60f, 0.50f, 0.40f, 0.32f, 0.25f, 0.18f };
+            for (int i = 0; i < 8; ++i)
+            {
+                tapDelay[i] = juce::jlimit(1, MAX_SIZE - 1, (int)(ms[i] * 0.001f * sr));
+                tapGain[i] = g[i];
+            }
+        }
+        void mute() { std::memset(buf, 0, sizeof(buf)); pos = 0; }
+
+        float process(float input)
+        {
+            buf[pos] = input;
+            float output = 0.0f;
+            for (int i = 0; i < 8; ++i)
+            {
+                int rp = pos - tapDelay[i];
+                if (rp < 0) rp += MAX_SIZE;
+                output += buf[rp] * tapGain[i];
+            }
+            if (++pos >= MAX_SIZE) pos = 0;
+            return output;
+        }
+    };
+
+    CombFilter combL[NUM_COMBS], combR[NUM_COMBS];
+    AllpassDiffuser apL[NUM_AP], apR[NUM_AP];
+    EarlyReflections earlyL, earlyR;
+
+    static constexpr int PREDELAY_MAX = 9600;
+    float preDelayBuf[2][PREDELAY_MAX] = {};
+    int preDelayPos = 0;
+
+    DCBlocker dcL, dcR;
+    // Master modulation LFO state — using sin/cos recurrence instead of phase + sin/cos per sample
+    float modSin = 0.0f;  // sin(modPhase * twoPi)
+    float modCos = 1.0f;  // cos(modPhase * twoPi)
+    double sampleRate = 44100.0;
+
+    // Block-level coefficient cache — avoids recomputing feedback/damp per sample
+    // and hoists comb modulation calculations out of the hot loop.
+    struct BlockCoeffs
+    {
+        float fb = 0.0f;
+        float damp = 0.0f;
+        float damp1 = 0.0f;
+        float damp2 = 0.0f;
+        float modDepth = 0.0f;
+        float inputGain = 0.045f;
+        float wetGain = 0.0f;
+        float apFb = 0.6f;      // Allpass feedback: scales with room size
+        float modPhaseIncrement = 0.0f;  // 0.37f / sr — cached for comb modulation LFO
+        // LFO phase recurrence: replaces 8 std::sin()/sample with 2 + 16 multiplies.
+        // sin(f + di) = sin(f)*cos(di) + cos(f)*sin(di) for each comb's phase offset di.
+        // Precomputed once per block in beginBlock().
+        float combCosDelta[NUM_COMBS] = {};  // cos(twoPi * i * 0.1234567f) per comb
+        float combSinDelta[NUM_COMBS] = {};  // sin(twoPi * i * 0.1234567f) per comb
+
+        // Master modulation LFO phase recurrence — replaces 2 std::sin()+std::cos()/sample
+        // with 4 multiplies. The master LFO phase advances per sample at rate 0.37 Hz.
+        // sin(φ + Δ) = sin(φ)cos(Δ) + cos(φ)sin(Δ)
+        // cos(φ + Δ) = cos(φ)cos(Δ) - sin(φ)sin(Δ)
+        // Precomputed sin/cos of phase increment Δ = 0.37 * twoPi / sr once per block.
+        float modLfoCosDelta = 0.0f;  // cos(modPhaseIncrement * twoPi)
+        float modLfoSinDelta = 0.0f;  // sin(modPhaseIncrement * twoPi)
+    } blockCoeffs;
+
+    static constexpr int baseCombL[NUM_COMBS] = { 1557, 1617, 1491, 1422, 1277, 1356, 1188, 1116 };
+    static constexpr int baseCombR[NUM_COMBS] = { 1617, 1557, 1422, 1491, 1356, 1277, 1116, 1188 };
+    static constexpr int baseAP[NUM_AP] = { 556, 441, 341, 225 };
+
+    void beginBlock(float roomSize, float damping, float wetMix, float reverbMod)
+    {
+        // Room size → feedback: 0.70 to 0.97
+        blockCoeffs.fb = 0.70f + roomSize * 0.27f;
+        // Base damping floor: always absorb some HF, even at 0% damping knob
+        blockCoeffs.damp = 0.2f + damping * 0.5f;
+        blockCoeffs.damp1 = blockCoeffs.damp;
+        blockCoeffs.damp2 = 1.0f - blockCoeffs.damp;
+        // Modulation depth: 0–1.5 samples of read offset
+        blockCoeffs.modDepth = reverbMod * 1.5f;
+        // Wet gain (matched to higher inputGain)
+        blockCoeffs.wetGain = wetMix * 1.5f;
+
+        // ── Allpass feedback scaling with room size ──
+        // Smaller rooms: less allpass diffusion (0.50) → tighter, less smeared
+        // Larger rooms: more allpass diffusion (0.70) → richer, denser tail
+        // This makes the Size knob more musically responsive across its range.
+        // Previously hardcoded at 0.6 — only changed comb feedback with size,
+        // limiting spatial character variation.
+        blockCoeffs.apFb = 0.50f + roomSize * 0.20f;
+        // Cache comb modulation LFO step — replaces per-sample 0.37f/sr divide
+        blockCoeffs.modPhaseIncrement = 0.37f / static_cast<float>(sampleRate);
+
+        // ── Precompute master modulation LFO phase recurrence constants ──
+        // Replaces 2 std::sin()+std::cos() per sample with 4 multiplies.
+        // modPhaseIncrement is the phase advance per sample (0.37 Hz / sr).
+        // Δ = modPhaseIncrement * twoPi (the full phase increment in radians).
+        float modLfoDelta = blockCoeffs.modPhaseIncrement * juce::MathConstants<float>::twoPi;
+        blockCoeffs.modLfoCosDelta = std::cos(modLfoDelta);
+        blockCoeffs.modLfoSinDelta = std::sin(modLfoDelta);
+
+        // ── Precompute comb LFO phase recurrence constants ──
+        // Replaces 8 std::sin() calls per sample with 2 + 16 multiplies.
+        // Each comb has a fixed phase offset: twoPi * i * 0.1234567f.
+        // Using sin(φ + Δi) = sin(φ)cos(Δi) + cos(φ)sin(Δi).
+        for (int i = 0; i < NUM_COMBS; ++i)
+        {
+            float di = juce::MathConstants<float>::twoPi * static_cast<float>(i) * 0.1234567f;
+            blockCoeffs.combSinDelta[i] = std::sin(di);
+            blockCoeffs.combCosDelta[i] = std::cos(di);
+        }
+
+        // ── Apply coefficients to comb filters once per block ──
+        // Hoisted from per-sample processSample(): feedback and damping
+        // don't change within a block, so setting them every sample was
+        // 4 assignments × 8 combs × 2 channels = 64 redundant writes/sample.
+        for (int i = 0; i < NUM_COMBS; ++i)
+        {
+            combL[i].setFeedback(blockCoeffs.fb); combR[i].setFeedback(blockCoeffs.fb);
+            combL[i].setDamp(blockCoeffs.damp1);  combR[i].setDamp(blockCoeffs.damp1);
+        }
+
+        // ── Apply allpass feedback once per block ──
+        // Previously set only in prepare() with hardcoded 0.6f.
+        // Now scales dynamically with room size for richer spatial variation.
+        for (int i = 0; i < NUM_AP; ++i)
+        {
+            apL[i].setFeedback(blockCoeffs.apFb);
+            apR[i].setFeedback(blockCoeffs.apFb);
+        }
+    }
+
+    void prepare(double sr)
+    {
+        sampleRate = sr;
+        double ratio = sr / 44100.0;
+
+        for (int i = 0; i < NUM_COMBS; ++i)
+        {
+            combL[i].setSize((int)(baseCombL[i] * ratio));
+            combR[i].setSize((int)(baseCombR[i] * ratio));
+            combL[i].mute(); combR[i].mute();
+        }
+        for (int i = 0; i < NUM_AP; ++i)
+        {
+            apL[i].setSize((int)(baseAP[i] * ratio));
+            apR[i].setSize((int)(baseAP[i] * ratio));
+            // Initial allpass feedback set to mid-range default; beginBlock()
+            // will update dynamically based on room size each audio block.
+            apL[i].setFeedback(0.6f); apR[i].setFeedback(0.6f);
+            apL[i].mute(); apR[i].mute();
+        }
+        earlyL.prepare(sr); earlyR.prepare(sr);
+        earlyL.mute(); earlyR.mute();
+        std::memset(preDelayBuf, 0, sizeof(preDelayBuf));
+        preDelayPos = 0;
+        // Initialize master modulation LFO state: sin(0)=0, cos(0)=1
+        modSin = 0.0f;
+        modCos = 1.0f;
+        dcL.reset(); dcR.reset();
+    }
+
+    void processSample(float inL, float inR, float& outL, float& outR,
+        float roomSize, float damping, float wetMix,
+        float width, float preDelayMs, float reverbMod)
+    {
+        inL = juce::jlimit(-4.0f, 4.0f, inL);
+        inR = juce::jlimit(-4.0f, 4.0f, inR);
+
+        // Comb feedback/damp and allpass feedback are set once per block
+        // in beginBlock() — no per-sample redundancy.
+
+        // ── Comb modulation LFO ──
+        // Slow sinusoidal modulation of comb read positions creates diffusion
+        // and prevents metallic ringing in the reverb tail.
+        // Rate: ~0.37 Hz (one cycle every ~2.7s). Depth: 0–1.5 samples.
+        // Per-comb phase offsets decorrelate the modulation for stereo width.
+        // LFO phase recurrence: replaces 2 std::sin()+std::cos()/sample with 4 multiplies.
+        // sin(φ + Δ) = sin(φ)cos(Δ) + cos(φ)sin(Δ)
+        // cos(φ + Δ) = cos(φ)cos(Δ) - sin(φ)sin(Δ)
+        float newSinMod = modSin * blockCoeffs.modLfoCosDelta + modCos * blockCoeffs.modLfoSinDelta;
+        float newCosMod = modCos * blockCoeffs.modLfoCosDelta - modSin * blockCoeffs.modLfoSinDelta;
+        modSin = newSinMod;
+        modCos = newCosMod;
+
+        float modDepth = blockCoeffs.modDepth;  // cached from beginBlock
+        int pdSmp = juce::jlimit(0, PREDELAY_MAX - 1,
+            (int)(preDelayMs * 0.001f * sampleRate));
+        preDelayBuf[0][preDelayPos] = inL;
+        preDelayBuf[1][preDelayPos] = inR;
+        int pdRead = preDelayPos - pdSmp;
+        if (pdRead < 0) pdRead += PREDELAY_MAX;
+        float pdL = preDelayBuf[0][pdRead];
+        float pdR = preDelayBuf[1][pdRead];
+        if (++preDelayPos >= PREDELAY_MAX) preDelayPos = 0;
+
+        // Early reflections
+        float erL = earlyL.process(pdL);
+        float erR = earlyR.process(pdR);
+
+        // Late reverb: parallel combs → series allpass
+        // Higher input gain + lower output gain = same level, less artifact amplification
+        float combInL = pdL * blockCoeffs.inputGain;
+        float combInR = pdR * blockCoeffs.inputGain;
+        float lateL = 0.0f, lateR = 0.0f;
+        // ── LFO phase recurrence for comb modulation ──
+        // Replaces 8 std::sin() calls per sample with 2 sin() + 16 multiplies.
+        // sin(φ + Δi) = sin(φ)cos(Δi) + cos(φ)sin(Δi)
+        // Precomputed combSinDelta[i]=sin(Δi), combCosDelta[i]=cos(Δi) in beginBlock().
+        float twoPiPhase = modPhase * juce::MathConstants<float>::twoPi;
+        float sinMod = std::sin(twoPiPhase);
+        float cosMod = std::cos(twoPiPhase);
+        for (int i = 0; i < NUM_COMBS; ++i)
+        {
+            // sin(φ + Δi) = sin(φ)cos(Δi) + cos(φ)sin(Δi)
+            float modOff = (sinMod * blockCoeffs.combCosDelta[i] + cosMod * blockCoeffs.combSinDelta[i]) * modDepth;
+            lateL += combL[i].process(combInL, modOff);
+            lateR += combR[i].process(combInR, -modOff);  // inverted for stereo decorrelation
+        }
+        for (int i = 0; i < NUM_AP; ++i)
+        {
+            // Allpass modulation: applies sub-sample read offset for organic diffusion
+            // Each allpass gets a different phase offset to decorrelate left/right
+            float apMod = modDepth * (0.5f + static_cast<float>(i) * 0.12f);  // scaled per allpass
+            lateL = apL[i].process(lateL, apMod);
+            lateR = apR[i].process(lateR, -apMod);  // inverted for stereo decorrelation
+        }
+
+        // Combine early + late
+        float revL = erL * 0.25f + lateL;
+        float revR = erR * 0.25f + lateR;
+
+        revL = dcL.process(revL);
+        revR = dcR.process(revR);
+
+        // Stereo width
+        float mid = (revL + revR) * 0.5f;
+        float side = (revL - revR) * 0.5f * width;
+        revL = mid + side;
+        revR = mid - side;
+
+        // Wet/dry mix (matched to higher inputGain) - use cached wetGain
+        outL = inL * (1.0f - wetMix) + revL * blockCoeffs.wetGain;
+        outR = inR * (1.0f - wetMix) + revR * blockCoeffs.wetGain;
+
+        outL = juce::jlimit(-4.0f, 4.0f, outL);
+        outR = juce::jlimit(-4.0f, 4.0f, outR);
+    }
+};
+
+//==============================================================================
+// MASTER OUTPUT STAGE — Analog warmth and professional polish
+// Subtle HF shelf rolloff, LF body boost, push-pull saturation (asymmetrical
+// even-harmonic generation), and final smoothing.
+// 2x oversampling on push-pull saturation for zero aliasing.
+// Removes the "digital" or "tinny" quality from the cumulative signal chain.
+//==============================================================================
+struct MasterOutputStage
+{
+    OnePole hfShelfL, hfShelfR;   // HF rolloff for analog warmth
+    OnePole lfShelfL, lfShelfR;   // LF boost for body
+    OnePole smoothL, smoothR;     // Final anti-harsh smoothing
+    Oversampling2x oversample;    // 2x oversampling for push-pull saturation
+    double sampleRate = 44100.0;
+
+    // Block-level coefficient cache — avoids recomputing 3× std::exp() every sample.
+    // Call beginBlock() once per audio block, then process() for each sample.
+    struct BlockCoeffs
+    {
+        float hfCoeff = 0.0f;
+        float lfCoeff = 0.0f;
+        float smCoeff = 0.0f;
+    } blockCoeffs;
+
+    void prepare(double sr)
+    {
+        sampleRate = sr;
+        oversample.prepare(sr);
+        hfShelfL.reset(); hfShelfR.reset();
+        lfShelfL.reset(); lfShelfR.reset();
+        smoothL.reset();  smoothR.reset();
+        beginBlock(); // Initialize block coefficients at default sample rate
+    }
+
+    // Block-level coefficient cache — avoids recomputing 3× std::exp() every sample.
+    // Call once per audio block (unconditionally, since master output always runs).
+    void beginBlock()
+    {
+        float sr = static_cast<float>(sampleRate);
+        // HF shelf: ~12kHz corner, gentle analog-style rolloff
+        blockCoeffs.hfCoeff = std::exp(-6.2832f * 12000.0f / sr);
+        // LF shelf: ~200Hz corner, subtle body boost
+        blockCoeffs.lfCoeff = std::exp(-6.2832f * 200.0f / sr);
+        // Final smoothing: ~17kHz ultra-gentle anti-harsh
+        blockCoeffs.smCoeff = std::exp(-6.2832f * 17000.0f / sr);
+    }
+
+    void reset()
+    {
+        hfShelfL.reset(); hfShelfR.reset();
+        lfShelfL.reset(); lfShelfR.reset();
+        smoothL.reset();  smoothR.reset();
+        oversample.reset();
+    }
+
+    // Push-pull (asymmetrical) saturation — generates even harmonics (2nd, 4th)
+    // for warmth and "tube-like" character. Unlike symmetric tanh() which only
+    // produces odd harmonics, push-pull adds even-order content that our ears
+    // perceive as musical richness and body.
+    static inline float pushPullSaturate(float x, float drive)
+    {
+        // Asymmetric waveshaping: positive and negative halves shaped differently
+        // This creates even harmonics (2nd, 4th) in addition to odd
+        // Drive controls intensity: 0 = clean, 1 = moderate coloration
+        if (x >= 0.0f)
+        {
+            // Positive half: softer knee, more 2nd harmonic
+            float d = x * drive;
+            return std::tanh(d * (1.0f + d * 0.15f));
+        }
+        else
+        {
+            // Negative half: harder knee, different harmonic balance
+            float d = -x * drive;
+            return -std::tanh(d * (1.0f + d * 0.25f));
+        }
+    }
+
+    void process(float& L, float& R, float drive = 1.8f)
+    {
+        // 1. HF shelf: subtract a fraction of content above 12kHz (~-1.5dB)
+        float hfL = L - hfShelfL.processLP(L, blockCoeffs.hfCoeff);
+        float hfR = R - hfShelfR.processLP(R, blockCoeffs.hfCoeff);
+        L -= hfL * 0.16f;  // ~-1.5dB above 12kHz
+        R -= hfR * 0.16f;
+
+        // 2. LF body: add a fraction of content below 200Hz (~+0.5dB)
+        float lfL = lfShelfL.processLP(L, blockCoeffs.lfCoeff);
+        float lfR = lfShelfR.processLP(R, blockCoeffs.lfCoeff);
+        L += lfL * 0.06f;  // ~+0.5dB below 200Hz
+        R += lfR * 0.06f;
+
+        // 3. Push-pull saturation — process at 2x sample rate with anti-aliasing
+        // This eliminates aliasing from the asymmetrical tanh waveshaping
+        oversample.processSample(L, R, L, R, [this, drive](float inL, float inR, float& outL, float& outR) {
+            outL = pushPullSaturate(inL, drive);
+            outR = pushPullSaturate(inR, drive);
+        });
+
+        // 4. Final ultra-gentle smoothing at ~17kHz to catch any remaining digital edge
+        L = smoothL.processLP(L, blockCoeffs.smCoeff);
+        R = smoothR.processLP(R, blockCoeffs.smCoeff);
+
+        // Safety clamp
+        L = juce::jlimit(-4.0f, 4.0f, L);
+        R = juce::jlimit(-4.0f, 4.0f, R);
+    }
+};
+
+//==============================================================================
+class CorvusFXAudioProcessor : public juce::AudioProcessor,
+    public juce::AudioProcessorValueTreeState::Listener
+{
+public:
+    CorvusFXAudioProcessor();
+    ~CorvusFXAudioProcessor() override;
+
+    void prepareToPlay(double sampleRate, int samplesPerBlock) override;
+    void releaseResources() override;
+#ifndef JucePlugin_PreferredChannelConfigurations
+    bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
+#endif
+    void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    juce::AudioProcessorEditor* createEditor() override;
+    bool hasEditor() const override;
+    const juce::String getName() const override;
+    bool acceptsMidi() const override;
+    bool producesMidi() const override;
+    bool isMidiEffect() const override;
+    double getTailLengthSeconds() const override;
+    int getNumPrograms() override;
+    int getCurrentProgram() override;
+    void setCurrentProgram(int index) override;
+    const juce::String getProgramName(int index) override;
+    void changeProgramName(int index, const juce::String& newName) override;
+    void getStateInformation(juce::MemoryBlock& destData) override;
+    void setStateInformation(const void* data, int sizeInBytes) override;
+    juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    juce::AudioProcessorValueTreeState apvts;
+    void parameterChanged(const juce::String& parameterID, float newValue) override;
+    void loadPreset(int index);
+
+private:
+    EnhancedChorus chorus;
+    EnhancedDelay delay;
+    ProfessionalDistortion distortion;
+    UpgradedReverb upgradedReverb;
+    MasterOutputStage masterOutput;
+    juce::AudioBuffer<float> dryBuffer;
+    double lastSampleRate = 44100.0;
+
+    // ── Parameter smoothing ──
+    // Smoothed parameter values eliminate zipper noise from knob movement
+    // and host automation. Without smoothing, atomic parameter reads
+    // jump instantly between blocks, creating audible clicks/clicks.
+    // 20ms smoothing time: fast enough to feel responsive, slow enough
+    // to remove all artifacts. Standard for professional VST3 plugins.
+    //
+    // Usage: setTargetValue() in processBlock header, then getNextValue()
+    // per sample for smooth interpolation across the block.
+    juce::LinearSmoothedValue<float> smoothOverall;
+    juce::LinearSmoothedValue<float> smoothFatness;
+    juce::LinearSmoothedValue<float> smoothChorusDepth;
+    juce::LinearSmoothedValue<float> smoothChorusRate;
+    juce::LinearSmoothedValue<float> smoothChorusMix;
+    juce::LinearSmoothedValue<float> smoothDelayTime;
+    juce::LinearSmoothedValue<float> smoothDelayFeedback;
+    juce::LinearSmoothedValue<float> smoothDelayMix;
+    juce::LinearSmoothedValue<float> smoothDelayDamping;
+    juce::LinearSmoothedValue<float> smoothDelayMod;
+    juce::LinearSmoothedValue<float> smoothReverbSize;
+    juce::LinearSmoothedValue<float> smoothReverbDamping;
+    juce::LinearSmoothedValue<float> smoothReverbMix;
+    juce::LinearSmoothedValue<float> smoothReverbMod;
+    juce::LinearSmoothedValue<float> smoothMasterDrive;
+
+    // ── Level Meter State ──
+    // Smoothed peak/RMS meters for input and output.
+    // Updated in processBlock (audio thread), read by editor (message thread)
+    // via atomic floats. No locks needed — relaxed atomics are sufficient
+    // for meter display (approximate values are fine).
+    struct LevelMeters
+    {
+        std::atomic<float> inPeakL  { 0.0f }, inPeakR  { 0.0f };
+        std::atomic<float> inRmsL   { 0.0f }, inRmsR   { 0.0f };
+        std::atomic<float> outPeakL { 0.0f }, outPeakR { 0.0f };
+        std::atomic<float> outRmsL  { 0.0f }, outRmsR  { 0.0f };
+    } levelMeters;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CorvusFXAudioProcessor)
+};
+
+using DrippyFXAudioProcessor = CorvusFXAudioProcessor;

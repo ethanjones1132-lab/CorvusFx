@@ -22,9 +22,9 @@ This file gives autonomous AI agents the minimal project-specific context needed
 
 ## Source of Truth
 
-**Source code lives OUTSIDE the repo at:**
+**Authoritative JUCE C++ sources are tracked in this repo:**
 ```
-C:\Users\ethan\Downloads\DrippyFX_v1.0.0_Complete\DrippyFX\
+C:\Projects\Corvus VST\source\DrippyFX\
 ```
 
 | File | Purpose |
@@ -35,22 +35,29 @@ C:\Users\ethan\Downloads\DrippyFX_v1.0.0_Complete\DrippyFX\
 | `PluginEditor.cpp` | Editor layout — all knob setup, attachments, 2x2 grid layout |
 | `CMakeLists.txt` | CMake build config (VST3 + AU + Standalone) |
 
-**Repo workdir (binaries only):** `C:\Projects\Corvus VST`
+See `source/DrippyFX/README.md` for CMake build steps.
+
+**Local MSBuild / Projucer tree (sync target, not git SoT):**
+`C:\Users\ethan\Downloads\DrippyFX_v1.0.0_Complete\DrippyFX\` — copy from `source/DrippyFX/` before MSBuild when using the Downloads VS solution.
+
+**Repo binaries & artifacts:** `C:\Projects\Corvus VST`
 - `drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3` — deployed VST3 binary
-- `.obj`, `.pdb`, `.exp`, `.lib`, `.iobj` — VS build artifacts (DO NOT DELETE)
+- `DrippyMk2/NewProject.vst3/Contents/x86_64-win/DrippyMk2.vst3` — secondary deployed binary
+- `.obj`, `.pdb`, `.exp`, `.lib`, `.iobj` under `drippy/` / `DrippyMk2/` — VS build artifacts (DO NOT DELETE)
 
 ---
 
 ## Absolute Rules for Agents
 
-### 1. Source lives outside the repo — ALWAYS edit files in Downloads, NOT in the repo workdir
+### 1. Edit in-repo source first; every quality commit must include source + binary
 ```bash
-# Correct source path:
-C:\Users\ethan\Downloads\DrippyFX_v1.0.0_Complete\DrippyFX\PluginProcessor.cpp
+# Correct (git-tracked SoT):
+C:\Projects\Corvus VST\source\DrippyFX\PluginProcessor.cpp
 
-# Wrong (repo only has binaries):
-C:\Projects\Corvus VST\...
+# MSBuild: sync the same files into Downloads DrippyFX/ before building, then deploy .vst3
 ```
+
+**Commit rule:** `quality(scope): ...` commits that change `DrippyMk1.vst3` (or `DrippyMk2.vst3`) **must** include the matching `.cpp`/`.h` diffs under `source/DrippyFX/`. Binary-only quality commits are not allowed going forward.
 
 ### 2. One improvement per run — pick the highest-impact item and complete it
 Don't scatter-gun fixes. Follow the priority order in PRIORITIES.md.
@@ -122,7 +129,7 @@ cd "C:/Users/ethan/Downloads/DrippyFX_v1.0.0_Complete/DrippyFX"
 ## Quality Improvement Workflow (Per Cron Run)
 
 ### 1. Source Analysis
-Review `C:\Users\ethan\Downloads\DrippyFX_v1.0.0_Complete\DrippyFX\` for:
+Review `C:\Projects\Corvus VST\source\DrippyFX\` for:
 - **DSP quality**: Algorithm improvements (saturation curves, filter topologies, delay interpolation)
 - **Unused parameters**: `/*unused*/`, commented-out params, received-but-never-referenced — these are dead UI controls
 - **Parameter mapping**: Knob ranges musically useful? Log/exp scaling needed?
@@ -212,7 +219,7 @@ Pick **single highest-impact** improvement:
 - **Jucer project:** `C:\Users\ethan\Downloads\DrippyFX_v1.0.0_Complete\NewProject\NewProject.jucer`
 - **VS Solution:** `...NewProject\Builds\VisualStudio2026\NewProject.sln`
 - **CMake:** `C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe`
-- **Repo workdir:** `C:\Projects\Corvus VST` (binaries only)
+- **Repo workdir:** `C:\Projects\Corvus VST` (sources under `source/DrippyFX/`, binaries under `drippy/` / `DrippyMk2/`)
 - **Branch:** master
 - **Cron:** `corvus-cron` skill (3×/day 9:45am/1:45pm/5:45pm + overnight 6:30am)
 - **Model:** `opencode-go/xiaomi/mimo-v2.5-pro`

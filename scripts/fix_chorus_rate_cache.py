@@ -9,7 +9,7 @@ Safe: this is purely a performance improvement. The arithmetic is identical.
 """
 import sys
 
-SRC = "C:/Users/ethan/Downloads/DrippyFX_v1.0.0_Complete/DrippyFX/PluginProcessor.h"
+SRC = "C:/Projects/Corvus VST/source/DrippyFX/PluginProcessor.h"
 
 with open(SRC, 'rb') as f:
     content = f.read().decode('utf-8')

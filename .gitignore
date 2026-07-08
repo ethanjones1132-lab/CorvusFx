@@ -40,3 +40,10 @@ cmake-build-*/
 # ── JUCE / Projucer (may create temp files) ────────────────────
 *.jucer.user
 JUCE/modules/
+source/DrippyFX/build/
+*.bak.*
+*.bak
+* - Copy.*
+
+# ── Agent / scratch (do not version) ─────────────────────────────
+source/DrippyFX/.hermes/

@@ -341,6 +341,8 @@ A: Open an [issue](https://github.com/ethanjones1132-lab/CorvusFx/issues) or sta
 
 Contributions are welcome! Whether it's bug fixes, DSP improvements, new presets, or documentation — every bit helps.
 
+**Source layout:** Edit JUCE code under `source/DrippyFX/`. Shipped Windows binaries live at `drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3`. Any commit that updates the `.vst3` for a code-level fix must include the matching `source/DrippyFX/` diffs (see `docs/AGENTS.md`).
+
 1. Fork the repo
 2. Create a feature branch (`git checkout -b feature/amazing-idea`)
 3. Commit your changes (`git commit -m 'feat: add amazing idea'`)
