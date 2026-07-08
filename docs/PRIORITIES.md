@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-07 (evening pass — professional dB scale markings on level meters)
+Last updated: 2026-07-08 (overnight pass — cached chorus dry/wet crossfade gains)
 Working copy: `C:\\\\Projects\\\\Corvus VST`
 Source root: `C:\\\\Users\\\\ethan\\\\Downloads\\\\DrippyFX_v1.0.0_Complete\\\\DrippyFX\\\\`
 
@@ -40,6 +40,7 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 | 2026-07-07 | `66f4cc2` | EnhancedChorus | **LFO phase recurrence for drift modulation** — replaces 2 std::sin()/voice/sample (12 total/sample for 6 voices × 2 frequencies) with 4 multiplies per voice per sample via precomputed sin/cos deltas in beginBlock(). Extends the established LFO phase recurrence pattern to the slow organic drift LFO (frequencies 2.32x and 5.71x base driftDelta). Binary MD5: ca2f5535 → 754ec91c. |
 | 2026-07-07 | `0a93199` | EnhancedDelay | **LFO phase recurrence for wow/flutter** — replaces 2 std::sin()/sample with 4 multiplies via precomputed sin/cos deltas in beginBlock(). Same identity as Chorus/Reverb LFO optimization (c7853f2, c23e1c3). Binary MD5: 754ec91c → 24b31d41. |
 | 2026-07-07 | *(this pass)* | UI/LevelMeter | **Professional dB scale markings on level meters** — adds industry-standard dB tick marks and labels (-6, -12, -18, -24, -30, -40, -50, -60 dB) with 0dB reference line aligned to the meter's 0dB position. Brings metering to professional plugin standard. Binary MD5: 24b31d41 → 44bc7218. |
+| 2026-07-08 | `d885a33` | EnhancedChorus | **Cache dry/wet crossfade gains in beginBlock()** — moves equal-power dryGain/wetGain from per-sample process() to ChorusBlockCoeffs. Eliminates 2 std::sin() + 2 std::cos() per sample per stereo channel. Chorus hot path now has zero per-sample transcendental calls. Binary MD5: 44bc7218 → 975692af. |
 | 2026-06-24 | `cf33942` | Reverb | Activate comb filter modulation (`reverb_mod` knob now works) |
 | 2026-06-24 | `bc8e816` | Delay | Exponential feedback mapping for musical response |
 | 2026-06-24 | `4db06cc` | Distortion | Block-level coefficient cache (4 exp/sample → 1/block) |
