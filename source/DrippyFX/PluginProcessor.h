@@ -1008,6 +1008,10 @@ struct UpgradedReverb
         float wetGain = 0.0f;
         float apFb = 0.6f;      // Allpass feedback: scales with room size
         float modPhaseIncrement = 0.0f;  // 0.37f / sr — cached for comb modulation LFO
+        // Pre-delay in samples (cached per block)
+        int preDelaySmp = 0;
+        // Stereo width (cached per block)
+        float width = 1.0f;
         // LFO phase recurrence: replaces 8 std::sin()/sample with 2 + 16 multiplies.
         // sin(f + di) = sin(f)*cos(di) + cos(f)*sin(di) for each comb's phase offset di.
         // Precomputed once per block in beginBlock().
@@ -1027,7 +1031,7 @@ struct UpgradedReverb
     static constexpr int baseCombR[NUM_COMBS] = { 1617, 1557, 1422, 1491, 1356, 1277, 1116, 1188 };
     static constexpr int baseAP[NUM_AP] = { 556, 441, 341, 225 };
 
-    void beginBlock(float roomSize, float damping, float wetMix, float reverbMod)
+    void beginBlock(float roomSize, float damping, float wetMix, float reverbMod, float width_, float preDelayMs)
     {
         // Room size → feedback: 0.70 to 0.97
         blockCoeffs.fb = 0.70f + roomSize * 0.27f;
@@ -1039,6 +1043,10 @@ struct UpgradedReverb
         blockCoeffs.modDepth = reverbMod * 1.5f;
         // Wet gain (matched to higher inputGain)
         blockCoeffs.wetGain = wetMix * 1.5f;
+        // Cache pre-delay and width per block
+        blockCoeffs.preDelaySmp = juce::jlimit(0, PREDELAY_MAX - 1,
+            (int)(preDelayMs * 0.001f * sampleRate));
+        blockCoeffs.width = width_;
 
         // ── Allpass feedback scaling with room size ──
         // Smaller rooms: less allpass diffusion (0.50) → tighter, less smeared
@@ -1119,9 +1127,7 @@ struct UpgradedReverb
         dcL.reset(); dcR.reset();
     }
 
-    void processSample(float inL, float inR, float& outL, float& outR,
-        float roomSize, float damping, float wetMix,
-        float width, float preDelayMs, float reverbMod)
+    void processSample(float inL, float inR, float& outL, float& outR)
     {
         inL = juce::jlimit(-4.0f, 4.0f, inL);
         inR = juce::jlimit(-4.0f, 4.0f, inR);
@@ -1143,8 +1149,7 @@ struct UpgradedReverb
         modCos = newCosMod;
 
         float modDepth = blockCoeffs.modDepth;  // cached from beginBlock
-        int pdSmp = juce::jlimit(0, PREDELAY_MAX - 1,
-            (int)(preDelayMs * 0.001f * sampleRate));
+        int pdSmp = blockCoeffs.preDelaySmp;    // cached from beginBlock
         preDelayBuf[0][preDelayPos] = inL;
         preDelayBuf[1][preDelayPos] = inR;
         int pdRead = preDelayPos - pdSmp;
@@ -1166,13 +1171,11 @@ struct UpgradedReverb
         // Replaces 8 std::sin() calls per sample with 2 sin() + 16 multiplies.
         // sin(φ + Δi) = sin(φ)cos(Δi) + cos(φ)sin(Δi)
         // Precomputed combSinDelta[i]=sin(Δi), combCosDelta[i]=cos(Δi) in beginBlock().
-        float twoPiPhase = modPhase * juce::MathConstants<float>::twoPi;
-        float sinMod = std::sin(twoPiPhase);
-        float cosMod = std::cos(twoPiPhase);
+        // Use recurrence-updated modSin/modCos (sin/cos of master LFO phase) directly.
         for (int i = 0; i < NUM_COMBS; ++i)
         {
             // sin(φ + Δi) = sin(φ)cos(Δi) + cos(φ)sin(Δi)
-            float modOff = (sinMod * blockCoeffs.combCosDelta[i] + cosMod * blockCoeffs.combSinDelta[i]) * modDepth;
+            float modOff = (modSin * blockCoeffs.combCosDelta[i] + modCos * blockCoeffs.combSinDelta[i]) * modDepth;
             lateL += combL[i].process(combInL, modOff);
             lateR += combR[i].process(combInR, -modOff);  // inverted for stereo decorrelation
         }
@@ -1192,15 +1195,15 @@ struct UpgradedReverb
         revL = dcL.process(revL);
         revR = dcR.process(revR);
 
-        // Stereo width
+        // Stereo width (cached from beginBlock)
         float mid = (revL + revR) * 0.5f;
-        float side = (revL - revR) * 0.5f * width;
+        float side = (revL - revR) * 0.5f * blockCoeffs.width;
         revL = mid + side;
         revR = mid - side;
 
         // Wet/dry mix (matched to higher inputGain) - use cached wetGain
-        outL = inL * (1.0f - wetMix) + revL * blockCoeffs.wetGain;
-        outR = inR * (1.0f - wetMix) + revR * blockCoeffs.wetGain;
+        outL = inL * (1.0f - blockCoeffs.wetGain / 1.5f) + revL * blockCoeffs.wetGain;
+        outR = inR * (1.0f - blockCoeffs.wetGain / 1.5f) + revR * blockCoeffs.wetGain;
 
         outL = juce::jlimit(-4.0f, 4.0f, outL);
         outR = juce::jlimit(-4.0f, 4.0f, outR);
