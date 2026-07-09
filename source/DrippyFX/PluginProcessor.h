@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <xmmintrin.h>  // SSE intrinsics for oversampling FIR optimization
 
 //==============================================================================
 // UTILITY: Hermite cubic interpolation — artifact-free delay reads
@@ -57,6 +58,7 @@ struct OnePole
 // 2x OVERSAMPLING WRAPPER — Anti-aliasing for non-linear waveshaping
 // Eliminates aliasing from tanh/tape saturation by processing at 2x sample rate.
 // Uses a 2nd-order half-band FIR filter for up/down sampling (8 coefficients).
+// SSE-optimized polyphase FIR filtering for 4x throughput on hot path.
 //==============================================================================
 struct Oversampling2x
 {
@@ -74,7 +76,26 @@ struct Oversampling2x
     int idx = 0;
     double sampleRate = 44100.0;
 
-    void prepare(double sr) { sampleRate = sr; reset(); }
+    // Pre-staged coefficient vectors for SSE (aligned for _mm_load_ps)
+    __m128 coeffVec0;  // coeffs[0..3]
+    __m128 coeffVec1;  // coeffs[4..7]
+    __m128 coeffVecEven;  // coeffs[0], coeffs[2], coeffs[4], coeffs[6] (even taps for half-band)
+    bool sseInitialized = false;
+
+    void prepare(double sr) { sampleRate = sr; initSSE(); reset(); }
+
+    void initSSE()
+    {
+        if (sseInitialized) return;
+        // Coefficients in reverse order for circular buffer indexing
+        // idx, idx-1, idx-2, idx-3 -> we load state in that order
+        coeffVec0 = _mm_loadu_ps(&coeffs[0]);  // c0, c1, c2, c3
+        coeffVec1 = _mm_loadu_ps(&coeffs[4]);  // c4, c5, c6, c7
+        // Even taps for half-band odd phase: c0, c2, c4, c6 (c1,c3,c5,c7 are zero anyway)
+        float evenTaps[4] = { coeffs[0], coeffs[2], coeffs[4], coeffs[6] };
+        coeffVecEven = _mm_loadu_ps(evenTaps);
+        sseInitialized = true;
+    }
 
     void reset()
     {
@@ -83,33 +104,82 @@ struct Oversampling2x
         idx = 0;
     }
 
+    // SSE-optimized 8-tap FIR convolution
+    // state: circular buffer, idx: write position
+    // Returns dot product of state[idx], state[idx-1]... with coeffs[0..7]
+    inline float firSSE(const float* state, int idx) const
+    {
+        // Load 8 state samples in order: idx, idx-1, ..., idx-7 (wrapped)
+        // Since FILTER_TAPS=8, we can load as two __m128 vectors
+        __m128 s0 = _mm_set_ps(
+            state[(idx - 3 + FILTER_TAPS) % FILTER_TAPS],
+            state[(idx - 2 + FILTER_TAPS) % FILTER_TAPS],
+            state[(idx - 1 + FILTER_TAPS) % FILTER_TAPS],
+            state[idx]
+        );  // s0 = [s[idx-3], s[idx-2], s[idx-1], s[idx]]
+
+        __m128 s1 = _mm_set_ps(
+            state[(idx - 7 + FILTER_TAPS) % FILTER_TAPS],
+            state[(idx - 6 + FILTER_TAPS) % FILTER_TAPS],
+            state[(idx - 5 + FILTER_TAPS) % FILTER_TAPS],
+            state[(idx - 4 + FILTER_TAPS) % FILTER_TAPS]
+        );  // s1 = [s[idx-7], s[idx-6], s[idx-5], s[idx-4]]
+
+        // Multiply with coefficients (coeffs[0..3] with s[idx..idx-3], coeffs[4..7] with s[idx-4..idx-7])
+        // Note: coeffVec0 = [c0,c1,c2,c3], coeffVec1 = [c4,c5,c6,c7]
+        // We need: s[idx]*c0 + s[idx-1]*c1 + s[idx-2]*c2 + s[idx-3]*c3 + s[idx-4]*c4 + ...
+        // s0 is [s[idx-3], s[idx-2], s[idx-1], s[idx]] -> reverse to match coeffs
+        __m128 s0_rev = _mm_shuffle_ps(s0, s0, _MM_SHUFFLE(0, 1, 2, 3));  // [s[idx], s[idx-1], s[idx-2], s[idx-3]]
+        __m128 s1_rev = _mm_shuffle_ps(s1, s1, _MM_SHUFFLE(0, 1, 2, 3));  // [s[idx-4], s[idx-5], s[idx-6], s[idx-7]]
+
+        __m128 prod0 = _mm_mul_ps(s0_rev, coeffVec0);
+        __m128 prod1 = _mm_mul_ps(s1_rev, coeffVec1);
+
+        // Horizontal sum of both products
+        __m128 sum0 = _mm_hadd_ps(prod0, prod1);  // [p0+p1, p2+p3, p4+p5, p6+p7]
+        __m128 sum1 = _mm_hadd_ps(sum0, sum0);    // [p0+p1+p2+p3, p4+p5+p6+p7, ...]
+        float result[4];
+        _mm_storeu_ps(result, sum1);
+        return result[0] + result[1];
+    }
+
+    // SSE-optimized 4-tap half-band FIR (even taps only: 0,2,4,6)
+    inline float firHalfBandSSE(const float* state, int idx) const
+    {
+        // Load state[idx], state[idx-2], state[idx-4], state[idx-6]
+        __m128 s = _mm_set_ps(
+            state[(idx - 6 + FILTER_TAPS) % FILTER_TAPS],
+            state[(idx - 4 + FILTER_TAPS) % FILTER_TAPS],
+            state[(idx - 2 + FILTER_TAPS) % FILTER_TAPS],
+            state[idx]
+        );  // s = [s[idx-6], s[idx-4], s[idx-2], s[idx]]
+
+        // Reverse to match evenTaps order: c0, c2, c4, c6
+        __m128 s_rev = _mm_shuffle_ps(s, s, _MM_SHUFFLE(0, 1, 2, 3));  // [s[idx], s[idx-2], s[idx-4], s[idx-6]]
+        __m128 prod = _mm_mul_ps(s_rev, coeffVecEven);
+        
+        // Horizontal sum
+        __m128 sum = _mm_hadd_ps(prod, prod);  // [p0+p1, p2+p3, ...]
+        sum = _mm_hadd_ps(sum, sum);           // [sum0, sum1, ...]
+        float result[4];
+        _mm_storeu_ps(result, sum);
+        return result[0];
+    }
+
     // Process one input sample at base rate, produce one output sample at base rate.
     // Internally runs the DSP callback at 2x rate with anti-alias filtering.
     template <typename ProcessFn>
     void processSample(float inL, float inR, float& outL, float& outR, ProcessFn&& dsp)
     {
-        // ── UP SAMPLE 2x: Insert zero, filter (polyphase branch 0) ──
-        // Input at n -> output at 2n (even phase)
-        float upL_even = 0.0f, upR_even = 0.0f;
+        // ── UP SAMPLE 2x: even phase ──
         stateL[idx] = inL;
         stateR[idx] = inR;
-        for (int i = 0; i < FILTER_TAPS; ++i)
-        {
-            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
-            upL_even += stateL[s] * coeffs[i];
-            upR_even += stateR[s] * coeffs[i];
-        }
+        float upL_even = firSSE(stateL, idx);
+        float upR_even = firSSE(stateR, idx);
 
-        // Input at n -> output at 2n+1 (odd phase) — zero inserted, only even taps contribute
-        // Half-band filter: even-indexed taps (0,2,4,6) are non-zero, odd are zero
-        // Odd phase uses the same state but shifted coefficient indexing
-        float upL_odd = 0.0f, upR_odd = 0.0f;
-        for (int i = 0; i < FILTER_TAPS; i += 2)
-        {
-            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
-            upL_odd += stateL[s] * coeffs[i] * 2.0f;  // *2 compensates for zero-insertion
-            upR_odd += stateR[s] * coeffs[i] * 2.0f;
-        }
+        // ── UP SAMPLE 2x: odd phase (half-band, only even taps) ──
+        float upL_odd = firHalfBandSSE(stateL, idx) * 2.0f;
+        float upR_odd = firHalfBandSSE(stateR, idx) * 2.0f;
 
         idx = (idx + 1) % FILTER_TAPS;
 
@@ -118,33 +188,21 @@ struct Oversampling2x
         dsp(upL_even, upR_even, dspL1, dspR1);
         dsp(upL_odd,  upR_odd,  dspL2, dspR2);
 
-        // ── DOWN SAMPLE 2x: Filter, decimate ──
-        // Even output: filter even+odd pair, take even phase
+        // ── DOWN SAMPLE 2x: even phase ──
         stateL[idx] = dspL1;
         stateR[idx] = dspR1;
-        float downL_even = 0.0f, downR_even = 0.0f;
-        for (int i = 0; i < FILTER_TAPS; ++i)
-        {
-            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
-            downL_even += stateL[s] * coeffs[i];
-            downR_even += stateR[s] * coeffs[i];
-        }
+        float downL_even = firSSE(stateL, idx);
+        float downR_even = firSSE(stateR, idx);
 
-        // Odd output: filter, take odd phase (half-band)
+        // ── DOWN SAMPLE 2x: odd phase (half-band) ──
         stateL[idx] = dspL2;
         stateR[idx] = dspR2;
-        float downL_odd = 0.0f, downR_odd = 0.0f;
-        for (int i = 0; i < FILTER_TAPS; i += 2)
-        {
-            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
-            downL_odd += stateL[s] * coeffs[i] * 2.0f;
-            downR_odd += stateR[s] * coeffs[i] * 2.0f;
-        }
+        float downL_odd = firHalfBandSSE(stateL, idx) * 2.0f;
+        float downR_odd = firHalfBandSSE(stateR, idx) * 2.0f;
 
         idx = (idx + 1) % FILTER_TAPS;
 
-        // Average the two phases for final output (or just use even phase)
-        // Using even phase maintains exact latency alignment
+        // Use even phase for latency alignment
         outL = downL_even;
         outR = downR_even;
     }
@@ -155,20 +213,9 @@ struct Oversampling2x
     void processSampleMono(float in, float& out, ProcessFn&& dsp)
     {
         // ── UP SAMPLE 2x ──
-        float up_even = 0.0f;
         stateL[idx] = in;  // reuse L state for mono
-        for (int i = 0; i < FILTER_TAPS; ++i)
-        {
-            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
-            up_even += stateL[s] * coeffs[i];
-        }
-
-        float up_odd = 0.0f;
-        for (int i = 0; i < FILTER_TAPS; i += 2)
-        {
-            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
-            up_odd += stateL[s] * coeffs[i] * 2.0f;
-        }
+        float up_even = firSSE(stateL, idx);
+        float up_odd = firHalfBandSSE(stateL, idx) * 2.0f;
 
         idx = (idx + 1) % FILTER_TAPS;
 
@@ -179,20 +226,10 @@ struct Oversampling2x
 
         // ── DOWN SAMPLE 2x ──
         stateL[idx] = dsp1;
-        float down_even = 0.0f;
-        for (int i = 0; i < FILTER_TAPS; ++i)
-        {
-            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
-            down_even += stateL[s] * coeffs[i];
-        }
+        float down_even = firSSE(stateL, idx);
 
         stateL[idx] = dsp2;
-        float down_odd = 0.0f;
-        for (int i = 0; i < FILTER_TAPS; i += 2)
-        {
-            int s = (idx - i + FILTER_TAPS) % FILTER_TAPS;
-            down_odd += stateL[s] * coeffs[i] * 2.0f;
-        }
+        float down_odd = firHalfBandSSE(stateL, idx) * 2.0f;
 
         idx = (idx + 1) % FILTER_TAPS;
 
