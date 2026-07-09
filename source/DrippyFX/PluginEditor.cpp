@@ -115,6 +115,9 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     setupKnob(reverbMixKnob, reverbMixLabel, "MIX", "Reverb wet/dry balance");
     setupKnob(reverbModKnob, reverbModLabel, "MOD", "Reverb modulation depth — adds organic movement to the reverb tail");
     setupKnob(masterDriveKnob, masterDriveLabel, "MASTER DRIVE", "Master output saturation — push-pull even harmonics for analog warmth");
+    setupKnob(masterWidthKnob, masterWidthLabel, "WIDTH", "Stereo width — 0% = mono, 100% = original stereo, >100% = widened");
+    setupKnob(masterMidDriveKnob, masterMidDriveLabel, "MID DRIVE", "Mid channel saturation — push-pull even harmonics on center content");
+    setupKnob(masterSideDriveKnob, masterSideDriveLabel, "SIDE DRIVE", "Side channel saturation — push-pull even harmonics on stereo width");
 
     // Attachments
     overallAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "overall", overallKnob);
@@ -131,6 +134,9 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     rMixAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "reverb_mix", reverbMixKnob);
     rModAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "reverb_mod", reverbModKnob);
     masterDriveAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "master_drive", masterDriveKnob);
+    masterWidthAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "master_width", masterWidthKnob);
+    masterMidDriveAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "master_mid_drive", masterMidDriveKnob);
+    masterSideDriveAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "master_side_drive", masterSideDriveKnob);
     presetAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(audioProcessor.apvts, "preset", presetSelector);
 
     // Level meter
@@ -217,6 +223,34 @@ void CorvusFXAudioProcessorEditor::resized()
     auto mArea = masterDriveRow.withSizeKeepingCentre(mSize, mSize + sc(25));
     masterDriveKnob.setBounds(mArea.removeFromTop(mSize));
     masterDriveLabel.setBounds(mArea);
+
+    area.removeFromTop(sc(10));
+
+    // ── Master Width / Mid Drive / Side Drive knobs (below Master Drive) ──
+    auto masterMSSRow = area.removeFromTop(sc(100));
+    int msSize = sc(80);
+    int msGap = sc(20);
+    int msTotalW = msSize * 3 + msGap * 2;
+    auto msStart = masterMSSRow.withSizeKeepingCentre(msTotalW, msSize + sc(25));
+    
+    // Width knob
+    auto msWidthArea = msStart.removeFromLeft(msSize);
+    masterWidthKnob.setBounds(msWidthArea.removeFromTop(msSize));
+    masterWidthLabel.setBounds(msWidthArea);
+    
+    msStart.removeFromLeft(msGap);
+    
+    // Mid Drive knob
+    auto msMidArea = msStart.removeFromLeft(msSize);
+    masterMidDriveKnob.setBounds(msMidArea.removeFromTop(msSize));
+    masterMidDriveLabel.setBounds(msMidArea);
+    
+    msStart.removeFromLeft(msGap);
+    
+    // Side Drive knob
+    auto msSideArea = msStart.removeFromLeft(msSize);
+    masterSideDriveKnob.setBounds(msSideArea.removeFromTop(msSize));
+    masterSideDriveLabel.setBounds(msSideArea);
 
     area.removeFromTop(sc(10));
 

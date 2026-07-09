@@ -756,11 +756,17 @@ private:
     AnimatedKnob reverbSizeKnob, reverbDampingKnob, reverbMixKnob, reverbModKnob;
     juce::Label reverbSizeLabel, reverbDampingLabel, reverbMixLabel, reverbModLabel;
     AnimatedKnob masterDriveKnob; juce::Label masterDriveLabel;
+    AnimatedKnob masterWidthKnob; juce::Label masterWidthLabel;
+    AnimatedKnob masterMidDriveKnob; juce::Label masterMidDriveLabel;
+    AnimatedKnob masterSideDriveKnob; juce::Label masterSideDriveLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> overallAtt, fatnessAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> cDepAtt, cRateAtt, cMixAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> dTimeAtt, dFbAtt, dMixAtt, dDampAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> rSizeAtt, rDampAtt, rMixAtt, rModAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterDriveAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterWidthAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterMidDriveAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterSideDriveAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> presetAtt;
     LevelMeter levelMeter;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CorvusFXAudioProcessorEditor)

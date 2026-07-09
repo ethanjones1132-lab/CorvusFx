@@ -1250,7 +1250,7 @@ struct UpgradedReverb
 //==============================================================================
 // MASTER OUTPUT STAGE — Analog warmth and professional polish
 // Subtle HF shelf rolloff, LF body boost, push-pull saturation (asymmetrical
-// even-harmonic generation), and final smoothing.
+// even-harmonic generation), mid/side width control, and final smoothing.
 // 2x oversampling on push-pull saturation for zero aliasing.
 // Removes the "digital" or "tinny" quality from the cumulative signal chain.
 //==============================================================================
@@ -1259,10 +1259,11 @@ struct MasterOutputStage
     OnePole hfShelfL, hfShelfR;   // HF rolloff for analog warmth
     OnePole lfShelfL, lfShelfR;   // LF boost for body
     OnePole smoothL, smoothR;     // Final anti-harsh smoothing
-    Oversampling2x oversample;    // 2x oversampling for push-pull saturation
+    Oversampling2x oversampleMid; // 2x oversampling for mid push-pull saturation
+    Oversampling2x oversampleSide; // 2x oversampling for side push-pull saturation
     double sampleRate = 44100.0;
 
-    // Block-level coefficient cache — avoids recomputing 3× std::exp() every sample.
+    // Block-level coefficient cache — avoids recomputing std::exp() every sample.
     // Call beginBlock() once per audio block, then process() for each sample.
     struct BlockCoeffs
     {
@@ -1274,14 +1275,15 @@ struct MasterOutputStage
     void prepare(double sr)
     {
         sampleRate = sr;
-        oversample.prepare(sr);
+        oversampleMid.prepare(sr);
+        oversampleSide.prepare(sr);
         hfShelfL.reset(); hfShelfR.reset();
         lfShelfL.reset(); lfShelfR.reset();
         smoothL.reset();  smoothR.reset();
         beginBlock(); // Initialize block coefficients at default sample rate
     }
 
-    // Block-level coefficient cache — avoids recomputing 3× std::exp() every sample.
+    // Block-level coefficient cache — avoids recomputing std::exp() every sample.
     // Call once per audio block (unconditionally, since master output always runs).
     void beginBlock()
     {
@@ -1299,7 +1301,8 @@ struct MasterOutputStage
         hfShelfL.reset(); hfShelfR.reset();
         lfShelfL.reset(); lfShelfR.reset();
         smoothL.reset();  smoothR.reset();
-        oversample.reset();
+        oversampleMid.reset();
+        oversampleSide.reset();
     }
 
     // Push-pull (asymmetrical) saturation — generates even harmonics (2nd, 4th)
@@ -1325,30 +1328,51 @@ struct MasterOutputStage
         }
     }
 
-    void process(float& L, float& R, float drive = 1.8f)
+    // Mid/Side processing with independent saturation and width control
+    void process(float& L, float& R, float midDrive, float sideDrive, float width)
     {
-        // 1. HF shelf: subtract a fraction of content above 12kHz (~-1.5dB)
-        float hfL = L - hfShelfL.processLP(L, blockCoeffs.hfCoeff);
-        float hfR = R - hfShelfR.processLP(R, blockCoeffs.hfCoeff);
-        L -= hfL * 0.16f;  // ~-1.5dB above 12kHz
-        R -= hfR * 0.16f;
+        // ── Convert L/R to Mid/Side ──
+        float mid = (L + R) * 0.5f;
+        float side = (L - R) * 0.5f;
 
-        // 2. LF body: add a fraction of content below 200Hz (~+0.5dB)
-        float lfL = lfShelfL.processLP(L, blockCoeffs.lfCoeff);
-        float lfR = lfShelfR.processLP(R, blockCoeffs.lfCoeff);
-        L += lfL * 0.06f;  // ~+0.5dB below 200Hz
-        R += lfR * 0.06f;
+        // ── Width control: scale side signal ──
+        // width = 0.0 → mono (side = 0)
+        // width = 1.0 → original stereo
+        // width > 1.0 → widened stereo
+        side *= width;
 
-        // 3. Push-pull saturation — process at 2x sample rate with anti-aliasing
-        // This eliminates aliasing from the asymmetrical tanh waveshaping
-        oversample.processSample(L, R, L, R, [this, drive](float inL, float inR, float& outL, float& outR) {
-            outL = pushPullSaturate(inL, drive);
-            outR = pushPullSaturate(inR, drive);
+        // ── 1. HF shelf on mid/side ──
+        float hfMid = mid - hfShelfL.processLP(mid, blockCoeffs.hfCoeff); // reuse L filter for mid
+        float hfSide = side - hfShelfR.processLP(side, blockCoeffs.hfCoeff); // reuse R filter for side
+        mid -= hfMid * 0.16f;
+        side -= hfSide * 0.16f;
+
+        // ── 2. LF body on mid/side ──
+        float lfMid = lfShelfL.processLP(mid, blockCoeffs.lfCoeff);
+        float lfSide = lfShelfR.processLP(side, blockCoeffs.lfCoeff);
+        mid += lfMid * 0.06f;
+        side += lfSide * 0.06f;
+
+        // ── 3. Push-pull saturation on mid and side independently (2x oversampled) ──
+        // Mid saturation
+        oversampleMid.processSample(mid, mid, mid, mid, [this, midDrive](float inL, float inR, float& outL, float& outR) {
+            outL = pushPullSaturate(inL, midDrive);
+            outR = pushPullSaturate(inR, midDrive); // same value for mono mid
         });
 
-        // 4. Final ultra-gentle smoothing at ~17kHz to catch any remaining digital edge
-        L = smoothL.processLP(L, blockCoeffs.smCoeff);
-        R = smoothR.processLP(R, blockCoeffs.smCoeff);
+        // Side saturation
+        oversampleSide.processSample(side, side, side, side, [this, sideDrive](float inL, float inR, float& outL, float& outR) {
+            outL = pushPullSaturate(inL, sideDrive);
+            outR = pushPullSaturate(inR, sideDrive);
+        });
+
+        // ── 4. Final ultra-gentle smoothing ──
+        mid = smoothL.processLP(mid, blockCoeffs.smCoeff);
+        side = smoothR.processLP(side, blockCoeffs.smCoeff);
+
+        // ── Convert back to L/R ──
+        L = mid + side;
+        R = mid - side;
 
         // Safety clamp
         L = juce::jlimit(-4.0f, 4.0f, L);
@@ -1422,6 +1446,9 @@ private:
     juce::LinearSmoothedValue<float> smoothReverbMix;
     juce::LinearSmoothedValue<float> smoothReverbMod;
     juce::LinearSmoothedValue<float> smoothMasterDrive;
+    juce::LinearSmoothedValue<float> smoothMasterWidth;
+    juce::LinearSmoothedValue<float> smoothMasterMidDrive;
+    juce::LinearSmoothedValue<float> smoothMasterSideDrive;
 
     // ── Level Meter State ──
     // Smoothed peak/RMS meters for input and output.
