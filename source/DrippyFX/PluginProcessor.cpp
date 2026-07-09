@@ -396,7 +396,6 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         const float sFatness      = smoothFatness.getNextValue();
         const float sChorusDepth  = smoothChorusDepth.getNextValue();
         const float sChorusRate   = smoothChorusRate.getNextValue();
-        const float sChorusMix    = smoothChorusMix.getNextValue();
         const float sChorusFb     = sChorusDepth * 0.25f;
         const float sDelayTime    = smoothDelayTime.getNextValue();
         const float sDelayFb      = smoothDelayFeedback.getNextValue();
@@ -420,8 +419,8 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // 2. CHORUS
         if (sChorusDepth > 0.001f)
         {
-            smpL = chorus.process(smpL, 0, sChorusRate, sChorusDepth, sChorusMix, sChorusFb);
-            smpR = chorus.process(smpR, 1, sChorusRate, sChorusDepth, sChorusMix, sChorusFb);
+            smpL = chorus.process(smpL, 0, sChorusRate, sChorusDepth, sChorusFb);
+            smpR = chorus.process(smpR, 1, sChorusRate, sChorusDepth, sChorusFb);
             chorus.advanceWritePos();
         }
 
@@ -431,7 +430,7 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             float dL, dR;
             delay.processSample(smpL, smpR, dL, dR,
                 sDelayTime, sDelayFb, sDelayMix,
-                pingPong, delayModAmount, delayDamping);
+                pingPong, delayModAmount);
             smpL = dL;
             smpR = dR;
         }

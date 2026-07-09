@@ -577,7 +577,7 @@ struct EnhancedChorus
     }
 
     float process(float input, int channel, float rate, float depth,
-        float mix, float feedback)
+        float feedback)
     {
         input = juce::jlimit(-4.0f, 4.0f, input);
         feedback = std::min(feedback, 0.45f);
@@ -796,7 +796,7 @@ struct EnhancedDelay
 
     void processSample(float inL, float inR, float& outL, float& outR,
         float delayTimeMs, float feedback, float mix,
-        float pingPong, float modAmount, float damping)
+        float pingPong, float modAmount)
     {
         feedback = std::min(feedback, 0.92f);
 
