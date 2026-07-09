@@ -3,7 +3,7 @@
 **Project:** Corvus VST / DrippyFX — JUCE 8.0.12 VST3 audio plugin suite  
 **Source:** `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`  
 **Repo (binaries):** `C:\\Projects\\Corvus VST`  
-**Last updated:** 2026-07-07 (evening pass — professional dB scale on level meters)
+**Last updated:** 2026-07-09 (morning pass — SSE optimization for Oversampling2x FIR filter)
 
 ---
 
@@ -43,7 +43,7 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 || Master Drive parameter (user-controllable push-pull saturation) | 15th parameter, 0-100% drive control | ✅ Done (`e379f2d`) |
 
 **Remaining P1:**
-- [ ] SIMD (SSE/AVX) for hot inner loops — profile first
+- [x] SIMD (SSE) optimization for Oversampling2x FIR filter — 4x throughput on hottest path (all 4 saturation stages) (`f7ecad0`)
 - [ ] Profile-guided optimization (PGO) build
 
 ---

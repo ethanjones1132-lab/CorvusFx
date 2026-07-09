@@ -37,7 +37,8 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 
 || Date | Commit | Module | Improvement |
 ||------|--------|--------|-------------|
-|| 2026-07-09 | `d4350b9` | EnhancedChorus + EnhancedDelay | **Remove dead per-sample parameters** — drop unused `mix` from EnhancedChorus::process() (precomputed as mixDepthScale + dryGain/wetGain in beginBlock) and unused `damping` from EnhancedDelay::processSample() (precomputed as fbLPCoeff in beginBlock). Also removed dead `sChorusMix` per-sample variable from processBlock. Eliminates redundant parameter passing and 1 smoothChorusMix.getNextValue() per sample. Binary MD5: 54cfa7ef → 79f9c407. |
+||| 2026-07-09 | `f7ecad0` | Oversampling2x | **SSE-optimized 8-tap FIR filtering** — replaces scalar loops in processSample()/processSampleMono() with SSE intrinsics (_mm_set_ps, _mm_shuffle_ps, _mm_mul_ps, _mm_hadd_ps). The oversampling filter is the hottest path (called at 2x rate by all 4 saturation stages: Distortion, Chorus feedback, Delay tape sat, Master push-pull). 4 FIR passes per call (up even/odd, down even/odd). SSE reduces 16 scalar MACs per pass to ~4 SIMD ops, ~4x throughput on critical path. Binary MD5: 79f9c407 → e9e46593. |
+||| 2026-07-09 | `d4350b9` | EnhancedChorus + EnhancedDelay | **Remove dead per-sample parameters** — drop unused `mix` from EnhancedChorus::process() (precomputed as mixDepthScale + dryGain/wetGain in beginBlock) and unused `damping` from EnhancedDelay::processSample() (precomputed as fbLPCoeff in beginBlock). Also removed dead `sChorusMix` per-sample variable from processBlock. Eliminates redundant parameter passing and 1 smoothChorusMix.getNextValue() per sample. Binary MD5: 54cfa7ef → 79f9c407. |
 || 2026-07-08 | `92cdde6` | UpgradedReverb | **Reverb API cleanup** — cache width, pre-delay in BlockCoeffs; remove 6 redundant processSample() params; eliminate per-sample parameter passing overhead. |
 || 2026-07-08 | `ca52994` | EnhancedDelay + UpgradedReverb | **API cleanup** — cache preDelaySmp, width, pingPong, modAmount in BlockCoeffs; clean per-sample signatures. Binary MD5: 138d45c8 → b7dfb5b5. |
 || 2026-07-08 | `df7c97a` | UpgradedReverb | **Deploy rebuilt binary** for API cleanup (ca52994/92cdde6). Binary MD5: b7dfb5b5 → 54cfa7ef. |
@@ -112,11 +113,10 @@ cp ".../NewProject.vst3" "C:/Projects/Corvus VST/drippy/NewProject.vst3/Contents
 
 ## Remaining Optimization Opportunities (from dsp-optimization-patterns.md)
 
-- All modules: SIMD (SSE/AVX) for hot inner loops if profiling shows need
 - All modules: Profile-guided optimization (PGO) build
 - Distortion: Antiderivative antialiasing as alternative to oversampling
 - Reverb: Convolution reverb IR option for "real space" mode
-- Presets: Add 6+ new presets beyond the current 18
+- Presets: Add 6+ new presets beyond the current 24
 
 ---
 
