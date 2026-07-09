@@ -1,10 +1,10 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-08 (overnight pass — reverb master modulation LFO phase recurrence)
+Last updated: 2026-07-09 (overnight pass — dead per-sample parameter cleanup in Chorus + Delay)
 Working copy: `C:\\\\Projects\\\\Corvus VST`
 Source root: `C:\\\\Projects\\\\Corvus VST\\\\source\\\\DrippyFX\\\\` (git SoT; sync to Downloads tree for MSBuild)
 
-Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached, 15 parameters (Master Drive added), reverb comb modulation optimized 8→2 sin()/sample, reverb master modulation optimized 2→0 sin()/sample, chorus LFO optimized 18→0 sin()/sample, delay LFO optimized 2→0 sin()/sample. UI polish — professional dB-scale metering with -6/-12/-18/-24/-30/-40/-50/-60 markings, proportional layout scaling, tooltips on all controls, 24 categorized presets. Entire plugin now has zero per-sample transcendental calls.**
+Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached, 15 parameters (Master Drive added). Entire plugin has zero per-sample transcendental calls. API surface cleaned: dead per-sample parameters removed from Chorus (mix) and Delay (damping); Reverb/Delay per-sample signatures simplified. 24 categorized presets, professional dB-scale metering, proportional layout scaling.**
 
 ---
 
@@ -37,6 +37,10 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 
 || Date | Commit | Module | Improvement |
 ||------|--------|--------|-------------|
+|| 2026-07-09 | `d4350b9` | EnhancedChorus + EnhancedDelay | **Remove dead per-sample parameters** — drop unused `mix` from EnhancedChorus::process() (precomputed as mixDepthScale + dryGain/wetGain in beginBlock) and unused `damping` from EnhancedDelay::processSample() (precomputed as fbLPCoeff in beginBlock). Also removed dead `sChorusMix` per-sample variable from processBlock. Eliminates redundant parameter passing and 1 smoothChorusMix.getNextValue() per sample. Binary MD5: 54cfa7ef → 79f9c407. |
+|| 2026-07-08 | `92cdde6` | UpgradedReverb | **Reverb API cleanup** — cache width, pre-delay in BlockCoeffs; remove 6 redundant processSample() params; eliminate per-sample parameter passing overhead. |
+|| 2026-07-08 | `ca52994` | EnhancedDelay + UpgradedReverb | **API cleanup** — cache preDelaySmp, width, pingPong, modAmount in BlockCoeffs; clean per-sample signatures. Binary MD5: 138d45c8 → b7dfb5b5. |
+|| 2026-07-08 | `df7c97a` | UpgradedReverb | **Deploy rebuilt binary** for API cleanup (ca52994/92cdde6). Binary MD5: b7dfb5b5 → 54cfa7ef. |
 || 2026-07-08 | `a0629ff` | UpgradedReverb | **LFO phase recurrence for master modulation** — replaces 2 std::sin()+std::cos()/sample with 4 multiplies via precomputed sin/cos deltas in beginBlock(). Eliminates the last per-sample transcendental calls in the entire plugin. Binary MD5: 975692af → 138d45c8. |
 || 2026-07-07 | `66f4cc2` | EnhancedChorus | **LFO phase recurrence for drift modulation** — replaces 2 std::sin()/voice/sample (12 total/sample for 6 voices × 2 frequencies) with 4 multiplies per voice per sample via precomputed sin/cos deltas in beginBlock(). Extends the established LFO phase recurrence pattern to the slow organic drift LFO (frequencies 2.32x and 5.71x base driftDelta). Binary MD5: ca2f5535 → 754ec91c. |
 | 2026-07-07 | `0a93199` | EnhancedDelay | **LFO phase recurrence for wow/flutter** — replaces 2 std::sin()/sample with 4 multiplies via precomputed sin/cos deltas in beginBlock(). Same identity as Chorus/Reverb LFO optimization (c7853f2, c23e1c3). Binary MD5: 754ec91c → 24b31d41. |
