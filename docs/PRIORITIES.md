@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-10 (overnight pass — distortion bypass + reverb_mod smoothing fix)
+Last updated: 2026-07-10 (morning pass — Master Output smoothing fix for master_drive/master_width/master_mid_drive)
 Working copy: `C:\\\\Projects\\\\Corvus VST`
 Source root: `C:\\\\Projects\\\\Corvus VST\\\\source\\\\DrippyFX\\\\` (git SoT; sync to Downloads tree for MSBuild)
 
@@ -37,7 +37,8 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 
 || Date | Commit | Module | Improvement |
 ||------|--------|--------|-------------|
-|| 2026-07-10 | `3645f81` | UI/Presets/DSP | **Add distortion bypass parameter (19th param) + fix reverb_mod smoothing regression** — new AudioParameterBool toggle with BYPASS button and ButtonAttachment in distortion section. All 24 presets updated with distByp=0. CRITICAL BUGFIX: restored smoothReverbMod.setTargetValue() in processBlock — it was accidentally replaced with a duplicate smoothMasterSideDrive in e2cdb08, silently breaking reverb modulation for 2 days. Binary MD5: 3f41827d → 9a47a8fb. |
+||| 2026-07-10 | `56758bf` | MasterOutputStage | **Fix missing setTargetValue for master_drive, master_width, master_mid_drive** — three of four Master Output parameters only received initial target values in prepareToPlay(). Their setTargetValue calls were missing from processBlock(), so knobs stopped responding after plugin load. Only master_side_drive was correctly updated per-block. Added the three missing calls after smoothReverbMod and before smoothMasterSideDrive. All four Master parameters now smooth correctly with 20ms LinearSmoothedValue, eliminating zipper noise and ensuring responsive knob/automation. Binary MD5: 56005a3d. |
+||| 2026-07-10 | `3645f81` | UI/Presets/DSP | **Add distortion bypass parameter (19th param) + fix reverb_mod smoothing regression** — new AudioParameterBool toggle with BYPASS button and ButtonAttachment in distortion section. All 24 presets updated with distByp=0. CRITICAL BUGFIX: restored smoothReverbMod.setTargetValue() in processBlock — it was accidentally replaced with a duplicate smoothMasterSideDrive in e2cdb08, silently breaking reverb modulation for 2 days. Binary MD5: 3f41827d → 9a47a8fb. |
 || 2026-07-09 | `f7ecad0` | Oversampling2x | **SSE-optimized 8-tap FIR filtering** — replaces scalar loops in processSample()/processSampleMono() with SSE intrinsics (_mm_set_ps, _mm_shuffle_ps, _mm_mul_ps, _mm_hadd_ps). The oversampling filter is the hottest path (called at 2x rate by all 4 saturation stages: Distortion, Chorus feedback, Delay tape sat, Master push-pull). 4 FIR passes per call (up even/odd, down even/odd). SSE reduces 16 scalar MACs per pass to ~4 SIMD ops, ~4x throughput on critical path. Binary MD5: 79f9c407 → e9e46593. |
 || 2026-07-09 | `d4350b9` | EnhancedChorus + EnhancedDelay | **Remove dead per-sample parameters** — drop unused `mix` from EnhancedChorus::process() (precomputed as mixDepthScale + dryGain/wetGain in beginBlock) and unused `damping` from EnhancedDelay::processSample() (precomputed as fbLPCoeff in beginBlock). Also removed dead `sChorusMix` per-sample variable from processBlock. Eliminates redundant parameter passing and 1 smoothChorusMix.getNextValue() per sample. Binary MD5: 54cfa7ef → 79f9c407. |
 || 2026-07-08 | `92cdde6` | UpgradedReverb | **Reverb API cleanup** — cache width, pre-delay in BlockCoeffs; remove 6 redundant processSample() params; eliminate per-sample parameter passing overhead. |

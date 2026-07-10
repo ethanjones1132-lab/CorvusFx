@@ -3,7 +3,7 @@
 **Project:** Corvus VST / DrippyFX — JUCE 8.0.12 VST3 audio plugin suite  
 **Source:** `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`  
 **Repo (binaries):** `C:\\Projects\\Corvus VST`  
-**Last updated:** 2026-07-09 (morning pass — SSE optimization for Oversampling2x FIR filter)
+**Last updated:** 2026-07-10 (morning pass — Master Output smoothing fix for master_drive/master_width/master_mid_drive)
 
 ---
 
@@ -40,7 +40,8 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 | Reverb allpass feedback scaling with room size | Musical diffusion | ✅ Done (`1c3652e`) |
 | Chorus LFO rate caching (rateToIncrement in beginBlock) | 6 divides/sample → 0 | ✅ Done (`d48eaf0`) |
 || Reverb modPhase caching (modPhaseIncrement in beginBlock) | 1 divide/sample → 0; last per-sample /sr | ✅ Done (`0c36943`) ||
-|| Master Drive parameter (user-controllable push-pull saturation) | 15th parameter, 0-100% drive control | ✅ Done (`e379f2d`) |
+||| Master Drive parameter (user-controllable push-pull saturation) | 15th parameter, 0-100% drive control | ✅ Done (`e379f2d`) ||
+||| Master Output parameter smoothing fix (master_drive, master_width, master_mid_drive) | Missing setTargetValue in processBlock — knobs froze after load | ✅ Done (`56758bf`) |
 
 **Remaining P1:**
 - [x] SIMD (SSE) optimization for Oversampling2x FIR filter — 4x throughput on hottest path (all 4 saturation stages) (`f7ecad0`)
