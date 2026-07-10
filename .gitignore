@@ -47,3 +47,6 @@ source/DrippyFX/build/
 
 # ── Agent / scratch (do not version) ─────────────────────────────
 source/DrippyFX/.hermes/
+
+# ── VST3 binaries (build outputs, not source) ────────────────────
+*.vst3
