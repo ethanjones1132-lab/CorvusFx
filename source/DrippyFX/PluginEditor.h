@@ -749,6 +749,7 @@ private:
     AnimatedKnob overallKnob; juce::Label overallLabel;
     EffectSection distortionSection, chorusSection, delaySection, reverbSection;
     AnimatedKnob fatnessKnob; juce::Label fatnessLabel;
+    juce::ToggleButton distortionBypassButton;
     AnimatedKnob chorusDepthKnob, chorusRateKnob, chorusMixKnob;
     juce::Label chorusDepthLabel, chorusRateLabel, chorusMixLabel;
     AnimatedKnob delayTimeKnob, delayFeedbackKnob, delayMixKnob, delayDampingKnob;
@@ -760,6 +761,7 @@ private:
     AnimatedKnob masterMidDriveKnob; juce::Label masterMidDriveLabel;
     AnimatedKnob masterSideDriveKnob; juce::Label masterSideDriveLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> overallAtt, fatnessAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> distortionBypassAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> cDepAtt, cRateAtt, cMixAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> dTimeAtt, dFbAtt, dMixAtt, dDampAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> rSizeAtt, rDampAtt, rMixAtt, rModAtt;

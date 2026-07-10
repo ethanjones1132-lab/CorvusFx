@@ -101,6 +101,14 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     addAndMakeVisible(chorusSection);
     addAndMakeVisible(delaySection);
     addAndMakeVisible(reverbSection);
+    addAndMakeVisible(distortionBypassButton);
+    distortionBypassButton.setButtonText("BYPASS");
+    distortionBypassButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a1a20));
+    distortionBypassButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff552233));
+    distortionBypassButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff886666));
+    distortionBypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffcc8888));
+    distortionBypassButton.setTooltip("Bypass the distortion module entirely — click-free crossfade");
+    distortionBypassButton.onClick = [this] { distortionBypassButton.setButtonText(distortionBypassButton.getToggleState() ? "BYPASS" : "BYPASS"); };
 
     setupKnob(fatnessKnob, fatnessLabel, "DRIVE", "Distortion amount — blends tape saturation at low settings into tube warmth at high settings");
     setupKnob(chorusDepthKnob, chorusDepthLabel, "DEPTH", "Chorus modulation depth — controls pitch excursion amount");
@@ -122,6 +130,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     // Attachments
     overallAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "overall", overallKnob);
     fatnessAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "fatness", fatnessKnob);
+    distortionBypassAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "distortion_bypass", distortionBypassButton);
     cDepAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "chorus_depth", chorusDepthKnob);
     cRateAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "chorus_rate", chorusRateKnob);
     cMixAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "chorus_mix", chorusMixKnob);
@@ -275,6 +284,9 @@ void CorvusFXAudioProcessorEditor::resized()
         auto ka = c.withSizeKeepingCentre(ks, ks + sc(25));
         fatnessKnob.setBounds(ka.removeFromTop(ks));
         fatnessLabel.setBounds(ka);
+        // Bypass button below the knob
+        auto bypassArea = c.removeFromTop(sc(30)).withTrimmedTop(sc(10));
+        distortionBypassButton.setBounds(bypassArea.withSizeKeepingCentre(juce::jmin(bypassArea.getWidth(), sc(80)), sc(22)));
     }
 
     topFxRow.removeFromLeft(gap);
