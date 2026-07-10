@@ -176,7 +176,7 @@ Pick **single highest-impact** improvement:
 || 2026-07-03 | `0e65aa6` | Jucer/Build | **Renamed "NewProject" → "CorvusFX" in Jucer project and VS solution** — updated project name, target name, JucePlugin_Name, JucePlugin_Desc definitions. Full rebuild confirms new branding in VST3 manifest. Binary MD5 changed `a96d1356` → `fa8c8d77`. ||
 ||| 2026-07-06 | `e379f2d` | MasterOutputStage | **Master Drive parameter** — user-controllable push-pull saturation (0-100%, maps to drive 0.0-1.8). Added LinearSmoothedValue (20ms), UI knob below Overall, updated all 24 presets with master_drive values. 15 total parameters. Binary MD5: 525f3ffd → 588a94cc. |
 |||| 2026-07-07 | `c23e1c3` | UpgradedReverb | **LFO phase recurrence for comb modulation** — replaces 8 std::sin()/sample with 2 + 16 multiplies via precomputed sin(Δi)/cos(Δi) per comb in beginBlock(). ~4x reduction in modulation cost. Binary MD5: c88ea5c6 → ca2f5535. ||
-|||| 2026-07-09 | `f7ecad0` | Oversampling2x | **SSE-optimized 8-tap FIR filtering for 2x oversampling** — replaces scalar polyphase FIR loops with SSE intrinsics (_mm_set_ps, _mm_shuffle_ps, _mm_mul_ps, _mm_hadd_ps) in firSSE() and firHalfBandSSE(). Hot path called at 2x rate by all 4 saturation stages (Distortion, Chorus feedback, Delay tape sat, Master push-pull). ~4x throughput improvement on critical path. Binary MD5: 79f9c407 → e9e46593. ||
+|||| 2026-07-10 | `3645f81` | UI/Presets/DSP | **Add distortion bypass + fix reverb_mod smoothing regression** — AudioParameterBool BYPASS, all 24 presets updated with distByp=0. Fixed smoothReverbMod.setTargetValue() in processBlock (was accidentally replaced with duplicate smoothMasterSideDrive in e2cdb08). Binary MD5: 3f41827d → 9a47a8fb. |
 
 ---
 
