@@ -40,8 +40,9 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 | Reverb allpass feedback scaling with room size | Musical diffusion | ✅ Done (`1c3652e`) |
 | Chorus LFO rate caching (rateToIncrement in beginBlock) | 6 divides/sample → 0 | ✅ Done (`d48eaf0`) |
 || Reverb modPhase caching (modPhaseIncrement in beginBlock) | 1 divide/sample → 0; last per-sample /sr | ✅ Done (`0c36943`) ||
-||| Master Drive parameter (user-controllable push-pull saturation) | 15th parameter, 0-100% drive control | ✅ Done (`e379f2d`) ||
-||| Master Output parameter smoothing fix (master_drive, master_width, master_mid_drive) | Missing setTargetValue in processBlock — knobs froze after load | ✅ Done (`56758bf`) |
+| Master Drive parameter (user-controllable push-pull saturation) | 15th parameter, 0-100% drive control | ✅ Done (`e379f2d`) |
+| Master Output parameter smoothing fix (master_drive, master_width, master_mid_drive) | Missing setTargetValue in processBlock — knobs froze after load | ✅ Done (`56758bf`) |
+| Click-free bypass for all 5 modules (Distortion, Chorus, Delay, Reverb, Master) | Professional workflow: A/B comparison, CPU savings, automation | ✅ Done (`5dd1e7c` — 4 new params: chorus_bypass, delay_bypass, reverb_bypass, master_bypass; distortion_bypass already existed) |
 
 **Remaining P1:**
 - [x] SIMD (SSE) optimization for Oversampling2x FIR filter — 4x throughput on hottest path (all 4 saturation stages) (`f7ecad0`)
@@ -70,7 +71,7 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 | Antiderivative antialiasing (Distortion alt) | Compare vs oversampling; choose best | L |
 | Convolution reverb IR mode | "Real space" option alongside algorithmic | L |
 | Mid/side processing on Master | Width control, independent M/S saturation | M |
-| Per-module bypass with crossfade | Click-free enable/disable | S |
+| Per-module bypass with crossfade | Click-free enable/disable | S | ✅ Done (`5dd1e7c`) |
 | Oversampling quality modes | 2x / 4x / 8x selectable | M |
 
 ---
