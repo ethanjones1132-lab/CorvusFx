@@ -1380,16 +1380,14 @@ struct MasterOutputStage
         side += lfSide * 0.06f;
 
         // ── 3. Push-pull saturation on mid and side independently (2x oversampled) ──
-        // Mid saturation
-        oversampleMid.processSample(mid, mid, mid, mid, [this, midDrive](float inL, float inR, float& outL, float& outR) {
-            outL = pushPullSaturate(inL, midDrive);
-            outR = pushPullSaturate(inR, midDrive); // same value for mono mid
+        // Mid saturation (mono oversampling -- avoids 2x redundant processing)
+        oversampleMid.processSampleMono(mid, mid, [this, midDrive](float in, float& out) {
+            out = pushPullSaturate(in, midDrive);
         });
 
-        // Side saturation
-        oversampleSide.processSample(side, side, side, side, [this, sideDrive](float inL, float inR, float& outL, float& outR) {
-            outL = pushPullSaturate(inL, sideDrive);
-            outR = pushPullSaturate(inR, sideDrive);
+        // Side saturation (mono oversampling -- avoids 2x redundant processing)
+        oversampleSide.processSampleMono(side, side, [this, sideDrive](float in, float& out) {
+            out = pushPullSaturate(in, sideDrive);
         });
 
         // ── 4. Final ultra-gentle smoothing ──
@@ -1481,6 +1479,7 @@ private:
     // Updated in processBlock (audio thread), read by editor (message thread)
     // via atomic floats. No locks needed — relaxed atomics are sufficient
     // for meter display (approximate values are fine).
+public:
     struct LevelMeters
     {
         std::atomic<float> inPeakL  { 0.0f }, inPeakR  { 0.0f };

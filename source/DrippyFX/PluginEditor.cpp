@@ -188,7 +188,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     addAndMakeVisible(levelMeter);
 }
 
-void CorvusFXAudioProcessorEditor::~CorvusFXAudioProcessorEditor()
+CorvusFXAudioProcessorEditor::~CorvusFXAudioProcessorEditor()
 {
     setLookAndFeel(nullptr);
 }
