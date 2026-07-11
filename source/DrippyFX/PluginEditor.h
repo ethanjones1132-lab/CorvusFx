@@ -96,10 +96,10 @@ public:
 // LEVEL METER — Vertical stereo peak/RMS bars with dB scale
 // Smooth exponential decay for professional metering feel
 // ═══════════════════════════════════════════════════════════════
-class LevelMeter : public juce::Component
+class LevelMeter : public juce::Component, public juce::Timer
 {
 public:
-    LevelMeter() = default;
+    LevelMeter() { startTimerHz(30); }
 
     void setInputPeakL(float v)  { inPeakL  = juce::jlimit(0.0f, 1.0f, v); repaint(); }
     void setInputPeakR(float v)  { inPeakR  = juce::jlimit(0.0f, 1.0f, v); repaint(); }
@@ -165,31 +165,31 @@ public:
 
         auto drawBar = [&](int x, float peak, float rms, juce::Colour peakCol, juce::Colour rmsCol)
         {
-            int peakY = (int)(bounds.getBottom() - peak * h);
-            int rmsY  = (int)(bounds.getBottom() - rms  * h);
+            float peakY = bounds.getBottom() - peak * h;
+            float rmsY  = bounds.getBottom() - rms  * h;
 
             // Background track
             g.setColour(juce::Colour(0xff0a0a1a));
-            g.fillRect(x + 2, bounds.getY() + 2, barW - 4, h - 4);
+            g.fillRect((float)(x + 2), bounds.getY() + 2.0f, (float)(barW - 4), h - 4.0f);
 
             // RMS bar (sustained level)
             if (rms > 0.001f)
             {
                 g.setColour(rmsCol);
-                g.fillRect(x + 2, rmsY, barW - 4, bounds.getBottom() - rmsY);
+                g.fillRect((float)(x + 2), rmsY, (float)(barW - 4), bounds.getBottom() - rmsY);
             }
 
             // Peak marker (single pixel line at top)
             if (peak > 0.001f)
             {
                 g.setColour(peakCol);
-                g.fillRect(x + 1, peakY, barW - 2, 2);
+                g.fillRect((float)(x + 1), peakY, (float)(barW - 2), 2.0f);
             }
 
             // 0dB marker line (at 80% height = 0dB reference)
-            int zeroDbY = (int)(bounds.getBottom() - 0.8f * h);
+            float zeroDbY = bounds.getBottom() - 0.8f * h;
             g.setColour(juce::Colour(0xff444466));
-            g.fillRect(x + 2, zeroDbY, barW - 4, 1);
+            g.fillRect((float)(x + 2), zeroDbY, (float)(barW - 4), 1.0f);
         };
 
         // Input meters (cool cyan/blue)
@@ -216,6 +216,11 @@ public:
         outPeakL *= factor;
         outPeakR *= factor;
         repaint();
+    }
+
+    void timerCallback() override
+    {
+        decayPeaks(0.96f);
     }
 
 private:
@@ -734,13 +739,14 @@ private:
 // ══════════════════════════════════════════════════════════════
 // MAIN EDITOR
 // ══════════════════════════════════════════════════════════════
-class CorvusFXAudioProcessorEditor : public juce::AudioProcessorEditor
+class CorvusFXAudioProcessorEditor : public juce::AudioProcessorEditor, public juce::Timer
 {
 public:
     CorvusFXAudioProcessorEditor(CorvusFXAudioProcessor&);
     ~CorvusFXAudioProcessorEditor() override;
     void paint(juce::Graphics&) override;
     void resized() override;
+    void timerCallback() override;
 private:
     CorvusFXAudioProcessor& audioProcessor;
     CorvusLookAndFeel corvusLookAndFeel;

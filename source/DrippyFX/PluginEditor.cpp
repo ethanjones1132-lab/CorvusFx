@@ -186,7 +186,6 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
 
     // Level meter
     addAndMakeVisible(levelMeter);
-    startTimerHz(30); // 30fps meter update
 }
 
 void CorvusFXAudioProcessorEditor::~CorvusFXAudioProcessorEditor()
@@ -206,9 +205,6 @@ void CorvusFXAudioProcessorEditor::timerCallback()
     levelMeter.setOutputPeakR(meters.outPeakR.load(std::memory_order_relaxed));
     levelMeter.setOutputRmsL(meters.outRmsL.load(std::memory_order_relaxed));
     levelMeter.setOutputRmsR(meters.outRmsR.load(std::memory_order_relaxed));
-
-    // Decay peak holds
-    levelMeter.decayPeaks(0.96f);
 }
 
 void CorvusFXAudioProcessorEditor::paint(juce::Graphics& g)

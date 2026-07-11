@@ -984,39 +984,59 @@ struct UpgradedReverb
     };
 
     struct EarlyReflections
-    {
-        static constexpr int MAX_SIZE = 9600;
-        float buf[MAX_SIZE] = {};
-        int pos = 0;
-        int tapDelay[8] = {};
-        float tapGain[8] = {};
-
-        void prepare(double sr)
         {
-            const float ms[8] = { 2.3f, 5.8f, 11.2f, 17.5f, 23.1f, 31.7f, 41.3f, 53.0f };
-            const float g[8] = { 0.85f, 0.72f, 0.60f, 0.50f, 0.40f, 0.32f, 0.25f, 0.18f };
-            for (int i = 0; i < 8; ++i)
-            {
-                tapDelay[i] = juce::jlimit(1, MAX_SIZE - 1, (int)(ms[i] * 0.001f * sr));
-                tapGain[i] = g[i];
-            }
-        }
-        void mute() { std::memset(buf, 0, sizeof(buf)); pos = 0; }
+            static constexpr int MAX_SIZE = 9600;
+            float buf[MAX_SIZE] = {};
+            int pos = 0;
+            int tapDelay[8] = {};
+            float tapGain[8] = {};
+            double sampleRate = 44100.0;
 
-        float process(float input)
-        {
-            buf[pos] = input;
-            float output = 0.0f;
-            for (int i = 0; i < 8; ++i)
+            void prepare(double sr)
             {
-                int rp = pos - tapDelay[i];
-                if (rp < 0) rp += MAX_SIZE;
-                output += buf[rp] * tapGain[i];
+                sampleRate = sr;
+                setRoomSize(0.5f); // Default to mid-size room
+                mute();
             }
-            if (++pos >= MAX_SIZE) pos = 0;
-            return output;
-        }
-    };
+
+            void setRoomSize(float roomSize)
+            {
+                // Scale delays: small room = tight early reflections (ms scale)
+                // large room = wider spaced, later early reflections
+                // Base delays at 44.1kHz, scaled by sample rate
+                const float baseMs[8] = { 2.3f, 5.8f, 11.2f, 17.5f, 23.1f, 31.7f, 41.3f, 53.0f };
+                const float baseGain[8] = { 0.85f, 0.72f, 0.60f, 0.50f, 0.40f, 0.32f, 0.25f, 0.18f };
+
+                // Room size 0.0 → 0.6x delays, 1.3x gains (small, bright, tight)
+                // Room size 1.0 → 1.4x delays, 0.7x gains (large, diffuse, late)
+                float delayScale = 0.6f + roomSize * 0.8f;    // 0.6 to 1.4
+                float gainScale  = 1.3f - roomSize * 0.6f;     // 1.3 to 0.7
+
+                for (int i = 0; i < 8; ++i)
+                {
+                    int delaySamps = juce::jlimit(1, MAX_SIZE - 1,
+                        (int)(baseMs[i] * delayScale * 0.001f * sampleRate));
+                    tapDelay[i] = delaySamps;
+                    tapGain[i] = baseGain[i] * gainScale;
+                }
+            }
+
+            void mute() { std::memset(buf, 0, sizeof(buf)); pos = 0; }
+
+            float process(float input)
+            {
+                buf[pos] = input;
+                float output = 0.0f;
+                for (int i = 0; i < 8; ++i)
+                {
+                    int rp = pos - tapDelay[i];
+                    if (rp < 0) rp += MAX_SIZE;
+                    output += buf[rp] * tapGain[i];
+                }
+                if (++pos >= MAX_SIZE) pos = 0;
+                return output;
+            }
+        };
 
     CombFilter combL[NUM_COMBS], combR[NUM_COMBS];
     AllpassDiffuser apL[NUM_AP], apR[NUM_AP];
@@ -1085,7 +1105,13 @@ struct UpgradedReverb
             (int)(preDelayMs * 0.001f * sampleRate));
         blockCoeffs.width = width_;
 
-        // ── Allpass feedback scaling with room size ──
+                // ── Early reflections scale with room size ──
+                // Small rooms: tight, bright, loud early reflections
+                // Large rooms: wide, diffuse, quiet early reflections
+                earlyL.setRoomSize(roomSize);
+                earlyR.setRoomSize(roomSize);
+
+                // ── Allpass feedback scaling with room size ──
         // Smaller rooms: less allpass diffusion (0.50) → tighter, less smeared
         // Larger rooms: more allpass diffusion (0.70) → richer, denser tail
         // This makes the Size knob more musically responsive across its range.

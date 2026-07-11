@@ -3,7 +3,7 @@
 **Project:** Corvus VST / DrippyFX — JUCE 8.0.12 VST3 audio plugin suite  
 **Source:** `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`  
 **Repo (binaries):** `C:\\Projects\\Corvus VST`  
-**Last updated:** 2026-07-10 (morning pass — Master Output smoothing fix for master_drive/master_width/master_mid_drive)
+**Last updated:** 2026-07-11 (overnight pass — bypass UI buttons for all 5 modules)
 
 ---
 
@@ -46,6 +46,7 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 
 **Remaining P1:**
 - [x] SIMD (SSE) optimization for Oversampling2x FIR filter — 4x throughput on hottest path (all 4 saturation stages) (`f7ecad0`)
+- [x] Per-module bypass UI buttons for Chorus, Delay, Reverb, Master (`7a8f1a0`)
 - [ ] Profile-guided optimization (PGO) build
 
 ---
@@ -58,6 +59,7 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 | ~~Stereo level meters (peak/RMS)~~ | Professional metering with In/Out L/R | ~~M~~ ✅ Done (`57c04aa`) |
 | **UI responsiveness pass** | Resize handling, knob feel, visual feedback | ~~M~~ ✅ Done (`2897782`) |
 | ~~Parameter smoothing audit (Overall knob)~~ | No zipper noise, musical taper on all knobs | ~~S~~ ✅ Done (`0b1c4d8`) |
+| ~~Bypass UI buttons (Chorus/Delay/Reverb/Master)~~ | Color-coded ToggleButtons for remaining 4 modules | ~~S~~ ✅ Done (`7a8f1a0`) |
 | Preset refinement | Adjust 18 preset values by ear; add 6 more | M |
 | Tooltip / parameter info system | Hover help for every control | S | ✅ Done |
 | ~~Factory preset categorization~~ | Group by vibe: Clean, Warm, Creative, Extreme | S | ✅ Done (`4e43c77`); 🐛 reordered presets[] fix (`252d2ff`) |
@@ -71,7 +73,7 @@ A studio-grade, aliasing-free VST3 multi-FX suite (Distortion → Chorus → Del
 | Antiderivative antialiasing (Distortion alt) | Compare vs oversampling; choose best | L |
 | Convolution reverb IR mode | "Real space" option alongside algorithmic | L |
 | Mid/side processing on Master | Width control, independent M/S saturation | M |
-| Per-module bypass with crossfade | Click-free enable/disable | S | ✅ Done (`5dd1e7c`) |
+| Per-module bypass with crossfade | Click-free enable/disable | S | ✅ Done (`5dd1e7c` — DSP bypass); ✅ Done (`7a8f1a0` — UI buttons) |
 | Oversampling quality modes | 2x / 4x / 8x selectable | M |
 
 ---
