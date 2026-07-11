@@ -110,6 +110,38 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     distortionBypassButton.setTooltip("Bypass the distortion module entirely — click-free crossfade");
     distortionBypassButton.onClick = [this] { distortionBypassButton.setButtonText(distortionBypassButton.getToggleState() ? "BYPASS" : "BYPASS"); };
 
+    addAndMakeVisible(chorusBypassButton);
+    chorusBypassButton.setButtonText("BYPASS");
+    chorusBypassButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff182030));
+    chorusBypassButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff223344));
+    chorusBypassButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff6688aa));
+    chorusBypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff88aacc));
+    chorusBypassButton.setTooltip("Bypass the chorus module entirely — click-free crossfade");
+
+    addAndMakeVisible(delayBypassButton);
+    delayBypassButton.setButtonText("BYPASS");
+    delayBypassButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1a3020));
+    delayBypassButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff224433));
+    delayBypassButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff66aa88));
+    delayBypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff88ccaa));
+    delayBypassButton.setTooltip("Bypass the delay module entirely — click-free crossfade");
+
+    addAndMakeVisible(reverbBypassButton);
+    reverbBypassButton.setButtonText("BYPASS");
+    reverbBypassButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff301a30));
+    reverbBypassButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff442244));
+    reverbBypassButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffaa66aa));
+    reverbBypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffcc88cc));
+    reverbBypassButton.setTooltip("Bypass the reverb module entirely — click-free crossfade");
+
+    addAndMakeVisible(masterBypassButton);
+    masterBypassButton.setButtonText("BYPASS");
+    masterBypassButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff301a20));
+    masterBypassButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff442233));
+    masterBypassButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffaa6688));
+    masterBypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffcc88aa));
+    masterBypassButton.setTooltip("Bypass the master output stage entirely — click-free crossfade");
+
     setupKnob(fatnessKnob, fatnessLabel, "DRIVE", "Distortion amount — blends tape saturation at low settings into tube warmth at high settings");
     setupKnob(chorusDepthKnob, chorusDepthLabel, "DEPTH", "Chorus modulation depth — controls pitch excursion amount");
     setupKnob(chorusRateKnob, chorusRateLabel, "RATE", "Chorus LFO speed (Hz) — 6 decorrelated voices never align");
@@ -131,6 +163,10 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     overallAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "overall", overallKnob);
     fatnessAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "fatness", fatnessKnob);
     distortionBypassAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "distortion_bypass", distortionBypassButton);
+    chorusBypassAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "chorus_bypass", chorusBypassButton);
+    delayBypassAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "delay_bypass", delayBypassButton);
+    reverbBypassAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "reverb_bypass", reverbBypassButton);
+    masterBypassAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "master_bypass", masterBypassButton);
     cDepAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "chorus_depth", chorusDepthKnob);
     cRateAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "chorus_rate", chorusRateKnob);
     cMixAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "chorus_mix", chorusMixKnob);
@@ -233,6 +269,11 @@ void CorvusFXAudioProcessorEditor::resized()
     masterDriveKnob.setBounds(mArea.removeFromTop(mSize));
     masterDriveLabel.setBounds(mArea);
 
+    // Master bypass button — right-aligned in the same row
+    auto mdrRow = masterDriveRow.reduced(sc(40), 0);
+    auto mbBypassArea = mdrRow.removeFromRight(sc(100));
+    masterBypassButton.setBounds(mbBypassArea.removeFromTop(sc(25)).withTrimmedLeft(0));
+
     area.removeFromTop(sc(10));
 
     // ── Master Width / Mid Drive / Side Drive knobs (below Master Drive) ──
@@ -314,6 +355,9 @@ void CorvusFXAudioProcessorEditor::resized()
         auto a3 = c.removeFromLeft(ks);
         chorusMixKnob.setBounds(a3.removeFromTop(ks));
         chorusMixLabel.setBounds(a3.removeFromTop(sc(25)));
+        c.removeFromTop(sc(5));
+        auto chBypArea = c.removeFromTop(sc(30));
+        chorusBypassButton.setBounds(chBypArea.withSizeKeepingCentre(juce::jmin(chBypArea.getWidth(), sc(80)), sc(22)));
     }
 
     // === BOTTOM ROW ===
@@ -350,6 +394,9 @@ void CorvusFXAudioProcessorEditor::resized()
         auto a4 = c.removeFromLeft(ks);
         delayDampingKnob.setBounds(a4.removeFromTop(ks));
         delayDampingLabel.setBounds(a4.removeFromTop(sc(25)));
+        c.removeFromTop(sc(5));
+        auto dlBypArea = c.removeFromTop(sc(30));
+        delayBypassButton.setBounds(dlBypArea.withSizeKeepingCentre(juce::jmin(dlBypArea.getWidth(), sc(80)), sc(22)));
     }
 
     botRow.removeFromLeft(gap);
@@ -382,5 +429,8 @@ void CorvusFXAudioProcessorEditor::resized()
         auto a4 = c.removeFromLeft(ks);
         reverbModKnob.setBounds(a4.removeFromTop(ks));
         reverbModLabel.setBounds(a4.removeFromTop(sc(25)));
+        c.removeFromTop(sc(5));
+        auto rvBypArea = c.removeFromTop(sc(30));
+        reverbBypassButton.setBounds(rvBypArea.withSizeKeepingCentre(juce::jmin(rvBypArea.getWidth(), sc(80)), sc(22)));
     }
 }

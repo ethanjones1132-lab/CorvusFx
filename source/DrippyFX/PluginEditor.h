@@ -750,6 +750,10 @@ private:
     EffectSection distortionSection, chorusSection, delaySection, reverbSection;
     AnimatedKnob fatnessKnob; juce::Label fatnessLabel;
     juce::ToggleButton distortionBypassButton;
+    juce::ToggleButton chorusBypassButton;
+    juce::ToggleButton delayBypassButton;
+    juce::ToggleButton reverbBypassButton;
+    juce::ToggleButton masterBypassButton;
     AnimatedKnob chorusDepthKnob, chorusRateKnob, chorusMixKnob;
     juce::Label chorusDepthLabel, chorusRateLabel, chorusMixLabel;
     AnimatedKnob delayTimeKnob, delayFeedbackKnob, delayMixKnob, delayDampingKnob;
@@ -762,6 +766,10 @@ private:
     AnimatedKnob masterSideDriveKnob; juce::Label masterSideDriveLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> overallAtt, fatnessAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> distortionBypassAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> chorusBypassAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> delayBypassAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> reverbBypassAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> masterBypassAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> cDepAtt, cRateAtt, cMixAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> dTimeAtt, dFbAtt, dMixAtt, dDampAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> rSizeAtt, rDampAtt, rMixAtt, rModAtt;
