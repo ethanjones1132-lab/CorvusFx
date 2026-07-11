@@ -363,7 +363,7 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     // Pre-compute reverb coefficients once per block (avoids per-sample setFeedback/setDamp + mod calc)
     if (reverbMix > 0.001f)
-        upgradedReverb.beginBlock(reverbSize, reverbDamping, reverbMix, reverbMod, 1.0f, reverbPreDelay);
+        upgradedReverb.beginBlock(reverbSize, reverbDamping, reverbMix, sReverbMod, 1.0f, reverbPreDelay);
 
     // Store dry signal
     if (dryBuffer.getNumSamples() < numSamples || dryBuffer.getNumChannels() < chProc)
