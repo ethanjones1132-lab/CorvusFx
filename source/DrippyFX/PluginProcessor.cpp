@@ -139,30 +139,33 @@ juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::crea
     auto pctParam = [](const juce::String& id, const juce::String& name, float def) {
         auto range = juce::NormalisableRange<float>(0, 100, 0.1f);
         return std::make_unique<juce::AudioParameterFloat>(
-            id, name, range, def, "%",
-            juce::AudioParameterFloatAttributes().withLabel("%"),
-            [range](float value, int) { return juce::String(value, 1) + " %"; },
-            [range](const juce::String& text) { return text.replace("%", "").getFloatValue(); });
+            id, name, range, def,
+            juce::AudioParameterFloatAttributes()
+                .withLabel("%")
+                .withStringFromValueFunction([range](float value, int) { return juce::String(value, 1) + " %"; })
+                .withValueFromStringFunction([range](const juce::String& text) { return text.replace("%", "").getFloatValue(); }));
     };
 
     // Helper for Hz parameters
     auto hzParam = [](const juce::String& id, const juce::String& name, float min, float max, float def) {
         auto range = juce::NormalisableRange<float>(min, max, 0.1f);
         return std::make_unique<juce::AudioParameterFloat>(
-            id, name, range, def, "Hz",
-            juce::AudioParameterFloatAttributes().withLabel("Hz"),
-            [range](float value, int) { return juce::String(value, 1) + " Hz"; },
-            [range](const juce::String& text) { return text.replace("Hz", "").replace("hz", "").getFloatValue(); });
+            id, name, range, def,
+            juce::AudioParameterFloatAttributes()
+                .withLabel("Hz")
+                .withStringFromValueFunction([range](float value, int) { return juce::String(value, 1) + " Hz"; })
+                .withValueFromStringFunction([range](const juce::String& text) { return text.replace("Hz", "").replace("hz", "").getFloatValue(); }));
     };
 
     // Helper for ms parameters
     auto msParam = [](const juce::String& id, const juce::String& name, float min, float max, float def) {
         auto range = juce::NormalisableRange<float>(min, max, 1.0f);
         return std::make_unique<juce::AudioParameterFloat>(
-            id, name, range, def, "ms",
-            juce::AudioParameterFloatAttributes().withLabel("ms"),
-            [range](float value, int) { return juce::String((int)value) + " ms"; },
-            [range](const juce::String& text) { return text.replace("ms", "").getFloatValue(); });
+            id, name, range, def,
+            juce::AudioParameterFloatAttributes()
+                .withLabel("ms")
+                .withStringFromValueFunction([range](float value, int) { return juce::String((int)value) + " ms"; })
+                .withValueFromStringFunction([range](const juce::String& text) { return text.replace("ms", "").getFloatValue(); }));
     };
 
     params.push_back(pctParam("overall", "Overall", 100));
