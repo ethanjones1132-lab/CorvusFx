@@ -54,64 +54,64 @@ void CorvusFXAudioProcessor::loadPreset(int index)
     // Combo order: CLEAN [0-5], WARM [6-11], CREATIVE [12-17], EXTREME [18-23]
     if (index < 0 || index >= 24) return;
     
-    //                    fat  cD   cR    cM   dT   dFb  dM   dDmp dMod rS   rDmp rM   rMod  mDrv mWid mMid mSide dByp
-    struct P { float fat, cD, cR, cM, dT, dFb, dM, dDmp, dMod, rS, rDmp, rM, rMod, mDrv, mWid, mMid, mSide, distByp; };
+    //                    fat  cD   cR    cM   dT   dFb  dM   dDmp dMod rS   rDmp rM   rMod  mDrv mWid mMid mSide dByp cByp dByp rByp mByp
+    struct P { float fat, cD, cR, cM, dT, dFb, dM, dDmp, dMod, rS, rDmp, rM, rMod, mDrv, mWid, mMid, mSide, distByp, chorusByp, delayByp, reverbByp, masterByp; };
     static const P presets[24] = {
         // ── CLEAN (pos 0-5): transparent enhancement, pristine highs ──────
         // 0: Clean Sparkle — subtle widening, pristine highs
-        {  8, 25, 1.2f, 35,   0,  0,  0,  0,  0,  20, 55, 10, 20,   0, 100,   0,   0, 0 },
+        {  8, 25, 1.2f, 35,   0,  0,  0,  0,  0,  20, 55, 10, 20,   0, 100,   0,   0, 0, 0, 0, 0, 0 },
         // 1: Crystal Shimmer — chorus-forward, bright and airy
-        {  5, 60, 3.0f, 70, 130, 15, 15, 25, 40,  50, 25, 20, 75,   0, 100,   0,   0, 0 },
+        {  5, 60, 3.0f, 70, 130, 15, 15, 25, 40,  50, 25, 20, 75,   0, 100,   0,   0, 0, 0, 0, 0, 0 },
         // 2: Silk Thread — ultra-smooth chorus, no drive, gentle space
-        {  0, 40, 0.5f, 60,   0,  0,  0,  0,  0,  35, 50, 12, 40,   0, 100,   0,   0, 0 },
+        {  0, 40, 0.5f, 60,   0,  0,  0,  0,  0,  35, 50, 12, 40,   0, 100,   0,   0, 0, 0, 0, 0, 0 },
         // 3: Subtle Glue — bus cohesion, barely-there enhancement
-        { 28,  8, 1.2f, 18,  80, 12,  8, 45, 10,  25, 60,  8, 12,   0, 100,   0,   0, 0 },
+        { 28,  8, 1.2f, 18,  80, 12,  8, 45, 10,  25, 60,  8, 12,   0, 100,   0,   0, 0, 0, 0, 0, 0 },
         // 4: Glass Canon — pristine stereo widening, shimmering highs, zero drive
-        {  0, 35, 2.8f, 40, 110,  8, 15, 15, 45,  45, 40, 22, 65,   0, 120,   0,   0, 0 },
+        {  0, 35, 2.8f, 40, 110,  8, 15, 15, 45,  45, 40, 22, 65,   0, 120,   0,   0, 0, 0, 0, 0, 0 },
         // 5: Air Lift — gentle HF excitation, subtle chorus, airy top end
-        { 12, 30, 4.0f, 35,   0,  0,  0,  0,  0,  20, 30,  8, 55,   0, 100,   0,   0, 0 },
+        { 12, 30, 4.0f, 35,   0,  0,  0,  0,  0,  20, 30,  8, 55,   0, 100,   0,   0, 0, 0, 0, 0, 0 },
 
         // ── WARM (pos 6-11): analog-style saturation, musical thickening ───
         // 6: Warm Glow — medium drive, gentle chorus thickening
-        { 40, 18, 1.8f, 30, 180, 20, 12, 55, 25,  35, 65, 15, 25,  20, 100,  10,   5, 0 },
+        { 40, 18, 1.8f, 30, 180, 20, 12, 55, 25,  35, 65, 15, 25,  20, 100,  10,   5, 0, 0, 0, 0, 0 },
         // 7: Vintage Vibe — lo-fi warmth, rolled-off highs
-        { 55, 30, 0.7f, 40, 280, 32, 22, 80, 20,  55, 75, 18, 15,  30, 100,  15,  10, 0 },
+        { 55, 30, 0.7f, 40, 280, 32, 22, 80, 20,  55, 75, 18, 15,  30, 100,  15,  10, 0, 0, 0, 0, 0 },
         // 8: Thick Sauce — heavy saturation, chorus thickening
-        { 72, 35, 2.2f, 45, 200, 28, 18, 50, 35,  40, 55, 18, 30,  40, 100,  20,  15, 0 },
+        { 72, 35, 2.2f, 45, 200, 28, 18, 50, 35,  40, 55, 18, 30,  40, 100,  20,  15, 0, 0, 0, 0, 0 },
         // 9: Tight Punch — controlled, punchy, no excess
-        { 45, 12, 2.0f, 22, 100, 18, 10, 55, 15,  28, 65,  8, 18,  15, 100,   5,   5, 0 },
+        { 45, 12, 2.0f, 22, 100, 18, 10, 55, 15,  28, 65,  8, 18,  15, 100,   5,   5, 0, 0, 0, 0, 0 },
         // 10: Cozy Hiss — cassette deck warmth, gentle wow, lo-fi magic
-        { 35, 15, 0.9f, 28, 220, 35, 20, 85, 55,  30, 70, 12, 40,  25, 100,  10,  10, 0 },
+        { 35, 15, 0.9f, 28, 220, 35, 20, 85, 55,  30, 70, 12, 40,  25, 100,  10,  10, 0, 0, 0, 0, 0 },
         // 11: Tube Glow — mild tube drive, rich harmonics, subtle room verb
-        { 50, 10, 1.5f, 20,   0,  0,  0,  0,  0,  25, 50, 12, 25,  20, 100,  10,   0, 0 },
+        { 50, 10, 1.5f, 20,   0,  0,  0,  0,  0,  25, 50, 12, 25,  20, 100,  10,   0, 0, 0, 0, 0, 0 },
 
         // ── CREATIVE (pos 12-17): modulation-forward, sound design ─────────
         // 12: Dreamy Space — low drive, deep chorus, big reverb
-        { 12, 50, 0.8f, 55, 420, 35, 25, 40, 30,  85, 30, 55, 65,  10, 110,   5,  15, 0 },
+        { 12, 50, 0.8f, 55, 420, 35, 25, 40, 30,  85, 30, 55, 65,  10, 110,   5,  15, 0, 0, 0, 0, 0 },
         // 13: Cosmic Wide — maximum stereo width, deep modulation
-        { 22, 75, 3.5f, 65, 160, 25, 28, 30, 60,  80, 25, 45, 85,   0, 130,   0,  20, 0 },
+        { 22, 75, 3.5f, 65, 160, 25, 28, 30, 60,  80, 25, 45, 85,   0, 130,   0,  20, 0, 0, 0, 0, 0 },
         // 14: Molten Core — heavy saturation into drenched chorus
-        { 78, 55, 1.5f, 70, 150, 22, 20, 45, 30,  25, 45, 12, 35,  50, 100,  25,  20, 0 },
+        { 78, 55, 1.5f, 70, 150, 22, 20, 45, 30,  25, 45, 12, 35,  50, 100,  25,  20, 0, 0, 0, 0, 0 },
         // 15: Sunspot — fast bright chorus + short slapback delay
-        {  0, 45, 4.5f, 55,  65, 10, 25, 20, 35,  15, 40,  5, 50,   0, 100,   0,   0, 0 },
+        {  0, 45, 4.5f, 55,  65, 10, 25, 20, 35,  15, 40,  5, 50,   0, 100,   0,   0, 0, 0, 0, 0, 0 },
         // 16: Nebula Drift — slow evolving chorus + long pre-delay reverb
-        { 20, 65, 0.3f, 55, 300, 40, 18, 50, 40,  88, 35, 55, 80,   5, 115,   0,  10, 0 },
+        { 20, 65, 0.3f, 55, 300, 40, 18, 50, 40,  88, 35, 55, 80,   5, 115,   0,  10, 0, 0, 0, 0, 0 },
         // 17: Shimmerfall — cascading delay into shimmer reverb, ethereal wash
-        {  5, 40, 2.0f, 45, 350, 50, 40, 35, 45,  80, 15, 60, 90,  10, 120,   5,  15, 0 },
+        {  5, 40, 2.0f, 45, 350, 50, 40, 35, 45,  80, 15, 60, 90,  10, 120,   5,  15, 0, 0, 0, 0, 0 },
 
         // ── EXTREME (pos 18-23): aggressive, heavy processing ──────────────
         // 18: Deep Echo — tape delay focus, dark repeats
-        { 18, 12, 1.5f, 20, 520, 58, 55, 75, 50,  45, 60, 15, 25,  15, 100,  10,  10, 0 },
+        { 18, 12, 1.5f, 20, 520, 58, 55, 75, 50,  45, 60, 15, 25,  15, 100,  10,  10, 0, 0, 0, 0, 0 },
         // 19: Aggressive Drive — in-your-face distortion character
-        { 88, 15, 2.0f, 25, 200, 25, 15, 60, 25,  30, 55, 10, 20,  70, 100,  30,  20, 0 },
+        { 88, 15, 2.0f, 25, 200, 25, 15, 60, 25,  30, 55, 10, 20,  70, 100,  30,  20, 0, 0, 0, 0, 0 },
         // 20: Lush Pad — massive reverb wash for sustained sounds
-        { 15, 45, 1.0f, 50, 380, 30, 15, 35, 30,  92, 20, 65, 70,   5, 120,   0,  15, 0 },
+        { 15, 45, 1.0f, 50, 380, 30, 15, 35, 30,  92, 20, 65, 70,   5, 120,   0,  15, 0, 0, 0, 0, 0 },
         // 21: Event Horizon — long delay + heavy feedback into massive reverb
-        { 10, 20, 0.6f, 30, 800, 65, 45, 55, 45,  95, 15, 70, 90,  20, 125,  10,  25, 0 },
+        { 10, 20, 0.6f, 30, 800, 65, 45, 55, 45,  95, 15, 70, 90,  20, 125,  10,  25, 0, 0, 0, 0, 0 },
         // 22: Iron Press — heavy parallel compression via drive + tight verb
-        { 65,  5, 1.8f, 15,  60, 15,  8, 70, 20,  18, 80,  6, 10,  40,  90,  20,  10, 0 },
+        { 65,  5, 1.8f, 15,  60, 15,  8, 70, 20,  18, 80,  6, 10,  40,  90,  20,  10, 0, 0, 0, 0, 0 },
         // 23: Obliterator — maxed drive, deep chorus, long feedback, giant hall
-        { 95, 50, 1.2f, 55, 600, 70, 40, 65, 50,  90, 30, 55, 85,  80, 100,  40,  30, 0 },
+        { 95, 50, 1.2f, 55, 600, 70, 40, 65, 50,  90, 30, 55, 85,  80, 100,  40,  30, 0, 0, 0, 0, 0 },
     };
     
     const auto& p = presets[index];
@@ -125,6 +125,10 @@ void CorvusFXAudioProcessor::loadPreset(int index)
     set("reverb_size", p.rS); set("reverb_damping", p.rDmp); set("reverb_mix", p.rM); set("reverb_mod", p.rMod);
     set("master_drive", p.mDrv); set("master_width", p.mWid); set("master_mid_drive", p.mMid); set("master_side_drive", p.mSide);
     set("distortion_bypass", p.distByp);
+    set("chorus_bypass", p.chorusByp);
+    set("delay_bypass", p.delayByp);
+    set("reverb_bypass", p.reverbByp);
+    set("master_bypass", p.masterByp);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::createParameterLayout()
@@ -167,22 +171,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::crea
     params.push_back(pctParam("chorus_depth", "Chorus Depth", 0));
     params.push_back(hzParam("chorus_rate", "Chorus Rate", 0.1f, 10, 2));
     params.push_back(pctParam("chorus_mix", "Chorus Mix", 50));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("chorus_bypass", "Chorus Bypass", false));
     params.push_back(msParam("delay_time", "Delay Time", 0, 2000, 250));
     params.push_back(pctParam("delay_feedback", "Delay Feedback", 30));
     params.push_back(pctParam("delay_mix", "Delay Mix", 0));
     params.push_back(pctParam("delay_damping", "Delay Damping", 40));
     params.push_back(pctParam("delay_mod", "Delay Mod", 30));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("delay_bypass", "Delay Bypass", false));
     params.push_back(pctParam("reverb_size", "Reverb Size", 50));
     params.push_back(pctParam("reverb_damping", "Reverb Damping", 50));
     params.push_back(pctParam("reverb_mix", "Reverb Mix", 0));
     params.push_back(pctParam("reverb_mod", "Reverb Mod", 30));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("reverb_bypass", "Reverb Bypass", false));
     params.push_back(pctParam("master_drive", "Master Drive", 0));
     params.push_back(pctParam("master_width", "Master Width", 100));
     params.push_back(pctParam("master_mid_drive", "Master Mid Drive", 0));
     params.push_back(pctParam("master_side_drive", "Master Side Drive", 0));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("chorus_bypass", "Chorus Bypass", false));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("delay_bypass", "Delay Bypass", false));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("reverb_bypass", "Reverb Bypass", false));
     params.push_back(std::make_unique<juce::AudioParameterBool>("master_bypass", "Master Bypass", false));
     params.push_back(std::make_unique<juce::AudioParameterInt>("preset", "Preset", 0, 23, 0));
     return { params.begin(), params.end() };
