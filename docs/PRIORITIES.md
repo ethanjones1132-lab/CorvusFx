@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-12 (morning pass — remove dead Distortion::process() /*amount*/ parameter)
+Last updated: 2026-07-12 (afternoon pass — chorus std::fmod elimination with normalized phase recurrence)
 Working copy: `C:\\\\\\\\Projects\\\\\\\\Corvus VST`
 Source root: `C:\\\\\\\\Projects\\\\\\\\Corvus VST\\\\\\\\source\\\\\\\\DrippyFX\\\\\\\\` (git SoT; sync to Downloads tree for MSBuild)
 
@@ -39,7 +39,7 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 ||| Date | Commit | Module | Improvement |
 |||------|--------|--------|-------------|
 ||||| 2026-07-12 | `26f6574` | PluginProcessor | **Remove dead block-level snapshot variables** — 8 dead declarations removed from processBlock(): overallMix, delayTime, delayFeedback, delayMix, chorusFeedback, peakSmooth (2x). Also removed dead distortionBypassButton.onClick handler. |
-|||| 2026-07-12 | `f442358` | ProfessionalDistortion | **Remove dead float /*amount*/ parameter from process()** — the `float /*amount*/` in `process(inL, inR, /*amount*/, outL, outR)` was never referenced; all amount-dependent values precomputed in beginBlock(). Removed dead param from both declaration (.h:340) and call site (.cpp:443). Binary MD5: a5bef18f → 1e7d38a0. |
+|| 2026-07-12 | `3d63fb5` | EnhancedChorus | **Replace std::fmod in smoothTriangle with normalized phase recurrence** — tracks normalized [0,1) triangle phase per voice, advances via simple multiply-and-wrap instead of 6 std::fmod()/sample. Saves 288,000 fmod calls/sec at 48kHz. Inlined smoothTriangle logic directly in process() using v.triPhase. Binary MD5: 1e7d38a0 → 42d5db57 (+1024 bytes). ||
 ||| 2026-07-12 | `50f559d` | UI/Delay | **Add missing delay_mod UI knob** — the delay_mod parameter existed in the DSP pipeline (param ID 'delay_mod', default 30%, full smoothing + processBlock read + delay.processSample modAmount) but had no UI knob. Added delayModKnob + delayModLabel + dModAtt with tooltip. Delay row expanded from 4 to 5 knobs (TIME, FEEDBACK, MIX, DAMPING, MOD). |
 ||| 2026-07-11 | `062281e` | Presets | **Reorganize bypass params in parameter layout** — moved chorus_bypass/delay_bypass/reverb_bypass/master_bypass from grouped-at-end to module-local positions in createParameterLayout(). Expanded preset P struct with 4 new bypass fields; all 24 presets updated with bypass=0. 62-line coherent WIP committed. |
 ||| 2026-07-11 | `7a8f1a0` | UI/PluginEditor | **Add bypass buttons for Chorus, Delay, Reverb, and Master** — color-coded ToggleButtons (blue=chorus, green=delay, purple=reverb, magenta=master) with ButtonAttachments wired to the VTS. Button placement below each module's knobs in 2×2 grid, master bypass next to Master Drive row. Tooltips: "Bypass the <module> module entirely — click-free crossfade". 58-line addition to header+cpp. |
