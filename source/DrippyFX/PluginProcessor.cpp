@@ -341,14 +341,10 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // beginBlock() calls use these block-level snapshots since their
     // coefficient caches don't need per-sample ramping (the cached
     // exp() values are ~constant over a 64-sample block).
-    const float overallMix = smoothOverall.getTargetValue();
     const float fatness     = smoothFatness.getTargetValue();
     const float chorusDepth = smoothChorusDepth.getTargetValue();
     const float chorusRate  = smoothChorusRate.getTargetValue();
     const float chorusMix   = smoothChorusMix.getTargetValue();
-    const float delayTime   = smoothDelayTime.getTargetValue();
-    const float delayFeedback = smoothDelayFeedback.getTargetValue();
-    const float delayMix    = smoothDelayMix.getTargetValue();
     const float delayDamping = smoothDelayDamping.getTargetValue();
     const float delayMod    = smoothDelayMod.getTargetValue();
     const float reverbSize  = smoothReverbSize.getTargetValue();
@@ -356,7 +352,6 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const float reverbMix   = smoothReverbMix.getTargetValue();
     const float sReverbMod   = smoothReverbMod.getTargetValue();
 
-    const float chorusFeedback = chorusDepth * 0.25f;
     const float delayModAmount = delayMod;
     const float pingPong = 0.35f;
     const float reverbPreDelay = 5.0f + reverbSize * 40.0f;
@@ -394,7 +389,6 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         float inRmsL = std::sqrt(inRmsSumL / static_cast<float>(numSamples));
         float inRmsR = std::sqrt(inRmsSumR / static_cast<float>(numSamples));
         // Smooth with simple exponential decay (attack=0, release~300ms at 48kHz)
-        const float peakSmooth = 0.999f;
         const float rmsSmooth  = 0.995f;
         levelMeters.inPeakL .store(std::max(levelMeters.inPeakL .load(), inPeakL),  std::memory_order_relaxed);
         levelMeters.inPeakR .store(std::max(levelMeters.inPeakR .load(), inPeakR),  std::memory_order_relaxed);
@@ -544,7 +538,6 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         float outRmsL = std::sqrt(outRmsSumL / static_cast<float>(numSamples));
         float outRmsR = std::sqrt(outRmsSumR / static_cast<float>(numSamples));
         // Smooth with simple exponential decay
-        const float peakSmooth = 0.999f;
         const float rmsSmooth  = 0.995f;
         levelMeters.outPeakL.store(std::max(levelMeters.outPeakL.load(), outPeakL), std::memory_order_relaxed);
         levelMeters.outPeakR.store(std::max(levelMeters.outPeakR.load(), outPeakR), std::memory_order_relaxed);

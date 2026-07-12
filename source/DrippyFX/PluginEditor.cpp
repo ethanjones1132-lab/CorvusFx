@@ -108,7 +108,6 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     distortionBypassButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff886666));
     distortionBypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffcc8888));
     distortionBypassButton.setTooltip("Bypass the distortion module entirely — click-free crossfade");
-    distortionBypassButton.onClick = [this] { distortionBypassButton.setButtonText(distortionBypassButton.getToggleState() ? "BYPASS" : "BYPASS"); };
 
     addAndMakeVisible(chorusBypassButton);
     chorusBypassButton.setButtonText("BYPASS");
