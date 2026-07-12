@@ -445,6 +445,7 @@ struct EnhancedChorus
         float triBlend = 0.5f;      // 0 = pure sine, 1 = pure smoothed triangle
         // Per-voice allpass for pitch smoothing
         float apState[2] = {};
+        float triPhase = 0.0f;     // Normalized phase [0,1) for triangle LFO — avoids std::fmod
     };
 
     Voice voices[NUM_VOICES];
@@ -480,6 +481,7 @@ struct EnhancedChorus
             float maxSwingMs = 2.8f;        // max modulation swing in ms
             float driftDelta = 0.0f;        // drift phase increment per sample
             float rateToIncrement = 0.0f;   // twoPi / sr — cached for LFO rate→phase step
+            float invSr = 0.0f;               // 1.0 / sr — cached for normalized triangle phase advance
             // Phase recurrence constants per voice — replaces 2× std::sin()/sample with 4 multiplies
                     float voiceCosDelta[NUM_VOICES] = {};  // cos(rate * rateScale * rateToIncrement) per voice
                     float voiceSinDelta[NUM_VOICES] = {};  // sin(rate * rateScale * rateToIncrement) per voice
@@ -510,6 +512,7 @@ struct EnhancedChorus
         chorusBlockCoeffs.maxSwingMs = 2.8f * chorusBlockCoeffs.mixDepthScale;
         chorusBlockCoeffs.driftDelta = 0.07f / sr;
         chorusBlockCoeffs.rateToIncrement = juce::MathConstants<float>::twoPi / sr;
+        chorusBlockCoeffs.invSr = 1.0f / sr;
         // Precompute per-voice phase recurrence constants
         // sin/cos of per-voice phase delta → 4 multiplies/sample instead of 2 std::sin()/sample
         for (int i = 0; i < NUM_VOICES; ++i)
@@ -583,6 +586,9 @@ struct EnhancedChorus
             float initPhase = voices[i].phaseOffset;
             lfoSin[i] = std::sin(initPhase);
             lfoCos[i] = std::cos(initPhase);
+            // Initialize normalized triangle phase from phaseOffset
+            voices[i].triPhase = std::fmod(initPhase / juce::MathConstants<float>::twoPi, 1.0f);
+            if (voices[i].triPhase < 0.0f) voices[i].triPhase += 1.0f;
             // Initialize drift phase recurrence state
             float driftPhase1 = driftPhase[i] * 2.32f + static_cast<float>(i) * 2.1f * 2.32f;
             float driftPhase2 = driftPhase[i] * 5.71f + static_cast<float>(i) * 1.3f * 5.71f;
@@ -593,16 +599,7 @@ struct EnhancedChorus
         }
     }
 
-    // Smoothed triangle: spends more time near center, less at extremes
-    static inline float smoothTriangle(float phase)
-    {
-        // Triangle wave from phase, then smooth with cubic
-        float t = std::fmod(phase / juce::MathConstants<float>::twoPi, 1.0f);
-        if (t < 0.0f) t += 1.0f;
-        float tri = (t < 0.5f) ? (4.0f * t - 1.0f) : (3.0f - 4.0f * t);
-        // Cubic smoothing: keeps more time near zero
-        return tri * (1.5f - 0.5f * tri * tri);
-    }
+    // smoothTriangle inlined in process() — normalized phase tracking eliminates std::fmod per voice
 
     // 1-pole allpass for pitch transition smoothing
     static inline float allpassSmooth(float input, float& state, float coeff)
@@ -650,7 +647,6 @@ struct EnhancedChorus
             // sin(phase+d) = sin(phase)cos(d) + cos(phase)sin(d)
             // cos(phase+d) = cos(phase)cos(d) - sin(phase)sin(d)
             // sd/cd are computed once per voice per block (in beginBlock, not here).
-            float phase = v.phase + v.phaseOffset;
             if (channel == 0)
             {
                 float newSin = lfoSin[i] * chorusBlockCoeffs.voiceCosDelta[i] + lfoCos[i] * chorusBlockCoeffs.voiceSinDelta[i];
@@ -659,7 +655,10 @@ struct EnhancedChorus
                 lfoCos[i] = newCos;
             }
             float sineVal = lfoSin[i];
-            float triVal = smoothTriangle(phase);
+            // Normalized triangle phase — replaces std::fmod(phase/twoPi, 1.0f) with simple wrapping
+            float t = v.triPhase;
+            float triRaw = (t < 0.5f) ? (4.0f * t - 1.0f) : (3.0f - 4.0f * t);
+            float triVal = triRaw * (1.5f - 0.5f * triRaw * triRaw);
             float lfo = sineVal * (1.0f - v.triBlend) + triVal * v.triBlend;
 
             // Slow organic drift (very low frequency, per-voice)
@@ -711,6 +710,9 @@ struct EnhancedChorus
                 v.phase += rate * v.rateScale * chorusBlockCoeffs.rateToIncrement;
                 if (v.phase > juce::MathConstants<float>::twoPi * 4.0f)
                     v.phase -= juce::MathConstants<float>::twoPi * 2.0f;
+                // Advance normalized triangle phase — replaces std::fmod with simple wrap
+                v.triPhase += rate * v.rateScale * chorusBlockCoeffs.invSr;
+                if (v.triPhase >= 1.0f) v.triPhase -= 1.0f;
             }
         }
 
