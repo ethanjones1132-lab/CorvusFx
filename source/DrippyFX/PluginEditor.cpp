@@ -149,6 +149,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     setupKnob(delayFeedbackKnob, delayFeedbackLabel, "FEEDBACK", "Delay feedback amount — exponential mapping for musical response");
     setupKnob(delayMixKnob, delayMixLabel, "MIX", "Delay wet/dry balance");
     setupKnob(delayDampingKnob, delayDampingLabel, "DAMPING", "Delay feedback tone — high values = darker, more tape-like repeats");
+    setupKnob(delayModKnob, delayModLabel, "MOD", "Delay tape modulation depth — wow and flutter intensity for vintage tape character");
     setupKnob(reverbSizeKnob, reverbSizeLabel, "SIZE", "Reverb room size — controls both decay time and diffusion character");
     setupKnob(reverbDampingKnob, reverbDampingLabel, "DAMPING", "Reverb high-frequency absorption — higher = shorter, darker tail");
     setupKnob(reverbMixKnob, reverbMixLabel, "MIX", "Reverb wet/dry balance");
@@ -173,6 +174,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     dFbAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "delay_feedback", delayFeedbackKnob);
     dMixAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "delay_mix", delayMixKnob);
     dDampAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "delay_damping", delayDampingKnob);
+    dModAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "delay_mod", delayModKnob);
     rSizeAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "reverb_size", reverbSizeKnob);
     rDampAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "reverb_damping", reverbDampingKnob);
     rMixAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "reverb_mix", reverbMixKnob);
@@ -368,7 +370,7 @@ void CorvusFXAudioProcessorEditor::resized()
         auto c = delArea.reduced(sc(12), sc(45));
         int ks = juce::jmin(sc(70), c.getHeight() - sc(30));
         ks = juce::jmax(ks, 50); // Minimum readable size
-        int sp = juce::jmax(sc(4), (c.getWidth() - ks * 4) / 5);
+        int sp = juce::jmax(sc(4), (c.getWidth() - ks * 5) / 6);
 
         c.removeFromLeft(sp);
         auto a1 = c.removeFromLeft(ks);
@@ -389,6 +391,11 @@ void CorvusFXAudioProcessorEditor::resized()
         auto a4 = c.removeFromLeft(ks);
         delayDampingKnob.setBounds(a4.removeFromTop(ks));
         delayDampingLabel.setBounds(a4.removeFromTop(sc(25)));
+
+        c.removeFromLeft(sp);
+        auto a5 = c.removeFromLeft(ks);
+        delayModKnob.setBounds(a5.removeFromTop(ks));
+        delayModLabel.setBounds(a5.removeFromTop(sc(25)));
         c.removeFromTop(sc(5));
         auto dlBypArea = c.removeFromTop(sc(30));
         delayBypassButton.setBounds(dlBypArea.withSizeKeepingCentre(juce::jmin(dlBypArea.getWidth(), sc(80)), sc(22)));

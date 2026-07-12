@@ -762,8 +762,8 @@ private:
     juce::ToggleButton masterBypassButton;
     AnimatedKnob chorusDepthKnob, chorusRateKnob, chorusMixKnob;
     juce::Label chorusDepthLabel, chorusRateLabel, chorusMixLabel;
-    AnimatedKnob delayTimeKnob, delayFeedbackKnob, delayMixKnob, delayDampingKnob;
-    juce::Label delayTimeLabel, delayFeedbackLabel, delayMixLabel, delayDampingLabel;
+    AnimatedKnob delayTimeKnob, delayFeedbackKnob, delayMixKnob, delayDampingKnob, delayModKnob;
+    juce::Label delayTimeLabel, delayFeedbackLabel, delayMixLabel, delayDampingLabel, delayModLabel;
     AnimatedKnob reverbSizeKnob, reverbDampingKnob, reverbMixKnob, reverbModKnob;
     juce::Label reverbSizeLabel, reverbDampingLabel, reverbMixLabel, reverbModLabel;
     AnimatedKnob masterDriveKnob; juce::Label masterDriveLabel;
@@ -777,7 +777,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> reverbBypassAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> masterBypassAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> cDepAtt, cRateAtt, cMixAtt;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> dTimeAtt, dFbAtt, dMixAtt, dDampAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> dTimeAtt, dFbAtt, dMixAtt, dDampAtt, dModAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> rSizeAtt, rDampAtt, rMixAtt, rModAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterDriveAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterWidthAtt;
