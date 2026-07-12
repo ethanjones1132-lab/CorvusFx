@@ -337,8 +337,7 @@ struct ProfessionalDistortion
         blockCoeffs.driveScaled = blockCoeffs.drive * 0.7f;
     }
 
-    void process(float inL, float inR, float /*amount*/,
-        float& outL, float& outR)
+    void process(float inL, float inR, float& outL, float& outR)
     {
         // Process at 2x sample rate with anti-alias filtering for zero aliasing
         oversample.processSample(inL, inR, outL, outR, [this](float inL_os, float inR_os, float& outL_os, float& outR_os) {

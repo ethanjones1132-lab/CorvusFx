@@ -440,7 +440,7 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         if (!distortionBypass && sFatness > 0.001f)
         {
             float dL, dR;
-            distortion.process(smpL, smpR, sFatness, dL, dR);
+            distortion.process(smpL, smpR, dL, dR);
             smpL = dL;
             smpR = dR;
         }
