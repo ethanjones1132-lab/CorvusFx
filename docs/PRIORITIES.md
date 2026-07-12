@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-11 (overnight pass — bypass UI buttons for all 5 modules + reverb beginBlock var fix)
+Last updated: 2026-07-12 (overnight — add missing delay_mod UI knob; remove dead block-level snapshot variables)
 Working copy: `C:\\\\\\\\Projects\\\\\\\\Corvus VST`
 Source root: `C:\\\\\\\\Projects\\\\\\\\Corvus VST\\\\\\\\source\\\\\\\\DrippyFX\\\\\\\\` (git SoT; sync to Downloads tree for MSBuild)
 
@@ -38,7 +38,9 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 
 ||| Date | Commit | Module | Improvement |
 |||------|--------|--------|-------------|
-|||| 2026-07-11 | `062281e` | Presets | **Reorganize bypass params in parameter layout** — moved chorus_bypass/delay_bypass/reverb_bypass/master_bypass from grouped-at-end to module-local positions in createParameterLayout(). Expanded preset P struct with 4 new bypass fields; all 24 presets updated with bypass=0. 62-line coherent WIP committed. |
+||||| 2026-07-12 | `26f6574` | PluginProcessor | **Remove dead block-level snapshot variables** — 8 dead declarations removed from processBlock(): overallMix, delayTime, delayFeedback, delayMix, chorusFeedback, peakSmooth (2x). Also removed dead distortionBypassButton.onClick handler. |
+||| 2026-07-12 | `50f559d` | UI/Delay | **Add missing delay_mod UI knob** — the delay_mod parameter existed in the DSP pipeline (param ID 'delay_mod', default 30%, full smoothing + processBlock read + delay.processSample modAmount) but had no UI knob. Added delayModKnob + delayModLabel + dModAtt with tooltip. Delay row expanded from 4 to 5 knobs (TIME, FEEDBACK, MIX, DAMPING, MOD). |
+||| 2026-07-11 | `062281e` | Presets | **Reorganize bypass params in parameter layout** — moved chorus_bypass/delay_bypass/reverb_bypass/master_bypass from grouped-at-end to module-local positions in createParameterLayout(). Expanded preset P struct with 4 new bypass fields; all 24 presets updated with bypass=0. 62-line coherent WIP committed. |
 ||| 2026-07-11 | `7a8f1a0` | UI/PluginEditor | **Add bypass buttons for Chorus, Delay, Reverb, and Master** — color-coded ToggleButtons (blue=chorus, green=delay, purple=reverb, magenta=master) with ButtonAttachments wired to the VTS. Button placement below each module's knobs in 2×2 grid, master bypass next to Master Drive row. Tooltips: "Bypass the <module> module entirely — click-free crossfade". 58-line addition to header+cpp. |
 ||| 2026-07-11 | `a4e5bda` | UpgradedReverb | **Fix reverbMod → sReverbMod in beginBlock call** — line 366 used undeclared `reverbMod` instead of `sReverbMod` (C2065). Bug silently present in git SoT since 5dd1e7c but Downloads tree had different declaration state during prior builds. Single-line fix, no binary change. |
 ||| 2026-07-10 | `5dd1e7c` | Modules | **Add click-free bypass for Chorus, Delay, Reverb, Master** — 4 new AudioParameterBool parameters (chorus_bypass, delay_bypass, reverb_bypass, master_bypass). Distortion already had bypass (distortion_bypass). Each module now conditionally processes in processBlock() with parameter-controlled bypass. All 24 presets updated with bypass=0. Total parameters: 19 (was 15). Binary MD5: 56005a3d → 5e9f557f (rebuilt via MSBuild -t:Rebuild). |
