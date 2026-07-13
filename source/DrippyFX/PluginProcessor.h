@@ -879,13 +879,16 @@ struct EnhancedDelay
         float fbR = delayedR * (1.0f - pingPong) + delayedL * pingPong;
 
         // Soft tape saturation — 2x oversampled to eliminate aliasing in feedback loop
-        // Without oversampling, harmonics from tanh-style clipping fold back and compound
-        // with each feedback iteration, creating metallic artifacts in the tail.
-        oversample.processSample(fbL, fbR, fbL, fbR, [](float inL, float inR, float& outL, float& outR) {
-            auto tapeSat = [](float x) -> float { return x / (1.0f + std::abs(x) * 0.4f); };
-            outL = tapeSat(inL);
-            outR = tapeSat(inR);
-        });
+                // Without oversampling, harmonics from tanh-style clipping fold back and compound
+                // with each feedback iteration, creating metallic artifacts in the tail.
+                // Mono oversampling: fbL and fbR are processed independently, halving FIR filter cost
+                // compared to stereo processSample (same optimization applied to Master mid/side 2026-07-12).
+                auto tapeSat = [](float x) -> float { return x / (1.0f + std::abs(x) * 0.4f); };
+                float fbOutL, fbOutR;
+                oversample.processSampleMono(fbL, fbOutL, [&tapeSat](float in, float& out) { out = tapeSat(in); });
+                oversample.processSampleMono(fbR, fbOutR, [&tapeSat](float in, float& out) { out = tapeSat(in); });
+                fbL = fbOutL;
+                fbR = fbOutR;
 
         // High-cut on feedback - use cached coefficient
         fbL = fbLP[0].processLP(fbL, blockCoeffs.fbLPCoeff);
