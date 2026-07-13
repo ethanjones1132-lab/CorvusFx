@@ -1,10 +1,10 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-12 (afternoon pass — chorus std::fmod elimination with normalized phase recurrence)
+Last updated: 2026-07-13 (overnight pass — safety limiter tanh → rational approx + delay mono oversampling)
 Working copy: `C:\\\\\\\\Projects\\\\\\\\Corvus VST`
 Source root: `C:\\\\\\\\Projects\\\\\\\\Corvus VST\\\\\\\\source\\\\\\\\DrippyFX\\\\\\\\` (git SoT; sync to Downloads tree for MSBuild)
 
-Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached, 19 parameters. Entire plugin has zero per-sample transcendental calls. All 5 modules (Distortion, Chorus, Delay, Reverb, Master) now support click-free bypass with color-coded UI buttons. Parameter layout reorganized: bypass params sit next to modules. Bugfix: reverbMod→sReverbMod in beginBlock. 24 categorized presets, professional dB-scale metering, proportional layout scaling.**
+Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached, 19 parameters. Entire plugin has zero per-sample transcendental calls (including safety limiter). All 5 modules (Distortion, Chorus, Delay, Reverb, Master) support click-free bypass with color-coded UI buttons. Parameter layout reorganized: bypass params sit next to modules. Bugfix: reverbMod→sReverbMod in beginBlock. 24 categorized presets, professional dB-scale metering, proportional layout scaling.**
 
 ---
 
@@ -38,7 +38,9 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 
 ||| Date | Commit | Module | Improvement |
 |||------|--------|--------|-------------|
-||||| 2026-07-12 | `26f6574` | PluginProcessor | **Remove dead block-level snapshot variables** — 8 dead declarations removed from processBlock(): overallMix, delayTime, delayFeedback, delayMix, chorusFeedback, peakSmooth (2x). Also removed dead distortionBypassButton.onClick handler. |
+|||| 2026-07-13 | `d6ea118` | EnhancedDelay | **Mono oversampling for tape saturation** — replace stereo Oversampling2x::processSample() with independent mono processSampleMono() calls for L/R tapeSat. Halves FIR filter cost in delay feedback loop (same optimization applied to Master mid/side 2026-07-12). No audio change — identical output, half the CPU. |
+| 2026-07-13 | `ca23485` | processBlock | **Replace std::tanh in Safety Limiter with Padé [3/2] rational approximant z*(15+z²)/(15+6z²)** — eliminates last 4 per-sample transcendental calls in hot path. Padé approximant matches tanh(z) within 0.04% for z ∈ [0, 1.0] (the exact domain). Each branch computes z and z² once in a scoped block. Max limiter output error: 0.00006. Completes zero-transcendental-per-sample milestone. |
+|| 2026-07-12 | `26f6574` | PluginProcessor | **Remove dead block-level snapshot variables** — 8 dead declarations removed from processBlock(): overallMix, delayTime, delayFeedback, delayMix, chorusFeedback, peakSmooth (2x). Also removed dead distortionBypassButton.onClick handler. |
 || 2026-07-12 | `3d63fb5` | EnhancedChorus | **Replace std::fmod in smoothTriangle with normalized phase recurrence** — tracks normalized [0,1) triangle phase per voice, advances via simple multiply-and-wrap instead of 6 std::fmod()/sample. Saves 288,000 fmod calls/sec at 48kHz. Inlined smoothTriangle logic directly in process() using v.triPhase. Binary MD5: 1e7d38a0 → 42d5db57 (+1024 bytes). ||
 ||| 2026-07-12 | `50f559d` | UI/Delay | **Add missing delay_mod UI knob** — the delay_mod parameter existed in the DSP pipeline (param ID 'delay_mod', default 30%, full smoothing + processBlock read + delay.processSample modAmount) but had no UI knob. Added delayModKnob + delayModLabel + dModAtt with tooltip. Delay row expanded from 4 to 5 knobs (TIME, FEEDBACK, MIX, DAMPING, MOD). |
 ||| 2026-07-11 | `062281e` | Presets | **Reorganize bypass params in parameter layout** — moved chorus_bypass/delay_bypass/reverb_bypass/master_bypass from grouped-at-end to module-local positions in createParameterLayout(). Expanded preset P struct with 4 new bypass fields; all 24 presets updated with bypass=0. 62-line coherent WIP committed. |

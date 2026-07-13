@@ -493,17 +493,17 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
         // 6. SAFETY LIMITER (merged from separate pass)
         if (smpL > 1.0f)
-            { float z = (smpL - 1.0f) * 0.5f; smpL = 1.0f + z / (1.0f + 0.3f * z) * 0.2f; }
+            { float z = (smpL - 1.0f) * 0.5f; float z2 = z * z; smpL = 1.0f + z * (15.0f + z2) / (15.0f + 6.0f * z2) * 0.2f; }
         else if (smpL < -1.0f)
-            { float z = (smpL + 1.0f) * 0.5f; smpL = -1.0f + z / (1.0f + 0.3f * z) * 0.2f; }
+            { float z = (smpL + 1.0f) * 0.5f; float z2 = z * z; smpL = -1.0f + z * (15.0f + z2) / (15.0f + 6.0f * z2) * 0.2f; }
         smpL = juce::jlimit(-1.5f, 1.5f, smpL);
 
         if (!isMono)
         {
             if (smpR > 1.0f)
-                { float z = (smpR - 1.0f) * 0.5f; smpR = 1.0f + z / (1.0f + 0.3f * z) * 0.2f; }
+                { float z = (smpR - 1.0f) * 0.5f; float z2 = z * z; smpR = 1.0f + z * (15.0f + z2) / (15.0f + 6.0f * z2) * 0.2f; }
             else if (smpR < -1.0f)
-                { float z = (smpR + 1.0f) * 0.5f; smpR = -1.0f + z / (1.0f + 0.3f * z) * 0.2f; }
+                { float z = (smpR + 1.0f) * 0.5f; float z2 = z * z; smpR = -1.0f + z * (15.0f + z2) / (15.0f + 6.0f * z2) * 0.2f; }
             smpR = juce::jlimit(-1.5f, 1.5f, smpR);
         }
 
