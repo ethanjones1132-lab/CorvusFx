@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-13 (afternoon pass — fix getCurrentProgram/setCurrentProgram DAW interop + remove dead presetNames[] array)
+Last updated: 2026-07-13 (evening pass — per-channel Chorus feedback oversampling to prevent L/R state sharing)
 Working copy: `C:\\\\\\\\Projects\\\\\\\\Corvus VST`
 Source root: `C:\\\\\\\\Projects\\\\\\\\Corvus VST\\\\\\\\source\\\\\\\\DrippyFX\\\\\\\\` (git SoT; sync to Downloads tree for MSBuild)
 
