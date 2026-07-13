@@ -28,15 +28,6 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetLabel.setColour(juce::Label::textColourId, juce::Colour(0xff888899));
     addAndMakeVisible(presetLabel);
 
-    static const char* presetNames[] = {
-        "Clean Sparkle","Warm Glow","Dreamy Space","Thick Sauce",
-        "Crystal Shimmer","Deep Echo","Vintage Vibe","Cosmic Wide",
-        "Subtle Glue","Aggressive Drive","Lush Pad","Tight Punch",
-        "Silk Thread","Molten Core","Event Horizon","Sunspot",
-        "Nebula Drift","Iron Press","Glass Canon","Air Lift",
-        "Cozy Hiss","Tube Glow","Shimmerfall","Obliterator"
-    };
-    
     // Factory preset categorization: grouped by vibe with disabled separator items
     // Category 1: CLEAN — transparent enhancement, pristine highs (6 presets)
     presetSelector.addItem("═══ CLEAN ═══", 1);   presetSelector.setItemEnabled(1, false);

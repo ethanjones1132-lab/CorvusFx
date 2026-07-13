@@ -222,9 +222,39 @@ bool CorvusFXAudioProcessor::producesMidi() const { return false; }
 bool CorvusFXAudioProcessor::isMidiEffect() const { return false; }
 double CorvusFXAudioProcessor::getTailLengthSeconds() const { return 8.0; }
 int CorvusFXAudioProcessor::getNumPrograms() { return 30; }
-int CorvusFXAudioProcessor::getCurrentProgram() { return (int)(apvts.getRawParameterValue("preset")->load() + 0.5f); }
+int CorvusFXAudioProcessor::getCurrentProgram() {
+    // Convert combo box item ID (0-35) to preset index (0-29) via reverse lookup.
+    // DAW hosts expect program indices in [0, getNumPrograms()-1], not combo item IDs.
+    int id = (int)(apvts.getRawParameterValue("preset")->load() + 0.5f);
+    // Reverse of idToPreset: combo IDs 2-7->0-5, 9-14->6-11, 16-21->12-17, 23-28->18-23, 30-35->24-29
+    static const int presetFromId[36] = {
+        -1, -1, 0, 1, 2, 3, 4, 5,   // IDs 0-7
+        -1, 6, 7, 8, 9,10,11,       // IDs 8-14
+        -1,12,13,14,15,16,17,        // IDs 15-21
+        -1,18,19,20,21,22,23,        // IDs 22-28
+        -1,24,25,26,27,28,29         // IDs 29-35
+    };
+    if (id >= 0 && id < 36) {
+        int idx = presetFromId[id];
+        if (idx >= 0) return idx;
+    }
+    return 0;
+}
 void CorvusFXAudioProcessor::setCurrentProgram(int i) {
-    if (i >= 0 && i < 30) { auto* p = apvts.getParameter("preset"); if (p) p->setValueNotifyingHost(p->convertTo0to1((float)i)); }
+    // Convert preset index (0-29) to combo box item ID (2-35) for the ComboBoxAttachment.
+    // The host calls setCurrentProgram(i) with i in [0, getNumPrograms()-1].
+    // We must set the preset parameter to the corresponding combo box item ID.
+    static const int presetToId[30] = {
+        2, 3, 4, 5, 6, 7,              // CLEAN [0-5]
+        9,10,11,12,13,14,               // WARM [6-11]
+       16,17,18,19,20,21,               // CREATIVE [12-17]
+       23,24,25,26,27,28,               // EXTREME [18-23]
+       30,31,32,33,34,35                // SIGNATURE [24-29]
+    };
+    if (i >= 0 && i < 30) {
+        auto* p = apvts.getParameter("preset");
+        if (p) p->setValueNotifyingHost(p->convertTo0to1((float)presetToId[i]));
+    }
 }
 const juce::String CorvusFXAudioProcessor::getProgramName(int i) {
     // Reordered to match combo box layout: CLEAN [0-5], WARM [6-11], CREATIVE [12-17], EXTREME [18-23], SIGNATURE [24-29]
