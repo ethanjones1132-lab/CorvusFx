@@ -74,8 +74,17 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.addItem("Iron Press", 27);
     presetSelector.addItem("Obliterator", 28);
     
+    // Category 5: SIGNATURE — curated artist-style sounds, distinct character (6 presets)
+    presetSelector.addItem("═══ SIGNATURE ═══", 29); presetSelector.setItemEnabled(29, false);
+    presetSelector.addItem("Velvet Morning", 30);
+    presetSelector.addItem("Neon Dusk", 31);
+    presetSelector.addItem("Basement Sessions", 32);
+    presetSelector.addItem("Cathedral Drift", 33);
+    presetSelector.addItem("Circuit Bent", 34);
+    presetSelector.addItem("Midnight Oil", 35);
+    
     presetSelector.setSelectedId(2); // Default to Clean Sparkle (first actual preset)
-    presetSelector.setTooltip("Select factory preset — 24 curated sounds from clean enhancement to extreme sound design");
+    presetSelector.setTooltip("Select factory preset — 30 curated sounds from clean enhancement to signature artist styles");
     addAndMakeVisible(presetSelector);
 
     auto setupKnob = [this](AnimatedKnob& k, juce::Label& l, const juce::String& txt, const juce::String& tooltip = "") {

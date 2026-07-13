@@ -31,32 +31,33 @@ void CorvusFXAudioProcessor::parameterChanged(const juce::String& parameterID, f
     if (parameterID == "preset")
     {
         // ComboBoxAttachment maps the parameter value to combo box item ID.
-        // The combo has 28 items (IDs 1-28) with 4 disabled separators (IDs 1,8,15,22).
+        // The combo has 35 items (IDs 1-35) with 5 disabled separators (IDs 1,8,15,22,29).
         // We convert the item ID to a preset index via a lookup table.
-        static const int idToPreset[29] = {
+        static const int idToPreset[36] = {
             0,  -1, 0, 1, 2, 3, 4, 5,   // IDs 0-7  (0=unused, 1=separator, 2-7=CLEAN presets 0-5)
             -1, 6, 7, 8, 9,10,11,       // IDs 8-14 (8=separator, 9-14=WARM presets 6-11)
             -1,12,13,14,15,16,17,        // IDs 15-21 (15=separator, 16-21=CREATIVE presets 12-17)
-            -1,18,19,20,21,22,23         // IDs 22-28 (22=separator, 23-28=EXTREME presets 18-23)
+            -1,18,19,20,21,22,23,        // IDs 22-28 (22=separator, 23-28=EXTREME presets 18-23)
+            -1,24,25,26,27,28,29         // IDs 29-35 (29=separator, 30-35=SIGNATURE presets 24-29)
         };
         int id = static_cast<int>(newValue + 0.5f);
-        if (id >= 2 && id <= 28 && idToPreset[id] >= 0)
+        if (id >= 2 && id <= 35 && idToPreset[id] >= 0)
             loadPreset(idToPreset[id]);
     }
 }
 
 void CorvusFXAudioProcessor::loadPreset(int index)
 {
-    // index is the combo box item position (0-23), which maps directly
+    // index is the combo box item position (0-29), which maps directly
     // to the preset array index. The JUCE ComboBoxAttachment maps
     // item position -> parameter value linearly, and the presets[]
     // array is ordered to match the combo box layout.
-    // Combo order: CLEAN [0-5], WARM [6-11], CREATIVE [12-17], EXTREME [18-23]
-    if (index < 0 || index >= 24) return;
+    // Combo order: CLEAN [0-5], WARM [6-11], CREATIVE [12-17], EXTREME [18-23], SIGNATURE [24-29]
+    if (index < 0 || index >= 30) return;
     
     //                    fat  cD   cR    cM   dT   dFb  dM   dDmp dMod rS   rDmp rM   rMod  mDrv mWid mMid mSide dByp cByp dByp rByp mByp
     struct P { float fat, cD, cR, cM, dT, dFb, dM, dDmp, dMod, rS, rDmp, rM, rMod, mDrv, mWid, mMid, mSide, distByp, chorusByp, delayByp, reverbByp, masterByp; };
-    static const P presets[24] = {
+    static const P presets[30] = {
         // ── CLEAN (pos 0-5): transparent enhancement, pristine highs ──────
         // 0: Clean Sparkle — subtle widening, pristine highs
         {  8, 25, 1.2f, 35,   0,  0,  0,  0,  0,  20, 55, 10, 20,   0, 100,   0,   0, 0, 0, 0, 0, 0 },
@@ -112,6 +113,20 @@ void CorvusFXAudioProcessor::loadPreset(int index)
         { 65,  5, 1.8f, 15,  60, 15,  8, 70, 20,  18, 80,  6, 10,  40,  90,  20,  10, 0, 0, 0, 0, 0 },
         // 23: Obliterator — maxed drive, deep chorus, long feedback, giant hall
         { 95, 50, 1.2f, 55, 600, 70, 40, 65, 50,  90, 30, 55, 85,  80, 100,  40,  30, 0, 0, 0, 0, 0 },
+
+        // ── SIGNATURE (pos 24-29): curated artist-style sounds, distinct character ──
+        // 24: Velvet Morning — warm tape saturation, gentle chorus, silk reverb
+        { 32, 22, 0.7f, 28, 120, 18, 12, 35, 15,  30, 55, 18, 35,  15, 100,   8,   5, 0, 0, 0, 0, 0 },
+        // 25: Neon Dusk — bright chorus, crisp delay, crystalline highs
+        {  8, 55, 3.2f, 45, 280, 22, 18, 15, 40,  60, 25, 35, 70,  10, 115,   0,  12, 0, 0, 0, 0, 0 },
+        // 26: Basement Sessions — gritty drive, dark delay, underground vibe
+        { 62, 18, 1.1f, 20, 450, 45, 35, 65, 30,  40, 65, 12, 20,  45,  95,  18,  15, 0, 0, 0, 0, 0 },
+        // 27: Cathedral Drift — massive reverb, slow chorus, spiritual space
+        {  0, 48, 0.25f, 60, 900, 55, 30, 25, 50,  95, 20, 70, 85,   0, 130,   0,  20, 0, 0, 0, 0, 0 },
+        // 28: Circuit Bent — experimental modulation, glitchy texture
+        { 45, 70, 4.8f, 65,  45, 12, 25, 10, 60,  25, 40, 15, 60,  25, 105,   5,  18, 0, 0, 0, 0, 0 },
+        // 29: Midnight Oil — saturated warmth, tape echo, late-night intimacy
+        { 58, 15, 0.6f, 30, 320, 40, 28, 80, 45,  35, 70, 18, 25,  35, 100,  12,  10, 0, 0, 0, 0, 0 },
     };
     
     const auto& p = presets[index];
@@ -191,7 +206,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::crea
     params.push_back(pctParam("master_mid_drive", "Master Mid Drive", 0));
     params.push_back(pctParam("master_side_drive", "Master Side Drive", 0));
     params.push_back(std::make_unique<juce::AudioParameterBool>("master_bypass", "Master Bypass", false));
-    params.push_back(std::make_unique<juce::AudioParameterInt>("preset", "Preset", 0, 23, 0));
+    params.push_back(std::make_unique<juce::AudioParameterInt>("preset", "Preset", 0, 29, 0));
     return { params.begin(), params.end() };
 }
 
@@ -206,15 +221,15 @@ bool CorvusFXAudioProcessor::acceptsMidi() const { return false; }
 bool CorvusFXAudioProcessor::producesMidi() const { return false; }
 bool CorvusFXAudioProcessor::isMidiEffect() const { return false; }
 double CorvusFXAudioProcessor::getTailLengthSeconds() const { return 8.0; }
-int CorvusFXAudioProcessor::getNumPrograms() { return 24; }
+int CorvusFXAudioProcessor::getNumPrograms() { return 30; }
 int CorvusFXAudioProcessor::getCurrentProgram() { return (int)(apvts.getRawParameterValue("preset")->load() + 0.5f); }
 void CorvusFXAudioProcessor::setCurrentProgram(int i) {
-    if (i >= 0 && i < 24) { auto* p = apvts.getParameter("preset"); if (p) p->setValueNotifyingHost(p->convertTo0to1((float)i)); }
+    if (i >= 0 && i < 30) { auto* p = apvts.getParameter("preset"); if (p) p->setValueNotifyingHost(p->convertTo0to1((float)i)); }
 }
 const juce::String CorvusFXAudioProcessor::getProgramName(int i) {
-    // Reordered to match combo box layout: CLEAN [0-5], WARM [6-11], CREATIVE [12-17], EXTREME [18-23]
-    static const juce::String n[24] = { "Clean Sparkle","Crystal Shimmer","Silk Thread","Subtle Glue","Glass Canon","Air Lift","Warm Glow","Vintage Vibe","Thick Sauce","Tight Punch","Cozy Hiss","Tube Glow","Dreamy Space","Cosmic Wide","Molten Core","Sunspot","Nebula Drift","Shimmerfall","Deep Echo","Aggressive Drive","Lush Pad","Event Horizon","Iron Press","Obliterator" };
-    return (i >= 0 && i < 24) ? n[i] : juce::String();
+    // Reordered to match combo box layout: CLEAN [0-5], WARM [6-11], CREATIVE [12-17], EXTREME [18-23], SIGNATURE [24-29]
+    static const juce::String n[30] = { "Clean Sparkle","Crystal Shimmer","Silk Thread","Subtle Glue","Glass Canon","Air Lift","Warm Glow","Vintage Vibe","Thick Sauce","Tight Punch","Cozy Hiss","Tube Glow","Dreamy Space","Cosmic Wide","Molten Core","Sunspot","Nebula Drift","Shimmerfall","Deep Echo","Aggressive Drive","Lush Pad","Event Horizon","Iron Press","Obliterator","Velvet Morning","Neon Dusk","Basement Sessions","Cathedral Drift","Circuit Bent","Midnight Oil" };
+    return (i >= 0 && i < 30) ? n[i] : juce::String();
 }
 void CorvusFXAudioProcessor::changeProgramName(int, const juce::String&) {}
 
