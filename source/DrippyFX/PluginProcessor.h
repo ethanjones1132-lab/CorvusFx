@@ -466,7 +466,7 @@ struct EnhancedChorus
     float driftCos1[NUM_VOICES] = {};  // cos(2.32 * driftPhase + offset1) per voice
     float driftSin2[NUM_VOICES] = {};  // sin(5.71 * driftPhase + offset2) per voice
     float driftCos2[NUM_VOICES] = {};  // cos(5.71 * driftPhase + offset2) per voice
-    Oversampling2x oversample;    // 2x oversampling for feedback tanh anti-aliasing
+    Oversampling2x oversample[2];  // 2x oversampling for feedback tanh anti-aliasing — per-channel to avoid state sharing
 
     // Block-level coefficient cache — avoids redundant per-sample transcendental calls.
     // beginBlock() precomputes tone/smooth filter coefficients plus chorus-specific
@@ -548,7 +548,8 @@ struct EnhancedChorus
     void prepare(double sr)
     {
         sampleRate = sr;
-        oversample.prepare(sr);
+        oversample[0].prepare(sr);
+        oversample[1].prepare(sr);
         std::memset(delayBuffer, 0, sizeof(delayBuffer));
         writePos = 0;
         feedbackState[0] = feedbackState[1] = 0.0f;
@@ -624,7 +625,7 @@ struct EnhancedChorus
         // with each iteration, creating metallic artifacts in the chorus tail.
         float fbIn = feedbackState[channel];
         float fbOut;
-        oversample.processSampleMono(fbIn, fbOut, [](float in, float& out) {
+        oversample[channel].processSampleMono(fbIn, fbOut, [](float in, float& out) {
             // Soft saturation: tanh(x * 1.2) / 1.2 — gentle, pitch-stable
             out = std::tanh(in * 1.2f) / 1.2f;
         });
