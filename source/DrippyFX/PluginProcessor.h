@@ -26,6 +26,18 @@ inline float hermiteInterp(const float* buf, int bufSize, float readPos)
 }
 
 //==============================================================================
+// UTILITY: Padé [3/2] rational approximant for tanh
+// Accurate to <0.04% for |z| ≤ 1.0, <1% for |z| ≤ 2.0.
+// Eliminates std::tanh in hot paths (safety limiter, push-pull saturation).
+// Formula: z*(15+z²)/(15+6z²)
+//==============================================================================
+inline float padeTanh(float z)
+{
+    float z2 = z * z;
+    return z * (15.0f + z2) / (15.0f + 6.0f * z2);
+}
+
+//==============================================================================
 // UTILITY: Padé [3/2] soft-clipper — rational approximant of tanh
 // Replaces std::tanh in the safety limiter hot path (last transcendental holdout).
 // Accurate to 0.04% for |x| ≤ 1.0. Eliminates 4 per-sample std::tanh calls.
@@ -1360,27 +1372,27 @@ struct MasterOutputStage
     }
 
     // Push-pull (asymmetrical) saturation — generates even harmonics (2nd, 4th)
-    // for warmth and "tube-like" character. Unlike symmetric tanh() which only
-    // produces odd harmonics, push-pull adds even-order content that our ears
-    // perceive as musical richness and body.
-    static inline float pushPullSaturate(float x, float drive)
-    {
-        // Asymmetric waveshaping: positive and negative halves shaped differently
-        // This creates even harmonics (2nd, 4th) in addition to odd
-        // Drive controls intensity: 0 = clean, 1 = moderate coloration
-        if (x >= 0.0f)
+        // for warmth and "tube-like" character. Unlike symmetric tanh() which only
+        // produces odd harmonics, push-pull adds even-order content that our ears
+        // perceive as musical richness and body.
+        static inline float pushPullSaturate(float x, float drive)
         {
-            // Positive half: softer knee, more 2nd harmonic
-            float d = x * drive;
-            return std::tanh(d * (1.0f + d * 0.15f));
+            // Asymmetric waveshaping: positive and negative halves shaped differently
+            // This creates even harmonics (2nd, 4th) in addition to odd
+            // Drive controls intensity: 0 = clean, 1 = moderate coloration
+            if (x >= 0.0f)
+            {
+                // Positive half: softer knee, more 2nd harmonic
+                float d = x * drive;
+                return padeTanh(d * (1.0f + d * 0.15f));
+            }
+            else
+            {
+                // Negative half: harder knee, different harmonic balance
+                float d = -x * drive;
+                return -padeTanh(d * (1.0f + d * 0.25f));
+            }
         }
-        else
-        {
-            // Negative half: harder knee, different harmonic balance
-            float d = -x * drive;
-            return -std::tanh(d * (1.0f + d * 0.25f));
-        }
-    }
 
     // Mid/Side processing with independent saturation and width control
     void process(float& L, float& R, float midDrive, float sideDrive, float width)
