@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-14 (afternoon pass — replace remaining std::tanh with padeTanh in Distortion tubeShape and Chorus feedback saturation)
+Last updated: 2026-07-14 (evening pass — enable /fp:fast + /arch:AVX2 compiler optimization on Release builds)
 Working copy: `C:\\\\\\\\Projects\\\\\\\\Corvus VST`
 Source root: `C:\\\\\\\\Projects\\\\\\\\Corvus VST\\\\\\\\source\\\\\\\\DrippyFX\\\\\\\\` (git SoT; sync to Downloads tree for MSBuild)
 
@@ -38,7 +38,7 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 
 | Date | Commit | Module | Improvement |
 |------|--------|--------|-------------|
-| 2026-07-14 | `29f9f9b` | Distortion+Chorus | **Replace remaining std::tanh with padeTanh in tubeShape and chorus feedback** — ProfessionalDistortion::tubeShape (positive and negative branches) now uses padeTanh() for zero per-sample transcendental calls. EnhancedChorus feedback saturation tanh(x*1.2)/1.2 → padeTanh(x*1.2)/1.2. Zero functional change, zero std::tanh calls remain anywhere in plugin code (only in comments). Binary MD5: 18bd4354 -> 86f44145. |
+| 2026-07-14 | `5f35dae` | Build/CMake | **Enable /fp:fast and /arch:AVX2 compiler flags** — adds aggressive floating-point optimization and AVX2 vector instruction set to Release builds. Enables MSVC to inline fabsf/sqrtf as SSE intrinsics, reorder FP ops for ILP, and auto-vectorize scalar loops. No audio behavior change. Binary MD5: 86f44145 → b05ef287 (+86 KB). |
 | 2026-07-13 | `d6ea118` | EnhancedDelay | **Mono oversampling for tape saturation** — replace stereo Oversampling2x::processSample() with independent mono processSampleMono() calls for L/R tapeSat. Halves FIR filter cost in delay feedback loop (same optimization applied to Master mid/side 2026-07-12). No audio change — identical output, half the CPU. |
 | 2026-07-13 | `ca23485` | processBlock | **Replace std::tanh in Safety Limiter with Pade [3/2] rational approximant z*(15+z²)/(15+6z²)** — eliminates last 4 per-sample transcendental calls in hot path. Pade approximant matches tanh(z) within 0.04% for z ∈ [0, 1.0] (the exact domain). Each branch computes z and z² once in a scoped block. Max limiter output error: 0.00006. Completes zero-transcendental-per-sample milestone. |
 | 2026-07-12 | `26f6574` | PluginProcessor | **Remove dead block-level snapshot variables** — 8 dead declarations removed from processBlock(): overallMix, delayTime, delayFeedback, delayMix, chorusFeedback, peakSmooth (2x). Also removed dead distortionBypassButton.onClick handler. |
