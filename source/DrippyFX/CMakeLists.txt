@@ -63,7 +63,7 @@ target_link_libraries(DrippyFX
 
 # Additional compiler flags for optimization
 if(MSVC)
-    target_compile_options(DrippyFX PRIVATE /W4)
+    target_compile_options(DrippyFX PRIVATE /W4 /fp:fast /arch:AVX2)
 else()
     target_compile_options(DrippyFX PRIVATE -Wall -Wextra -Wpedantic)
 endif()
