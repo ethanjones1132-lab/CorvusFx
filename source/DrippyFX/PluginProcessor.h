@@ -311,13 +311,16 @@ struct ProfessionalDistortion
     }
 
     // Tube-style waveshaper: asymmetric, warm even harmonics
-    static inline float tubeShape(float x, float drive)
-    {
-        if (x >= 0.0f)
-            return std::tanh(x * drive);
-        else
-            return std::tanh(x * drive * 1.15f) / 1.15f;
-    }
+        // Uses Padé [3/2] rational approximant (padeTanh) instead of std::tanh
+        // for zero per-sample transcendental calls in the oversampled hot path.
+        // Accurate to <0.04% for |z| ≤ 1.0, correctly saturates to ±1 for |z| > 2.5.
+        static inline float tubeShape(float x, float drive)
+        {
+            if (x >= 0.0f)
+                return padeTanh(x * drive);
+            else
+                return padeTanh(x * drive * 1.15f) / 1.15f;
+        }
 
     // Tape saturation: symmetric, preserves dynamics
     static inline float tapeShape(float x, float drive)
@@ -659,14 +662,14 @@ struct EnhancedChorus
         float filtered = inputTone[channel].processLP(input, chorusBlockCoeffs.toneCoeff);
 
         // Saturated feedback (prevents compound pitch runaway) — 2x oversampled to eliminate aliasing
-        // Without oversampling, harmonics from tanh in the feedback loop fold back and compound
-        // with each iteration, creating metallic artifacts in the chorus tail.
-        float fbIn = feedbackState[channel];
-        float fbOut;
-        oversample[channel].processSampleMono(fbIn, fbOut, [](float in, float& out) {
-            // Soft saturation: tanh(x * 1.2) / 1.2 — gentle, pitch-stable
-            out = std::tanh(in * 1.2f) / 1.2f;
-        });
+                // Without oversampling, harmonics from tanh in the feedback loop fold back and compound
+                // with each iteration, creating metallic artifacts in the chorus tail.
+                float fbIn = feedbackState[channel];
+                float fbOut;
+                oversample[channel].processSampleMono(fbIn, fbOut, [](float in, float& out) {
+                    // Soft saturation: padeTanh(x * 1.2) / 1.2 — gentle, pitch-stable, zero transcendental
+                    out = padeTanh(in * 1.2f) / 1.2f;
+                });
         delayBuffer[channel][writePos] = filtered + fbOut * feedback;
 
         // ── Mix-adaptive depth compression ──
