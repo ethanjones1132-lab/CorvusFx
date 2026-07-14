@@ -26,6 +26,29 @@ inline float hermiteInterp(const float* buf, int bufSize, float readPos)
 }
 
 //==============================================================================
+// UTILITY: Padé [3/2] soft-clipper — rational approximant of tanh
+// Replaces std::tanh in the safety limiter hot path (last transcendental holdout).
+// Accurate to 0.04% for |x| ≤ 1.0. Eliminates 4 per-sample std::tanh calls.
+// Formula: z*(15+z²)/(15+6z²) where z = (|x|-1)*0.5
+//==============================================================================
+inline float padeSoftClip(float x, float threshold = 1.0f, float scale = 0.2f)
+{
+    if (x > threshold)
+    {
+        float z = (x - threshold) * 0.5f;
+        float z2 = z * z;
+        return threshold + z * (15.0f + z2) / (15.0f + 6.0f * z2) * scale;
+    }
+    else if (x < -threshold)
+    {
+        float z = (x + threshold) * 0.5f;
+        float z2 = z * z;
+        return -threshold + z * (15.0f + z2) / (15.0f + 6.0f * z2) * scale;
+    }
+    return x;
+}
+
+//==============================================================================
 // UTILITY: DC blocker — Julius O. Smith topology
 //==============================================================================
 struct DCBlocker

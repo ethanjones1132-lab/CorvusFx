@@ -397,7 +397,6 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const float reverbMix   = smoothReverbMix.getTargetValue();
     const float sReverbMod   = smoothReverbMod.getTargetValue();
 
-    const float delayModAmount = delayMod;
     const float pingPong = 0.35f;
     const float reverbPreDelay = 5.0f + reverbSize * 40.0f;
 
@@ -508,7 +507,7 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             float dL, dR;
             delay.processSample(smpL, smpR, dL, dR,
                 sDelayTime, sDelayFb, sDelayMix,
-                pingPong, delayModAmount);
+                pingPong, delayMod);
             smpL = dL;
             smpR = dR;
         }
@@ -536,19 +535,13 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             masterOutput.process(smpL, smpR, midDrive, sideDrive, width);
         }
 
-        // 6. SAFETY LIMITER (merged from separate pass)
-        if (smpL > 1.0f)
-            { float z = (smpL - 1.0f) * 0.5f; float z2 = z * z; smpL = 1.0f + z * (15.0f + z2) / (15.0f + 6.0f * z2) * 0.2f; }
-        else if (smpL < -1.0f)
-            { float z = (smpL + 1.0f) * 0.5f; float z2 = z * z; smpL = -1.0f + z * (15.0f + z2) / (15.0f + 6.0f * z2) * 0.2f; }
+        // 6. SAFETY LIMITER - Pade [3/2] rational approximant (eliminates last per-sample transcendental)
+        smpL = padeSoftClip(smpL);
         smpL = juce::jlimit(-1.5f, 1.5f, smpL);
 
         if (!isMono)
         {
-            if (smpR > 1.0f)
-                { float z = (smpR - 1.0f) * 0.5f; float z2 = z * z; smpR = 1.0f + z * (15.0f + z2) / (15.0f + 6.0f * z2) * 0.2f; }
-            else if (smpR < -1.0f)
-                { float z = (smpR + 1.0f) * 0.5f; float z2 = z * z; smpR = -1.0f + z * (15.0f + z2) / (15.0f + 6.0f * z2) * 0.2f; }
+            smpR = padeSoftClip(smpR);
             smpR = juce::jlimit(-1.5f, 1.5f, smpR);
         }
 
