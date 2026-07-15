@@ -74,8 +74,17 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.addItem("Circuit Bent", 34);
     presetSelector.addItem("Midnight Oil", 35);
     
+    // Category 6: DREAM — ambient, ethereal, deep soundscapes (6 presets)
+    presetSelector.addItem("═══ DREAM ═══", 36); presetSelector.setItemEnabled(36, false);
+    presetSelector.addItem("Cloud Chamber", 37);
+    presetSelector.addItem("Frozen Lake", 38);
+    presetSelector.addItem("Ash & Ember", 39);
+    presetSelector.addItem("Stargate Portal", 40);
+    presetSelector.addItem("Underwater Cathedral", 41);
+    presetSelector.addItem("Solar Flare", 42);
+    
     presetSelector.setSelectedId(2); // Default to Clean Sparkle (first actual preset)
-    presetSelector.setTooltip("Select factory preset — 30 curated sounds from clean enhancement to signature artist styles");
+    presetSelector.setTooltip("Select factory preset — 36 curated sounds from clean enhancement to deep ambient soundscapes");
     addAndMakeVisible(presetSelector);
 
     auto setupKnob = [this](AnimatedKnob& k, juce::Label& l, const juce::String& txt, const juce::String& tooltip = "") {
