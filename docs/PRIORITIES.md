@@ -1,10 +1,10 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-14 (evening pass — enable /fp:fast + /arch:AVX2 compiler optimization on Release builds)
+Last updated: 2026-07-15 (overnight pass — expand factory presets from 30 to 36 with DREAM category)
 Working copy: `C:\\\\\\\\Projects\\\\\\\\Corvus VST`
 Source root: `C:\\\\\\\\Projects\\\\\\\\Corvus VST\\\\\\\\source\\\\\\\\DrippyFX\\\\\\\\` (git SoT; sync to Downloads tree for MSBuild)
 
-Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached, 19 parameters. Entire plugin has zero per-sample transcendental calls (including safety limiter). All 5 modules (Distortion, Chorus, Delay, Reverb, Master) support click-free bypass with color-coded UI buttons. Parameter layout reorganized: bypass params sit next to modules. Bugfix: reverbMod→sReverbMod in beginBlock. 24 categorized presets, professional dB-scale metering, proportional layout scaling.**
+Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached, 19 parameters. Entire plugin has zero per-sample transcendental calls (including safety limiter). All 5 modules (Distortion, Chorus, Delay, Reverb, Master) support click-free bypass with color-coded UI buttons. Parameter layout reorganized: bypass params sit next to modules. Bugfix: reverbMod→sReverbMod in beginBlock. 36 categorized presets (6 per category: CLEAN, WARM, CREATIVE, EXTREME, SIGNATURE, DREAM), professional dB-scale metering, /fp:fast + /arch:AVX2 compiler optimization, proportional layout scaling.**
 
 ---
 
@@ -38,6 +38,7 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 
 | Date | Commit | Module | Improvement |
 |------|--------|--------|-------------|
+| 2026-07-15 | `c4401c2` | Presets | **Expand factory presets from 30 to 36 with DREAM category** — added 6 new ambient/ethereal presets (Cloud Chamber, Frozen Lake, Ash & Ember, Stargate Portal, Underwater Cathedral, Solar Flare). Updated getNumPrograms() 30→36, idToPreset 36→43, presetToId 30→36. PluginEditor: added DREAM category separator + 6 preset items. Tooltip updated to 36 curated sounds. Binary MD5: b05ef287 → 649e6a10 (+13 KB). |
 | 2026-07-14 | `5f35dae` | Build/CMake | **Enable /fp:fast and /arch:AVX2 compiler flags** — adds aggressive floating-point optimization and AVX2 vector instruction set to Release builds. Enables MSVC to inline fabsf/sqrtf as SSE intrinsics, reorder FP ops for ILP, and auto-vectorize scalar loops. No audio behavior change. Binary MD5: 86f44145 → b05ef287 (+86 KB). |
 | 2026-07-13 | `d6ea118` | EnhancedDelay | **Mono oversampling for tape saturation** — replace stereo Oversampling2x::processSample() with independent mono processSampleMono() calls for L/R tapeSat. Halves FIR filter cost in delay feedback loop (same optimization applied to Master mid/side 2026-07-12). No audio change — identical output, half the CPU. |
 | 2026-07-13 | `ca23485` | processBlock | **Replace std::tanh in Safety Limiter with Pade [3/2] rational approximant z*(15+z²)/(15+6z²)** — eliminates last 4 per-sample transcendental calls in hot path. Pade approximant matches tanh(z) within 0.04% for z ∈ [0, 1.0] (the exact domain). Each branch computes z and z² once in a scoped block. Max limiter output error: 0.00006. Completes zero-transcendental-per-sample milestone. |
@@ -129,7 +130,7 @@ cp ".../NewProject.vst3" "C:/Projects/Corvus VST/drippy/NewProject.vst3/Contents
 - All modules: Profile-guided optimization (PGO) build
 - Distortion: Antiderivative antialiasing as alternative to oversampling
 - Reverb: Convolution reverb IR option for "real space" mode
-- Presets: Add 6+ new presets beyond the current 24
+- Presets: Add 6+ new presets beyond the current 30 ✅ Done (2026-07-15, `c4401c2` — 36 total with DREAM category)
 
 ---
 

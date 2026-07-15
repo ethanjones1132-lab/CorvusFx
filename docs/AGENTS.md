@@ -16,7 +16,7 @@ This file gives autonomous AI agents the minimal project-specific context needed
 | **Reverb** | Freeverb-inspired | 8 comb filters + 4 allpasses, modulation (`reverb_mod` knob active), pre-delay, damping, **Hermite interpolation** |
 | **Master Output** | Multi-stage | Push-pull asymmetrical saturation (2nd/4th harmonics), multi-band processor, DC blocker, peak limiter, **2x oversampling** |
 
-**24 presets** spanning Clean Sparkle → Warm Glow → Dreamy Space → Thick Sauce → etc.
+**36 presets** (6 per category: CLEAN, WARM, CREATIVE, EXTREME, SIGNATURE, DREAM) spanning Clean Sparkle → Warm Glow → Dreamy Space → Thick Sauce → Obliterator → Solar Flare.
 
 ---
 
@@ -157,6 +157,7 @@ Pick **single highest-impact** improvement:
 
 | Date | Commit | Module | Improvement |
 |------|--------|--------|-------------|
+| 2026-07-15 | `c4401c2` | Presets | **Expand factory presets from 30 to 36 with DREAM category** — added 6 ambient/ethereal presets (Cloud Chamber, Frozen Lake, Ash & Ember, Stargate Portal, Underwater Cathedral, Solar Flare). Updated getNumPrograms() 30→36, idToPreset 36→43, presetToId 30→36. Editor: DREAM category + 6 items. Tooltip: 36 curated sounds. Binary MD5: b05ef287 → 649e6a10 (+13 KB). |
 | 2026-06-24 | `b0e960a` | Presets | Fix `setCurrentProgram` bounds for all 18 presets |
 | 2026-06-24 | `cf33942` | Reverb | Activate comb filter modulation (`reverb_mod` knob now works) |
 | 2026-06-24 | `bc8e816` | Delay | Exponential feedback mapping for musical response |
