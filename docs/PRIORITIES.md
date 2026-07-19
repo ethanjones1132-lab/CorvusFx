@@ -1,10 +1,10 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-15 (overnight pass — expand factory presets from 30 to 36 with DREAM category)
+Last updated: 2026-07-19 (evening pass — truly click-free bypass crossfade for all 5 modules)
 Working copy: `C:\\\\\\\\Projects\\\\\\\\Corvus VST`
 Source root: `C:\\\\\\\\Projects\\\\\\\\Corvus VST\\\\\\\\source\\\\\\\\DrippyFX\\\\\\\\` (git SoT; sync to Downloads tree for MSBuild)
 
-Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached, 19 parameters. Entire plugin has zero per-sample transcendental calls (including safety limiter). All 5 modules (Distortion, Chorus, Delay, Reverb, Master) support click-free bypass with color-coded UI buttons. Parameter layout reorganized: bypass params sit next to modules. Bugfix: reverbMod→sReverbMod in beginBlock. 36 categorized presets (6 per category: CLEAN, WARM, CREATIVE, EXTREME, SIGNATURE, DREAM), professional dB-scale metering, /fp:fast + /arch:AVX2 compiler optimization, proportional layout scaling.**
+Quick status: **DSP quality — all 4 saturation stages oversampled, all parameters smoothed, hot-paths fully block-cached, 19 parameters. Entire plugin has zero per-sample transcendental calls (including safety limiter). All 5 modules (Distortion, Chorus, Delay, Reverb, Master) support truly click-free bypass — 30ms LinearSmoothedValue wet/dry crossfade (params + UI buttons from 2026-07-10, crossfade fix 2026-07-19). Parameter layout reorganized: bypass params sit next to modules. Bugfix: reverbMod→sReverbMod in beginBlock. 36 categorized presets (6 per category: CLEAN, WARM, CREATIVE, EXTREME, SIGNATURE, DREAM), professional dB-scale metering, /fp:fast + /arch:AVX2 compiler optimization, proportional layout scaling.**
 
 ---
 
@@ -28,13 +28,15 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 | **P2** | Parameter smoothing (LinearSmoothedValue) on all 14 params | Zipper noise eliminated on knob/automation changes | ✅ Done (2026-06-29, `b99b59c`) |
 | **P2** | Reverb allpass feedback scaling with room size | Size knob now varies spatial diffusion character | ✅ Done (2026-06-29, `1c3652e`) |
 | **P2** | Chorus LFO rate caching (rateToIncrement in beginBlock) | 6 divides/sample → 0; last remaining per-sample /sr | ✅ Done (2026-07-05, `d48eaf0`) |
-| **P2** | Click-free bypass for all 5 modules (Distortion, Chorus, Delay, Reverb, Master) | Professional workflow: A/B comparison, CPU savings, automation | ✅ Done (2026-07-10, `5dd1e7c` — 4 new params: chorus_bypass, delay_bypass, reverb_bypass, master_bypass; distortion_bypass already existed) |
+| **P2** | Click-free bypass for all 5 modules (Distortion, Chorus, Delay, Reverb, Master) | Professional workflow: A/B comparison, CPU savings, automation | ✅ Done (2026-07-10, `5dd1e7c` — params added; **2026-07-19: crossfade made truly click-free** — was a hard switch in the audio path, now 30ms LinearSmoothedValue wet/dry ramp) |
 | **P3** | Factory preset categorization | Group by vibe: Clean, Warm, Creative, Extreme | ✅ Done (2026-07-05) |
 | **P3** | New presets beyond current 18 | Expand creative palette | ✅ Done (2026-07-06, `3e16739` — 24 total: Glass Canon, Air Lift, Cozy Hiss, Tube Glow, Shimmerfall, Obliterator; idToPreset[] lookup fixes ComboBoxAttachment mapping with separators) |
 
 ---
 
 ## Improvement Progress Log (from corvus-cron skill)
+
+| 2026-07-19 | `HEAD` | processBlock | **Truly click-free bypass crossfade for all 5 modules** — `5dd1e7c` added the bypass AudioParameterBool switches and UI buttons but the audio path was a HARD SWITCH to dry (comments claimed "click-free bypass crossfade" while doing `if (!bypass)`). Toggling Delay/Reverb (with long tails) produced an audible click/step. Added 5 `LinearSmoothedValue<float>` bypass gains (30ms ramp) updated per sample; each module now crossfades dry�\94wet on toggle. Matches the plugin's existing per-sample smoothing architecture. No parameter count change. Binary MD5: 649e6a10 → 24ac524a. |
 
 | Date | Commit | Module | Improvement |
 |------|--------|--------|-------------|

@@ -1522,6 +1522,15 @@ private:
     juce::LinearSmoothedValue<float> smoothMasterMidDrive;
     juce::LinearSmoothedValue<float> smoothMasterSideDrive;
 
+    // Bypass crossfade gains -- when a module bypass is toggled, the wet/dry
+    // mix ramps over ~30ms via LinearSmoothedValue instead of a hard switch,
+    // eliminating the click/step discontinuity (audible on Delay/Reverb tails).
+    juce::LinearSmoothedValue<float> bypassGainDist;
+    juce::LinearSmoothedValue<float> bypassGainChorus;
+    juce::LinearSmoothedValue<float> bypassGainDelay;
+    juce::LinearSmoothedValue<float> bypassGainReverb;
+    juce::LinearSmoothedValue<float> bypassGainMaster;
+
     // ── Level Meter State ──
     // Smoothed peak/RMS meters for input and output.
     // Updated in processBlock (audio thread), read by editor (message thread)

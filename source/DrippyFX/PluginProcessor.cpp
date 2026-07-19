@@ -335,6 +335,19 @@ void CorvusFXAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     smoothMasterWidth.setTargetValue(apvts.getRawParameterValue("master_width")->load() / 100.0f);
     smoothMasterMidDrive.setTargetValue(apvts.getRawParameterValue("master_mid_drive")->load() / 100.0f);
     smoothMasterSideDrive.setTargetValue(apvts.getRawParameterValue("master_side_drive")->load() / 100.0f);
+
+    // Bypass crossfade gain init (click-free): 1.0 active, 0.0 dry pass-through.
+    const float bDist  = apvts.getRawParameterValue("distortion_bypass")->load() > 0.5f ? 0.0f : 1.0f;
+    const float bChor  = apvts.getRawParameterValue("chorus_bypass")->load() > 0.5f ? 0.0f : 1.0f;
+    const float bDel   = apvts.getRawParameterValue("delay_bypass")->load() > 0.5f ? 0.0f : 1.0f;
+    const float bRev   = apvts.getRawParameterValue("reverb_bypass")->load() > 0.5f ? 0.0f : 1.0f;
+    const float bMast  = apvts.getRawParameterValue("master_bypass")->load() > 0.5f ? 0.0f : 1.0f;
+    const double bypassTime = 0.03; // 30ms gentle dip, slower than param smoothing
+    bypassGainDist.reset(sampleRate, bypassTime);   bypassGainDist.setTargetValue(bDist);
+    bypassGainChorus.reset(sampleRate, bypassTime); bypassGainChorus.setTargetValue(bChor);
+    bypassGainDelay.reset(sampleRate, bypassTime);  bypassGainDelay.setTargetValue(bDel);
+    bypassGainReverb.reset(sampleRate, bypassTime); bypassGainReverb.setTargetValue(bRev);
+    bypassGainMaster.reset(sampleRate, bypassTime); bypassGainMaster.setTargetValue(bMast);
 }
 
 void CorvusFXAudioProcessor::releaseResources() {}
@@ -397,6 +410,13 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const bool delayBypass = apvts.getRawParameterValue("delay_bypass")->load() > 0.5f;
     const bool reverbBypass = apvts.getRawParameterValue("reverb_bypass")->load() > 0.5f;
     const bool masterBypass = apvts.getRawParameterValue("master_bypass")->load() > 0.5f;
+
+    // Click-free bypass: ramp each module wet/dry over 30ms instead of hard switching
+    bypassGainDist.setTargetValue(distortionBypass ? 0.0f : 1.0f);
+    bypassGainChorus.setTargetValue(chorusBypass ? 0.0f : 1.0f);
+    bypassGainDelay.setTargetValue(delayBypass ? 0.0f : 1.0f);
+    bypassGainReverb.setTargetValue(reverbBypass ? 0.0f : 1.0f);
+    bypassGainMaster.setTargetValue(masterBypass ? 0.0f : 1.0f);
 
     // Snapshot smoothed values for the beginning of this block.
     // beginBlock() calls use these block-level snapshots since their
@@ -493,48 +513,53 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         const float sMasterMidDrive  = smoothMasterMidDrive.getNextValue(); // Per-sample Master Mid Drive smoothing
         const float sMasterSideDrive = smoothMasterSideDrive.getNextValue(); // Per-sample Master Side Drive smoothing
 
+        // Click-free bypass crossfade gains (ramp per sample)
+        const float gDist    = bypassGainDist.getNextValue();
+        const float gChorus  = bypassGainChorus.getNextValue();
+        const float gDelay   = bypassGainDelay.getNextValue();
+        const float gReverb  = bypassGainReverb.getNextValue();
+        const float gMaster  = bypassGainMaster.getNextValue();
+
         float smpL = juce::jlimit(-2.0f, 2.0f, chData[0][s]);
         float smpR = juce::jlimit(-2.0f, 2.0f, isMono ? smpL : chData[1][s]);
 
-        // 1. DISTORTION
-        if (!distortionBypass && sFatness > 0.001f)
+        // 1. DISTORTION (click-free bypass crossfade)
+        if (gDist > 0.001f && sFatness > 0.001f)
         {
             float dL, dR;
             distortion.process(smpL, smpR, dL, dR);
-            smpL = dL;
-            smpR = dR;
+            smpL = smpL * (1.0f - gDist) + dL * gDist;
+            smpR = smpR * (1.0f - gDist) + dR * gDist;
         }
 
-        // 2. CHORUS (with click-free bypass crossfade)
-        if (chorusBypass)
+        // 2. CHORUS (click-free bypass crossfade)
+        if (gChorus > 0.001f && sChorusDepth > 0.001f)
         {
-            // Bypassed - do nothing, signal passes through dry
-        }
-        else if (sChorusDepth > 0.001f)
-        {
-            smpL = chorus.process(smpL, 0, sChorusRate, sChorusDepth, sChorusFb);
-            smpR = chorus.process(smpR, 1, sChorusRate, sChorusDepth, sChorusFb);
+            float cl = chorus.process(smpL, 0, sChorusRate, sChorusDepth, sChorusFb);
+            float cr = chorus.process(smpR, 1, sChorusRate, sChorusDepth, sChorusFb);
+            smpL = smpL * (1.0f - gChorus) + cl * gChorus;
+            smpR = smpR * (1.0f - gChorus) + cr * gChorus;
             chorus.advanceWritePos();
         }
 
-        // 3. DELAY (with click-free bypass crossfade)
-        if (!delayBypass && sDelayMix > 0.001f && sDelayTime > 0.0f)
+        // 3. DELAY (click-free bypass crossfade)
+        if (gDelay > 0.001f && sDelayMix > 0.001f && sDelayTime > 0.0f)
         {
             float dL, dR;
             delay.processSample(smpL, smpR, dL, dR,
                 sDelayTime, sDelayFb, sDelayMix,
                 pingPong, delayMod);
-            smpL = dL;
-            smpR = dR;
+            smpL = smpL * (1.0f - gDelay) + dL * gDelay;
+            smpR = smpR * (1.0f - gDelay) + dR * gDelay;
         }
 
-        // 4. REVERB (with click-free bypass crossfade)
-        if (!reverbBypass && sReverbMix > 0.001f)
+        // 4. REVERB (click-free bypass crossfade)
+        if (gReverb > 0.001f && sReverbMix > 0.001f)
         {
             float rL, rR;
             upgradedReverb.processSample(smpL, smpR, rL, rR);
-            smpL = rL;
-            smpR = rR;
+            smpL = smpL * (1.0f - gReverb) + rL * gReverb;
+            smpR = smpR * (1.0f - gReverb) + rR * gReverb;
         }
 
         // 5. MASTER OUTPUT STAGE — analog warmth and professional polish
@@ -543,12 +568,15 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // master_mid_drive: 0% = clean, 100% = full push-pull saturation on mid
         // master_side_drive: 0% = clean, 100% = full push-pull saturation on side
         // Master Drive still provides a base drive amount applied to both mid and side
-        if (!masterBypass)
+        if (gMaster > 0.001f)
         {
             float midDrive = sMasterDrive * 1.8f + sMasterMidDrive * 1.8f;
             float sideDrive = sMasterDrive * 1.8f + sMasterSideDrive * 1.8f;
             float width = 0.5f + sMasterWidth * 1.5f; // 0.5 to 2.0 range
-            masterOutput.process(smpL, smpR, midDrive, sideDrive, width);
+            float ml = smpL, mr = smpR;
+            masterOutput.process(ml, mr, midDrive, sideDrive, width);
+            smpL = smpL * (1.0f - gMaster) + ml * gMaster;
+            smpR = smpR * (1.0f - gMaster) + mr * gMaster;
         }
 
         // 6. SAFETY LIMITER - Pade [3/2] rational approximant (eliminates last per-sample transcendental)
