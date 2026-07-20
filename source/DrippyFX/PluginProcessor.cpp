@@ -31,7 +31,7 @@ void CorvusFXAudioProcessor::parameterChanged(const juce::String& parameterID, f
     if (parameterID == "preset")
     {
         // ComboBoxAttachment maps the parameter value to combo box item ID.
-        // The combo has 35 items (IDs 1-35) with 5 disabled separators (IDs 1,8,15,22,29).
+        // The combo has 42 items (IDs 1-42) with 6 disabled separators (IDs 1,8,15,22,29,36).
         // We convert the item ID to a preset index via a lookup table.
         static const int idToPreset[43] = {
             0,  -1, 0, 1, 2, 3, 4, 5,   // IDs 0-7  (0=unused, 1=separator, 2-7=CLEAN presets 0-5)
@@ -241,24 +241,24 @@ int CorvusFXAudioProcessor::getCurrentProgram() {
     // Convert combo box item ID (0-35) to preset index (0-29) via reverse lookup.
     // DAW hosts expect program indices in [0, getNumPrograms()-1], not combo item IDs.
     int id = (int)(apvts.getRawParameterValue("preset")->load() + 0.5f);
-    // Reverse of idToPreset: combo IDs 2-7->0-5, 9-14->6-11, 16-21->12-17, 23-28->18-23, 30-35->24-29, 37-41->30-35
-    static const int presetFromId[36] = {
+    // Reverse of idToPreset: combo IDs 2-7->0-5, 9-14->6-11, 16-21->12-17, 23-28->18-23, 30-35->24-29, 37-42->30-35
+    static const int presetFromId[43] = {
         -1, -1, 0, 1, 2, 3, 4, 5,   // IDs 0-7
         -1, 6, 7, 8, 9,10,11,       // IDs 8-14
         -1,12,13,14,15,16,17,        // IDs 15-21
         -1,18,19,20,21,22,23,        // IDs 22-28
-        -1,24,25,26,27,28,29         // IDs 29-35
+        -1,24,25,26,27,28,29,        // IDs 29-35
+        -1,30,31,32,33,34,35         // IDs 36-42 (36=separator, 37-42=DREAM presets 30-35)
     };
-    if (id >= 0 && id < 36) {
+    if (id >= 0 && id < 43) {
         int idx = presetFromId[id];
         if (idx >= 0) return idx;
     }
     return 0;
 }
 void CorvusFXAudioProcessor::setCurrentProgram(int i) {
-    // Convert preset index (0-29) to combo box item ID (2-35) for the ComboBoxAttachment.
+    // Convert preset index (0-35) to combo box item ID (2-42) for the ComboBoxAttachment.
     // The host calls setCurrentProgram(i) with i in [0, getNumPrograms()-1].
-    // We must set the preset parameter to the corresponding combo box item ID.
     static const int presetToId[36] = {
         2, 3, 4, 5, 6, 7,              // CLEAN [0-5]
         9,10,11,12,13,14,               // WARM [6-11]
@@ -267,7 +267,7 @@ void CorvusFXAudioProcessor::setCurrentProgram(int i) {
        30,31,32,33,34,35,               // SIGNATURE [24-29]
        37,38,39,40,41,42                // DREAM [30-35]
     };
-    if (i >= 0 && i < 30) {
+    if (i >= 0 && i < 36) {
         auto* p = apvts.getParameter("preset");
         if (p) p->setValueNotifyingHost(p->convertTo0to1((float)presetToId[i]));
     }
