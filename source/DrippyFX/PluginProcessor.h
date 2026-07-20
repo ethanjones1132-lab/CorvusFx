@@ -541,6 +541,9 @@ struct EnhancedChorus
                     // mix changes at block rate (via parameter smoothing), NOT per-sample.
                     float dryGain = 1.0f;  // cos(effectiveMix * halfPi) — default to dry-only
                     float wetGain = 0.0f;  // sin(effectiveMix * halfPi) — default to dry-only
+                    // Per-voice sum normalization: constant 1/sqrt(NUM_VOICES).
+                    // Cached here (hoisted from per-sample square-root in process()).
+                    float voiceGain = 1.0f / std::sqrt(static_cast<float>(NUM_VOICES));
                 } chorusBlockCoeffs;
 
     void beginBlock(float depth, float mix, float rate)
@@ -678,7 +681,6 @@ struct EnhancedChorus
         // NOTE: modMs is computed per-voice inside the loop below since it depends on lfo, v.depthScale, and drift
 
         float wetOut = 0.0f;
-        const float voiceGain = 1.0f / std::sqrt(static_cast<float>(NUM_VOICES));
 
         for (int i = 0; i < NUM_VOICES; ++i)
         {
@@ -744,7 +746,7 @@ struct EnhancedChorus
             float apCoeff = chorusBlockCoeffs.apCoeff;
             delayed = allpassSmooth(delayed, v.apState[channel], apCoeff);
 
-            wetOut += delayed * voiceGain * chGain;
+            wetOut += delayed * chorusBlockCoeffs.voiceGain * chGain;
 
             // Advance phase (only on first channel to keep L/R coherent)
             if (channel == 0)
