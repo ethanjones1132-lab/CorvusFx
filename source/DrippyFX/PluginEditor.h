@@ -134,23 +134,23 @@ public:
             g.setColour(juce::Colour(0xff555577));
             g.setFont(juce::Font(7.0f));
             
-            struct DbMark { float db; float yPos; const char* label; };
+            struct DbMark { float db; const char* label; };
             static const DbMark marks[] = {
-                { 0.0f,  0.80f, "0"   },  // 0dB reference at 80% height (same as 0dB line)
-                { -6.0f, 0.80f + 0.20f * (1.0f - 0.50f), "-6"  },
-                { -12.0f, 0.80f + 0.20f * (1.0f - 0.25f), "-12" },
-                { -18.0f, 0.80f + 0.20f * (1.0f - 0.125f), "-18" },
-                { -24.0f, 0.80f + 0.20f * (1.0f - 0.0625f), "-24" },
-                { -30.0f, 0.80f + 0.20f * (1.0f - 0.03125f), "-30" },
-                { -40.0f, 0.80f + 0.20f * (1.0f - 0.01f), "-40" },
-                { -50.0f, 0.80f + 0.20f * (1.0f - 0.00316f), "-50" },
-                { -60.0f, 0.80f + 0.20f * (1.0f - 0.001f), "-60" },
+                { 0.0f, "0"   },
+                { -6.0f, "-6"  },
+                { -12.0f, "-12" },
+                { -18.0f, "-18" },
+                { -24.0f, "-24" },
+                { -30.0f, "-30" },
+                { -40.0f, "-40" },
+                { -50.0f, "-50" },
+                { -60.0f, "-60" },
             };
             
             float scaleLeft = xStart + scaleW + 2;
             for (const auto& m : marks)
             {
-                int y = (int)(bounds.getY() + m.yPos * h);
+            int y = (int)(bounds.getY() + (std::abs(m.db) / 60.0f) * h);
                 // Tick mark
                 g.setColour(juce::Colour(0xff444466));
                 g.drawLine(scaleLeft - 6, y, scaleLeft, y, 1.0f);
@@ -163,10 +163,19 @@ public:
         // Draw dB scale on the left of the input meters
         drawDbScale(0, (float)xInL + barW * 2 + gap);
 
+        // Logarithmic amplitude->position mapping shared by bars and dB ticks
+        // (0 dBFS at top of meter -> -60 dBFS at bottom). Equal dB steps = equal pixels.
+        auto ampToYPos = [&](float amp)
+        {
+            float db = 20.0f * std::log10(juce::jmax(amp, 1e-6f));  // <= 0
+            float negDb = juce::jlimit(0.0f, 60.0f, -db);
+            return negDb / 60.0f;
+        };
+
         auto drawBar = [&](int x, float peak, float rms, juce::Colour peakCol, juce::Colour rmsCol)
         {
-            float peakY = bounds.getBottom() - peak * h;
-            float rmsY  = bounds.getBottom() - rms  * h;
+            float peakY = bounds.getY() + ampToYPos(peak) * h;
+            float rmsY  = bounds.getY() + ampToYPos(rms)  * h;
 
             // Background track
             g.setColour(juce::Colour(0xff0a0a1a));
@@ -186,8 +195,8 @@ public:
                 g.fillRect((float)(x + 1), peakY, (float)(barW - 2), 2.0f);
             }
 
-            // 0dB marker line (at 80% height = 0dB reference)
-            float zeroDbY = bounds.getBottom() - 0.8f * h;
+            // 0dBFS reference line (top of meter = 0dB; bottom = -60dB)
+            float zeroDbY = bounds.getY();
             g.setColour(juce::Colour(0xff444466));
             g.fillRect((float)(x + 2), zeroDbY, (float)(barW - 4), 1.0f);
         };

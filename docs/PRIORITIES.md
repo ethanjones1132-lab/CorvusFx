@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-19 (evening pass — truly click-free bypass crossfade for all 5 modules)
+Last updated: 2026-07-20 (overnight pass — LevelMeter converted to true logarithmic dB scale)
 Working copy: `C:\\\\\\\\Projects\\\\\\\\Corvus VST`
 Source root: `C:\\\\\\\\Projects\\\\\\\\Corvus VST\\\\\\\\source\\\\\\\\DrippyFX\\\\\\\\` (git SoT; sync to Downloads tree for MSBuild)
 
@@ -36,7 +36,8 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 
 ## Improvement Progress Log (from corvus-cron skill)
 
-| 2026-07-19 | `HEAD` | processBlock | **Truly click-free bypass crossfade for all 5 modules** — `5dd1e7c` added the bypass AudioParameterBool switches and UI buttons but the audio path was a HARD SWITCH to dry (comments claimed "click-free bypass crossfade" while doing `if (!bypass)`). Toggling Delay/Reverb (with long tails) produced an audible click/step. Added 5 `LinearSmoothedValue<float>` bypass gains (30ms ramp) updated per sample; each module now crossfades dry�\94wet on toggle. Matches the plugin's existing per-sample smoothing architecture. No parameter count change. Binary MD5: 649e6a10 → 24ac524a. |
+| 2026-07-19 | `HEAD` | processBlock | **Truly click-free bypass crossfade for all 5 modules** — `5dd1e7c` added the bypass AudioParameterBool switches and UI buttons but the audio path was a HARD SWITCH to dry (comments claimed "click-free bypass crossfade" while doing `if (!bypass)`). Toggling Delay/Reverb (with long tails) produced an audible click/step. Added 5 `LinearSmoothedValue<float>` bypass gains (30ms ramp) updated per sample; each module now crossfades dry→wet on toggle. Matches the plugin's existing per-sample smoothing architecture. No parameter count change. Binary MD5: 649e6a10 → 24ac524a. |
+| 2026-07-20 | `f0a3eef`+1 | UI/LevelMeter | **Convert LevelMeter to true logarithmic (dB) scale** — bars and dB tick marks previously used mismatched/incorrect mappings (bars linear-in-amplitude while ticks used a separate offset). A −20 dBFS signal filled only 10% of the bar, making the meter nearly useless. Added a shared `ampToYPos()` lambda (0 dBFS at top → −60 dBFS at bottom); both bars and the 9 dB-grid tick marks now use it, so they align exactly and equal dB steps span equal pixels. Pure rendering change — no DSP/parameter/CPU change. Builds clean (0 errors). Binary MD5: 24ac524a → d19b62bf. |
 
 | Date | Commit | Module | Improvement |
 |------|--------|--------|-------------|
