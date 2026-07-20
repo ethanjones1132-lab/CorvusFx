@@ -508,6 +508,7 @@ struct EnhancedChorus
     float driftSin2[NUM_VOICES] = {};  // sin(5.71 * driftPhase + offset2) per voice
     float driftCos2[NUM_VOICES] = {};  // cos(5.71 * driftPhase + offset2) per voice
     Oversampling2x oversample[2];  // 2x oversampling for feedback tanh anti-aliasing — per-channel to avoid state sharing
+    int lfoTick = 0;               // LFO renormalization tick counter
 
     // Block-level coefficient cache — avoids redundant per-sample transcendental calls.
     // beginBlock() precomputes tone/smooth filter coefficients plus chorus-specific
@@ -654,6 +655,22 @@ struct EnhancedChorus
         return output;
     }
 
+    // Keep LFO unit-vector magnitudes constant (prevents float32 rotation drift).
+    // Renormalizes sin/cos recurrence pairs every 256 samples. Without this the
+    // incremental rotation loses ~2.5%/min, breathing the modulation depth open.
+    void renormLFO()
+    {
+        for (int i = 0; i < NUM_VOICES; ++i)
+        {
+            float m = std::sqrt(lfoSin[i]*lfoSin[i] + lfoCos[i]*lfoCos[i]);
+            float inv = 1.0f / m;
+            lfoSin[i] *= inv; lfoCos[i] *= inv;
+            m = std::sqrt(driftSin1[i]*driftSin1[i] + driftCos1[i]*driftCos1[i]);
+            inv = 1.0f / m; driftSin1[i] *= inv; driftCos1[i] *= inv;
+            m = std::sqrt(driftSin2[i]*driftSin2[i] + driftCos2[i]*driftCos2[i]);
+            inv = 1.0f / m; driftSin2[i] *= inv; driftCos2[i] *= inv;
+        }
+    }
     float process(float input, int channel, float rate, float depth,
         float feedback)
     {
@@ -760,6 +777,9 @@ struct EnhancedChorus
             }
         }
 
+        // Every 256 samples: renormalize LFO unit vectors (float32 rotation drift)
+        if (channel == 0 && (++lfoTick & 255) == 0)
+            renormLFO();
         // Feedback from wet sum with reduced gain and saturation
         feedbackState[channel] = wetOut * 0.55f;
 
@@ -800,6 +820,7 @@ struct EnhancedDelay
     float smoothedDelay[2] = {};
     DCBlocker dcBlock[2];
     Oversampling2x oversample;    // 2x oversampling for tape saturation anti-aliasing
+    int lfoTick = 0;              // LFO renormalization tick counter
 
     // Block-level coefficient cache — avoids recomputing 2× std::exp() every sample.
     // Call beginBlock() once per audio block with current damping,
@@ -828,6 +849,17 @@ struct EnhancedDelay
         float lfo2CosDelta = 0.0f; // cos(lfoCoeff * modPhaseInc * 5.13)
         float lfo2SinDelta = 0.0f; // sin(lfoCoeff * modPhaseInc * 5.13)
     } blockCoeffs;
+    // Keep LFO unit-vector magnitudes constant (prevents float32 rotation drift).
+    // Renormalizes sin/cos recurrence pairs every 256 samples (~2.5%/min drift otherwise).
+    void renormLFO()
+    {
+        float m = std::sqrt(blockCoeffs.lfoSin*blockCoeffs.lfoSin + blockCoeffs.lfoCos*blockCoeffs.lfoCos);
+        float inv = 1.0f / m;
+        blockCoeffs.lfoSin *= inv; blockCoeffs.lfoCos *= inv;
+        m = std::sqrt(blockCoeffs.lfo2Sin*blockCoeffs.lfo2Sin + blockCoeffs.lfo2Cos*blockCoeffs.lfo2Cos);
+        inv = 1.0f / m;
+        blockCoeffs.lfo2Sin *= inv; blockCoeffs.lfo2Cos *= inv;
+    }
 
     void prepare(double sr)
     {
@@ -896,6 +928,9 @@ struct EnhancedDelay
         blockCoeffs.lfo2Sin = newLfo2Sin;
         blockCoeffs.lfo2Cos = newLfo2Cos;
 
+        // Every 256 samples: renormalize LFO unit vectors (float32 rotation drift)
+        if ((++lfoTick & 255) == 0)
+            renormLFO();
         float lfo = blockCoeffs.lfoSin + blockCoeffs.lfo2Sin * 0.25f;
         float modSamples = lfo * modAmount * blockCoeffs.sampleRateK;
 
@@ -1098,6 +1133,7 @@ struct UpgradedReverb
     // Master modulation LFO state — using sin/cos recurrence instead of phase + sin/cos per sample
     float modSin = 0.0f;  // sin(modPhase * twoPi)
     float modCos = 1.0f;  // cos(modPhase * twoPi)
+    int modTick = 0;      // master LFO renormalization tick counter
     double sampleRate = 44100.0;
 
     // Block-level coefficient cache — avoids recomputing feedback/damp per sample
@@ -1208,6 +1244,14 @@ struct UpgradedReverb
         }
     }
 
+    // Keep master modulation LFO unit-vector magnitude constant (float32 rotation drift).
+    // Renormalizes sin/cos every 256 samples (~0.34%/min drift otherwise).
+    void renormModLFO()
+    {
+        float m = std::sqrt(modSin*modSin + modCos*modCos);
+        float inv = 1.0f / m;
+        modSin *= inv; modCos *= inv;
+    }
     void prepare(double sr)
     {
         sampleRate = sr;
@@ -1259,6 +1303,9 @@ struct UpgradedReverb
         modSin = newSinMod;
         modCos = newCosMod;
 
+        // Every 256 samples: renormalize master LFO unit vector (float32 rotation drift)
+        if ((++modTick & 255) == 0)
+            renormModLFO();
         float modDepth = blockCoeffs.modDepth;  // cached from beginBlock
         int pdSmp = blockCoeffs.preDelaySmp;    // cached from beginBlock
         preDelayBuf[0][preDelayPos] = inL;
