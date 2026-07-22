@@ -1382,6 +1382,7 @@ struct MasterOutputStage
     OnePole smoothL, smoothR;     // Final anti-harsh smoothing
     Oversampling2x oversampleMid; // 2x oversampling for mid push-pull saturation
     Oversampling2x oversampleSide; // 2x oversampling for side push-pull saturation
+    DCBlocker dcMid, dcSide;       // Strip DC from asymmetric push-pull (2nd-harmonic bias)
     double sampleRate = 44100.0;
 
     // Block-level coefficient cache — avoids recomputing std::exp() every sample.
@@ -1401,6 +1402,7 @@ struct MasterOutputStage
         hfShelfL.reset(); hfShelfR.reset();
         lfShelfL.reset(); lfShelfR.reset();
         smoothL.reset();  smoothR.reset();
+        dcMid.reset();  dcSide.reset();
         beginBlock(); // Initialize block coefficients at default sample rate
     }
 
@@ -1494,6 +1496,12 @@ struct MasterOutputStage
         // ── Convert back to L/R ──
         L = mid + side;
         R = mid - side;
+
+        // DC blocker: asymmetric push-pull saturation generates a 2nd-harmonic
+        // DC component (positive knee 0.15 vs negative knee 0.25). Strip it so the
+        // master output (last stage before the DAW) never carries a DC offset.
+        L = dcMid.process(L);
+        R = dcSide.process(R);
 
         // Safety clamp
         L = juce::jlimit(-4.0f, 4.0f, L);
