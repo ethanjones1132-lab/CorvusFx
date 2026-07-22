@@ -1,6 +1,6 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
-Last updated: 2026-07-20 (evening pass — DREAM presets reachable via DAW program interface)
+Last updated: 2026-07-22 (overnight pass — activate hover tooltips via TooltipWindow; all 24 setTooltip calls were silently dead)
 Working copy: `C:\\\\\\\\Projects\\\\\\\\Corvus VST`
 Source root: `C:\\\\\\\\Projects\\\\\\\\Corvus VST\\\\\\\\source\\\\\\\\DrippyFX\\\\\\\\` (git SoT; sync to Downloads tree for MSBuild)
 
@@ -37,7 +37,8 @@ Quick status: **DSP quality — all 4 saturation stages oversampled, all paramet
 
 ## Improvement Progress Log (from corvus-cron skill)
 
-| 2026-07-19 | `HEAD` | processBlock | **Truly click-free bypass crossfade for all 5 modules** — `5dd1e7c` added the bypass AudioParameterBool switches and UI buttons but the audio path was a HARD SWITCH to dry (comments claimed "click-free bypass crossfade" while doing `if (!bypass)`). Toggling Delay/Reverb (with long tails) produced an audible click/step. Added 5 `LinearSmoothedValue<float>` bypass gains (30ms ramp) updated per sample; each module now crossfades dry→wet on toggle. Matches the plugin's existing per-sample smoothing architecture. No parameter count change. Binary MD5: 649e6a10 → 24ac524a. |
+| 2026-07-22 | `HEAD` | UI/Tooltips | **Activate hover tooltips — add missing `juce::TooltipWindow`** — the editor set 24 `setTooltip()` strings on every knob, bypass button, and the preset selector, but JUCE renders NO tooltips unless a `juce::TooltipWindow` instance lives in the component tree. None existed, so all 24 tooltips were silently dead in every DAW since they were written. Added `juce::TooltipWindow tooltipWindow { this, 600 }` (600ms hover delay) as an editor member after `levelMeter`. One-member fix activates the entire parameter hover-help system (P2 "Tooltip / parameter info system"). Pure UI change — no DSP/parameter/CPU impact. SharedCode gate 0 errors, full .sln 0 errors. Binary MD5: de09ba2b → 8c041693. |
+| 2026-07-19 | `HEAD` | processBlock | **Truly click-free bypass crossfade for all 5 modules**
 | 2026-07-20 | `130307c` | Presets/HostInterop | **Make all 36 presets reachable via DAW program interface** — the DREAM category (presets 30–35, added `c4401c2`) was unreachable from a DAW and `getCurrentProgram()` misreported it. When the 30→36 expansion updated `idToPreset[43]` and `presetToId[36]`, it left `getCurrentProgram()`'s reverse table sized `[36]` (missing DREAM rows) with a stale guard `id < 36`, and `setCurrentProgram()` kept the stale guard `i < 30`. So a host calling `setCurrentProgram(30..35)` no-opped, and `getCurrentProgram()` clamped combo IDs 37–42 to −1 → preset 0. Fix: `presetFromId[36]→[43]` with DREAM rows (IDs 36–42→30–35), guard `id < 36→< 43`, `setCurrentProgram` guard `i < 30→< 36`, and updated the `idToPreset` comment (42 items / 6 separators). Verified: SharedCode gate 0 errors, full .sln 0 errors/0 warnings, binary MD5 `d382fdda → de09ba2b`. |
 | 2026-07-20 | `f0a3eef`+1 | UI/LevelMeter | **Convert LevelMeter to true logarithmic (dB) scale** — bars and dB tick marks previously used mismatched/incorrect mappings (bars linear-in-amplitude while ticks used a separate offset). A −20 dBFS signal filled only 10% of the bar, making the meter nearly useless. Added a shared `ampToYPos()` lambda (0 dBFS at top → −60 dBFS at bottom); both bars and the 9 dB-grid tick marks now use it, so they align exactly and equal dB steps span equal pixels. Pure rendering change — no DSP/parameter/CPU change. Builds clean (0 errors). Binary MD5: 24ac524a → d19b62bf. |
 | 2026-07-20 | `a2df97e` | EnhancedChorus | **Hoist per-sample std::sqrt out of chorus hot path — TRULY completes the zero per-sample transcendental milestone** — `EnhancedChorus::process()` computed `const float voiceGain = 1.0f / std::sqrt(6.0f)` on EVERY sample (line 681), the last surviving per-sample transcendental call even after the 2026-07-13 "zero transcendental" milestone. The value is a constant (NUM_VOICES is constexpr 6), so it has been moved into `ChorusBlockCoeffs` as a default-member-initialized constant, computed once at instantiation. Removes 288,000 sqrt/sec at 48kHz. Identical audio output. Builds clean (0 errors, SharedCode gate + full .sln). Binary MD5: d19b62bf → e6f671c3. |
@@ -144,7 +145,7 @@ cp ".../NewProject.vst3" "C:/Projects/Corvus VST/drippy/NewProject.vst3/Contents
 ## Suggested Next Target: P2 — Polish & Professionalization
 
 1. **Preset refinement** — Adjust 18 preset values by ear; add 6 more
-2. **Tooltip / parameter info system** — Hover help for every control
+2. **Tooltip / parameter info system** — Hover help for every control ✅ Done (2026-07-22 — TooltipWindow added; 24 tooltip strings now render)
 | **P3** | Factory preset categorization | Group by vibe: Clean, Warm, Creative, Extreme | ✅ Done (2026-07-05) |
 | **P3** | New presets beyond current 18 | Expand creative palette | ✅ Done (2026-07-06, `3e16739` — 24 total: Glass Canon, Air Lift, Cozy Hiss, Tube Glow, Shimmerfall, Obliterator; idToPreset[] lookup fixes ComboBoxAttachment mapping with separators) |
 
