@@ -834,6 +834,7 @@ struct EnhancedDelay
         float lfoCoeff = 0.0f;
         float sampleRateK = 0.0f;
         float maxDelayF = 0.0f;
+        float msToSamples = 0.0f;  // sr * 0.001f -- ms to samples conversion
         float smooth = 0.9997f;
 
         // LFO phase recurrence: replaces 2 std::sin() calls/sample with 4 multiplies.
@@ -893,6 +894,7 @@ struct EnhancedDelay
         blockCoeffs.lfoCoeff = 6.2832f * blockCoeffs.invSr;
         blockCoeffs.sampleRateK = sr * 0.0006f;
         blockCoeffs.maxDelayF = (float)(MAX_DELAY - 4);
+        blockCoeffs.msToSamples = sr * 0.001f;  // ms to samples factor
         blockCoeffs.smooth = 0.9997f;
 
         // ── LFO phase recurrence: precompute sin/cos of phase increments ──
@@ -935,7 +937,7 @@ struct EnhancedDelay
         float modSamples = lfo * modAmount * blockCoeffs.sampleRateK;
 
         float targetSmp = juce::jlimit(1.0f, blockCoeffs.maxDelayF,
-            delayTimeMs * blockCoeffs.invSr);
+            delayTimeMs * blockCoeffs.msToSamples);
 
         smoothedDelay[0] = smoothedDelay[0] * blockCoeffs.smooth + (targetSmp + modSamples) * (1.0f - blockCoeffs.smooth);
         smoothedDelay[1] = smoothedDelay[1] * blockCoeffs.smooth +
