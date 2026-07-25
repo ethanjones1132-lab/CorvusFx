@@ -449,32 +449,13 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     for (int ch = 0; ch < chProc; ++ch)
         dryBuffer.copyFrom(ch, 0, buffer, ch, 0, numSamples);
 
-    // ── Input level meters (pre-processing) ──
-    // Use relaxed atomics — approximate values are fine for display
-    if (chProc >= 1)
-    {
-        float inPeakL = 0.0f, inRmsSumL = 0.0f;
-        float inPeakR = 0.0f, inRmsSumR = 0.0f;
-        const float* inL = buffer.getReadPointer(0);
-        const float* inR = (chProc >= 2) ? buffer.getReadPointer(1) : buffer.getReadPointer(0);
-        for (int s = 0; s < numSamples; ++s)
-        {
-            float vL = std::abs(inL[s]);
-            float vR = std::abs(inR[s]);
-            if (vL > inPeakL) inPeakL = vL;
-            if (vR > inPeakR) inPeakR = vR;
-            inRmsSumL += vL * vL;
-            inRmsSumR += vR * vR;
-        }
-        float inRmsL = std::sqrt(inRmsSumL / static_cast<float>(numSamples));
-        float inRmsR = std::sqrt(inRmsSumR / static_cast<float>(numSamples));
-        // Smooth with simple exponential decay (attack=0, release~300ms at 48kHz)
-        const float rmsSmooth  = 0.995f;
-        levelMeters.inPeakL .store(std::max(levelMeters.inPeakL .load(), inPeakL),  std::memory_order_relaxed);
-        levelMeters.inPeakR .store(std::max(levelMeters.inPeakR .load(), inPeakR),  std::memory_order_relaxed);
-        levelMeters.inRmsL  .store(levelMeters.inRmsL .load() * rmsSmooth + inRmsL  * (1.0f - rmsSmooth), std::memory_order_relaxed);
-        levelMeters.inRmsR  .store(levelMeters.inRmsR .load() * rmsSmooth + inRmsR  * (1.0f - rmsSmooth), std::memory_order_relaxed);
-    }
+    // ── Level meter accumulation (merged into main loop) ──
+    // Accumulates peak/RMS in the same pass as DSP processing,
+    // eliminating two full buffer iterations per processBlock call.
+    float inPeakL_ = 0.0f, inRmsSumL_ = 0.0f;
+    float inPeakR_ = 0.0f, inRmsSumR_ = 0.0f;
+    float outPeakL_ = 0.0f, outRmsSumL_ = 0.0f;
+    float outPeakR_ = 0.0f, outRmsSumR_ = 0.0f;
 
     float* chData[2] = { nullptr, nullptr };
     for (int ch = 0; ch < chProc; ++ch)
@@ -512,6 +493,19 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         const float sMasterWidth  = smoothMasterWidth.getNextValue(); // Per-sample Master Width smoothing
         const float sMasterMidDrive  = smoothMasterMidDrive.getNextValue(); // Per-sample Master Mid Drive smoothing
         const float sMasterSideDrive = smoothMasterSideDrive.getNextValue(); // Per-sample Master Side Drive smoothing
+
+        // ── Input level meter (read dry signal before DSP) ──
+        {
+            float inV_ = std::abs(dryBuffer.getReadPointer(0)[s]);
+            if (inV_ > inPeakL_) inPeakL_ = inV_;
+            inRmsSumL_ += inV_ * inV_;
+            if (!isMono)
+            {
+                float inVR_ = std::abs(dryBuffer.getReadPointer(1)[s]);
+                if (inVR_ > inPeakR_) inPeakR_ = inVR_;
+                inRmsSumR_ += inVR_ * inVR_;
+            }
+        }
 
         // Click-free bypass crossfade gains (ramp per sample)
         const float gDist    = bypassGainDist.getNextValue();
@@ -599,32 +593,37 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
         chData[0][s] = smpL;
         if (!isMono) chData[1][s] = smpR;
+
+        // ── Output level meter (read processed samples) ──
+        {
+            float outV_ = std::abs(smpL);
+            if (outV_ > outPeakL_) outPeakL_ = outV_;
+            outRmsSumL_ += outV_ * outV_;
+            if (!isMono)
+            {
+                float outVR_ = std::abs(smpR);
+                if (outVR_ > outPeakR_) outPeakR_ = outVR_;
+                outRmsSumR_ += outVR_ * outVR_;
+            }
+        }
     }
 
-    // ── Output level meters (post-processing) ──
+    // ── Store accumulated meter values in atomics ──
     if (chProc >= 1)
     {
-        float outPeakL = 0.0f, outRmsSumL = 0.0f;
-        float outPeakR = 0.0f, outRmsSumR = 0.0f;
-        const float* outL = buffer.getReadPointer(0);
-        const float* outR = (chProc >= 2) ? buffer.getReadPointer(1) : buffer.getReadPointer(0);
-        for (int s = 0; s < numSamples; ++s)
-        {
-            float vL = std::abs(outL[s]);
-            float vR = std::abs(outR[s]);
-            if (vL > outPeakL) outPeakL = vL;
-            if (vR > outPeakR) outPeakR = vR;
-            outRmsSumL += vL * vL;
-            outRmsSumR += vR * vR;
-        }
-        float outRmsL = std::sqrt(outRmsSumL / static_cast<float>(numSamples));
-        float outRmsR = std::sqrt(outRmsSumR / static_cast<float>(numSamples));
-        // Smooth with simple exponential decay
-        const float rmsSmooth  = 0.995f;
-        levelMeters.outPeakL.store(std::max(levelMeters.outPeakL.load(), outPeakL), std::memory_order_relaxed);
-        levelMeters.outPeakR.store(std::max(levelMeters.outPeakR.load(), outPeakR), std::memory_order_relaxed);
-        levelMeters.outRmsL .store(levelMeters.outRmsL .load() * rmsSmooth + outRmsL * (1.0f - rmsSmooth), std::memory_order_relaxed);
-        levelMeters.outRmsR .store(levelMeters.outRmsR .load() * rmsSmooth + outRmsR * (1.0f - rmsSmooth), std::memory_order_relaxed);
+        const float rmsSmooth = 0.995f;
+        float inRmsL_ = std::sqrt(inRmsSumL_ / static_cast<float>(numSamples));
+        float inRmsR_ = (chProc >= 2) ? std::sqrt(inRmsSumR_ / static_cast<float>(numSamples)) : inRmsL_;
+        float outRmsL_ = std::sqrt(outRmsSumL_ / static_cast<float>(numSamples));
+        float outRmsR_ = (chProc >= 2) ? std::sqrt(outRmsSumR_ / static_cast<float>(numSamples)) : outRmsL_;
+        levelMeters.inPeakL .store(std::max(levelMeters.inPeakL .load(), inPeakL_),  std::memory_order_relaxed);
+        levelMeters.inPeakR .store(std::max(levelMeters.inPeakR .load(), inPeakR_),  std::memory_order_relaxed);
+        levelMeters.inRmsL  .store(levelMeters.inRmsL .load() * rmsSmooth + inRmsL_ * (1.0f - rmsSmooth), std::memory_order_relaxed);
+        levelMeters.inRmsR  .store(levelMeters.inRmsR .load() * rmsSmooth + inRmsR_ * (1.0f - rmsSmooth), std::memory_order_relaxed);
+        levelMeters.outPeakL.store(std::max(levelMeters.outPeakL.load(), outPeakL_), std::memory_order_relaxed);
+        levelMeters.outPeakR.store(std::max(levelMeters.outPeakR.load(), outPeakR_), std::memory_order_relaxed);
+        levelMeters.outRmsL .store(levelMeters.outRmsL .load() * rmsSmooth + outRmsL_ * (1.0f - rmsSmooth), std::memory_order_relaxed);
+        levelMeters.outRmsR .store(levelMeters.outRmsR .load() * rmsSmooth + outRmsR_ * (1.0f - rmsSmooth), std::memory_order_relaxed);
     }
 }
 
