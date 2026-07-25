@@ -235,8 +235,6 @@ struct Oversampling2x
         // ── DOWN SAMPLE 2x: odd phase (half-band) ──
         stateL[idx] = dspL2;
         stateR[idx] = dspR2;
-        float downL_odd = firHalfBandSSE(stateL, idx) * 2.0f;
-        float downR_odd = firHalfBandSSE(stateR, idx) * 2.0f;
 
         idx = (idx + 1) % FILTER_TAPS;
 
@@ -267,7 +265,6 @@ struct Oversampling2x
         float down_even = firSSE(stateL, idx);
 
         stateL[idx] = dsp2;
-        float down_odd = firHalfBandSSE(stateL, idx) * 2.0f;
 
         idx = (idx + 1) % FILTER_TAPS;
 

@@ -427,7 +427,6 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     const float chorusRate  = smoothChorusRate.getTargetValue();
     const float chorusMix   = smoothChorusMix.getTargetValue();
     const float delayDamping = smoothDelayDamping.getTargetValue();
-    const float delayMod    = smoothDelayMod.getTargetValue();
     const float reverbSize  = smoothReverbSize.getTargetValue();
     const float reverbDamping = smoothReverbDamping.getTargetValue();
     const float reverbMix   = smoothReverbMix.getTargetValue();
@@ -488,6 +487,7 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         const float sDelayFb      = smoothDelayFeedback.getNextValue();
         const float sDelayMix     = smoothDelayMix.getNextValue();
         const float sReverbMix    = smoothReverbMix.getNextValue();
+        const float sDelayMod    = smoothDelayMod.getNextValue();
         const float sOverall      = smoothOverall.getNextValue(); // Per-sample Overall smoothing — eliminates zipper noise on global wet/dry
         const float sMasterDrive  = smoothMasterDrive.getNextValue(); // Per-sample Master Drive smoothing
         const float sMasterWidth  = smoothMasterWidth.getNextValue(); // Per-sample Master Width smoothing
@@ -542,7 +542,7 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             float dL, dR;
             delay.processSample(smpL, smpR, dL, dR,
                 sDelayTime, sDelayFb, sDelayMix,
-                pingPong, delayMod);
+                pingPong, sDelayMod);
             smpL = smpL * (1.0f - gDelay) + dL * gDelay;
             smpR = smpR * (1.0f - gDelay) + dR * gDelay;
         }
