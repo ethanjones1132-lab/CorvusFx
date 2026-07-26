@@ -1,6 +1,6 @@
 # PRIORITIES.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-26
+> **Last updated:** 2026-07-26 (evening pass)
 
 ## Active Priorities
 
@@ -29,3 +29,4 @@
 - ✅ Meter merge into main DSP loop — 2026-07-25
 - ✅ Planning docs creation — 2026-07-26
 - ✅ Per-module output clamping (Chorus/Delay) — 2026-07-26
+- ✅ Equal-power reverb wet/dry crossfade — 2026-07-26 (`82a6235`)
