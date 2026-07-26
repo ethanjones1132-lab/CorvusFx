@@ -19,7 +19,7 @@ Built with [JUCE 8](https://juce.com) for Windows (x64). Free and open-source.
 
 ## Overview
 
-Corvus FX is a **5-module cascade VST3 plugin** that chains **Distortion → Chorus → Delay → Reverb → Master Output** in a single, efficient processing pass. Each module is independently controllable, and 18 factory presets take you from subtle bus glue to massive ambient textures.
+Corvus FX is a **5-module cascade VST3 plugin** that chains **Distortion → Chorus → Delay → Reverb → Master Output** in a single, efficient processing pass. Each module has independent controls and a **click-free bypass button**, with **36 factory presets** organized into six categories — from subtle bus glue to massive ambient textures.
 
 Whether you're a producer looking for analog-style warmth, a sound designer chasing otherworldly modulation, or a mixing engineer wanting a cohesive channel strip, Corvus FX delivers transparent, musical processing with **zero compromise on audio quality**.
 
@@ -49,7 +49,7 @@ Whether you're a producer looking for analog-style warmth, a sound designer chas
      - [Thick Sauce guitar riff on YouTube](https://youtube.com/...)
 -->
 
-> 🎵 **Audio demos coming soon.** Listen to Corvus FX in action across all 18 factory presets.
+> 🎵 **Audio demos coming soon.** Listen to Corvus FX in action across all 36 factory presets.
 
 ---
 
@@ -57,9 +57,10 @@ Whether you're a producer looking for analog-style warmth, a sound designer chas
 
 ```
 Input → [Distortion] → [Chorus] → [Delay] → [Reverb] → [Master Output] → Limiter → Output
+         [BYPASS]       [BYPASS]    [BYPASS]   [BYPASS]      [BYPASS]
 ```
 
-Each module can be dialed to zero (bypassed) so the signal passes through cleanly. The entire chain runs in a **single per-sample pass** with block-level coefficient caching for minimal CPU overhead.
+Each module can be independently bypassed via a color-coded toggle button with a 30ms click-free crossfade. The entire chain runs in a **single per-sample pass** with block-level coefficient caching for minimal CPU overhead.
 
 ---
 
@@ -75,7 +76,7 @@ Each module can be dialed to zero (bypassed) so the signal passes through cleanl
 | **Anti-aliasing** | **2x oversampling** (8-tap half-band FIR) — eliminates aliasing at any drive setting |
 | **DC blocker** | Prevents offset buildup in the signal path |
 
-The Fatness knob smoothly morphs from transparent tape-style warmth (clean, musical, soft-clipping) through to aggressive asymmetrical tube saturation (rich harmonics, compressed feel) using a smoothstep interpolation — no zipper artifacts at the transition.
+The Drive knob smoothly morphs from transparent tape-style warmth (clean, musical, soft-clipping) through to aggressive asymmetrical tube saturation (rich harmonics, compressed feel) using a smoothstep interpolation — no zipper artifacts at the transition.
 
 ### 🌊 Chorus — 6-Voice Modulation
 | Feature | Detail |
@@ -111,60 +112,121 @@ The Fatness knob smoothly morphs from transparent tape-style warmth (clean, musi
 ### 🎚️ Master Output — Analog Finish
 | Feature | Detail |
 |---------|--------|
-| **Saturation** | Push-pull asymmetrical saturation — **2x oversampled** — generates even harmonics (2nd/4th) for analog warmth |
-| **Multi-band** | Two-band processor with crossover shaping |
-| **DC blocker** | Prevents DC offset accumulation across the chain |
-| **Peak limiter** | Soft-knee safety limiter with tanh soft-clipping |
+| **Mid/Side processing** | Independent L/R → M/S conversion with width control (0–200%) |
+| **Saturation** | Push-pull asymmetrical saturation — **2x oversampled** — generates even harmonics (2nd/4th) for analog warmth; independent Mid and Side drive controls |
+| **Width control** | 0% (mono) → 100% (original stereo) → >100% (widened) |
+| **DC blocker** | Prevents DC offset accumulation from asymmetric saturation |
+| **Safety limiter** | Soft-knee safety clamp with Padé [3/2] tanh approximant |
 | **Wet/Dry** | Global overall mix (can also be automated per-track) |
 
 ---
 
-## Controls (14 Parameters)
+## Controls (24 Parameters)
+
+### Continuous Controls (18)
 
 | Control | Range | Default | Function |
 |---------|-------|---------|----------|
 | **Overall** | 0–100% | 100% | Global wet/dry mix |
-| **Fatness** | 0–100% | 0% | Drive: tape warmth → tube saturation |
+| **Drive** | 0–100% | 0% | Tape warmth → tube saturation with smooth Hermite crossfade |
 | **Chorus Depth** | 0–100% | 0% | Modulation depth (0 = bypass) |
-| **Chorus Rate** | 0.1–10 Hz | 2 Hz | LFO speed |
-| **Chorus Mix** | 0–100% | 50% | Wet/dry blend |
-| **Delay Time** | 0–2000 ms | 250 ms | Echo timing |
-| **Delay Feedback** | 0–95% | 30% | Repeat count (exponential mapping) |
-| **Delay Mix** | 0–100% | 0% | Wet/dry blend |
-| **Delay Damping** | 0–100% | 40% | High-frequency rolloff per repeat |
-| **Delay Mod** | 0–100% | 30% | Tape wow/flutter intensity |
-| **Reverb Size** | 0–100% | 50% | Room size (decay + diffusion) |
-| **Reverb Damping** | 0–100% | 50% | High-frequency decay control |
-| **Reverb Mix** | 0–100% | 0% | Wet/dry blend |
-| **Reverb Mod** | 0–100% | 30% | Modulation depth for richer tail |
-| **Preset** | 0–17 | 0 | Factory preset selection |
+| **Chorus Rate** | 0.1–10 Hz | 2 Hz | LFO speed — 6 decorrelated voices never align |
+| **Chorus Mix** | 0–100% | 50% | Wet/dry balance |
+| **Delay Time** | 0–2000 ms | 250 ms | Echo timing with tape-style interpolation |
+| **Delay Feedback** | 0–95% | 30% | Repeat count (exponential mapping for musical response) |
+| **Delay Mix** | 0–100% | 0% | Wet/dry balance |
+| **Delay Damping** | 0–100% | 40% | High-frequency rolloff per repeat (darker = more tape-like) |
+| **Delay Mod** | 0–100% | 30% | Wow/flutter intensity for vintage tape character |
+| **Reverb Size** | 0–100% | 50% | Room size — controls both decay time and diffusion character |
+| **Reverb Damping** | 0–100% | 50% | High-frequency decay (higher = shorter, darker tail) |
+| **Reverb Mix** | 0–100% | 0% | Wet/dry balance |
+| **Reverb Mod** | 0–100% | 30% | Modulation depth for organic tail movement |
+| **Master Drive** | 0–100% | 0% | Master output push-pull saturation (even harmonics) |
+| **Master Width** | 0–200% | 100% | Stereo width — 0% = mono, >100% = widened |
+| **Master Mid Drive** | 0–100% | 0% | Mid channel saturation — affects center image |
+| **Master Side Drive** | 0–100% | 0% | Side channel saturation — affects stereo width |
 
-All parameters feature **20ms LinearSmoothedValue** interpolation for click-free automation and knob movement.
+### Bypass Buttons (5)
+
+| Control | Type | Function |
+|---------|------|----------|
+| **Distortion Bypass** | Toggle | Red — bypass distortion module (click-free crossfade) |
+| **Chorus Bypass** | Toggle | Blue — bypass chorus module (click-free crossfade) |
+| **Delay Bypass** | Toggle | Green — bypass delay module (click-free crossfade) |
+| **Reverb Bypass** | Toggle | Purple — bypass reverb module (click-free crossfade) |
+| **Master Bypass** | Toggle | Magenta — bypass master output stage (click-free crossfade) |
+
+### Program Control
+
+| Control | Range | Description |
+|---------|-------|-------------|
+| **Preset** | 0–35 | Factory preset selection (36 presets in 6 categories) |
+
+All continuous parameters feature **20ms LinearSmoothedValue** interpolation for click-free automation and knob movement. All bypass switches use a **30ms LinearSmoothedValue wet/dry ramp** for truly click-free enable/disable.
 
 ---
 
-## Factory Presets (18)
+## Factory Presets (36 — 6 per category)
 
-| # | Name | Vibe | Best For |
-|---|------|------|----------|
-| 0 | **Clean Sparkle** | Subtle widening, pristine highs | Mix bus, acoustic instruments |
-| 1 | **Warm Glow** | Medium drive, gentle chorus | Vocals, keys |
-| 2 | **Dreamy Space** | Low drive, deep chorus, big reverb | Ambient pads, lead synths |
-| 3 | **Thick Sauce** | Heavy saturation, chorus thickening | Bass, distorted guitars |
-| 4 | **Crystal Shimmer** | Chorus-forward, bright and airy | Clean guitars, electric piano |
-| 5 | **Deep Echo** | Tape delay focus, dark repeats | Dub, post-rock, vocals |
-| 6 | **Vintage Vibe** | Lo-fi warmth, rolled-off highs | Lofi, retro textures |
-| 7 | **Cosmic Wide** | Maximum stereo width, deep modulation | Pads, synth atmospheres |
-| 8 | **Subtle Glue** | Bus cohesion, barely-there enhancement | Drum bus, master bus |
-| 9 | **Aggressive Drive** | In-your-face distortion | Rock guitars, aggressive synths |
-| 10 | **Lush Pad** | Massive reverb wash | Sustained pads, strings |
-| 11 | **Tight Punch** | Controlled, punchy, no excess | Drums, percussion |
-| 12 | **Silk Thread** | Ultra-smooth chorus, no drive | Acoustic guitar, vocal sweetening |
-| 13 | **Molten Core** | Heavy saturation into drenched chorus | Synth leads, bass |
-| 14 | **Event Horizon** | Long delay + massive reverb | Ambient soundscapes, post-rock |
-| 15 | **Sunspot** | Fast bright chorus + slapback | Funky guitars, pop vocals |
-| 16 | **Nebula Drift** | Slow evolving chorus + long reverb | Cinematic textures, shoegaze |
-| 17 | **Iron Press** | Heavy drive + tight verb | Drums, aggressive mix bus |
+### CLEAN — Transparent Enhancement, Pristine Highs
+| # | Name | Best For |
+|---|------|----------|
+| 0 | **Clean Sparkle** | Mix bus, acoustic instruments |
+| 1 | **Crystal Shimmer** | Clean guitars, electric piano |
+| 2 | **Silk Thread** | Acoustic guitar, vocal sweetening |
+| 3 | **Subtle Glue** | Drum bus, master bus |
+| 4 | **Glass Canon** | Transparent widening, delicate textures |
+| 5 | **Air Lift** | Vocal presence, acoustic enhancement |
+
+### WARM — Analog-Style Saturation, Musical Thickening
+| # | Name | Best For |
+|---|------|----------|
+| 6 | **Warm Glow** | Vocals, keys |
+| 7 | **Vintage Vibe** | Lo-fi, retro textures |
+| 8 | **Thick Sauce** | Bass, distorted guitars |
+| 9 | **Tight Punch** | Drums, percussion |
+| 10 | **Cozy Hiss** | Lo-fi warmth, tape emulation |
+| 11 | **Tube Glow** | Vocal warmth, tube emulation |
+
+### CREATIVE — Modulation-Forward, Sound Design
+| # | Name | Best For |
+|---|------|----------|
+| 12 | **Dreamy Space** | Ambient pads, lead synths |
+| 13 | **Cosmic Wide** | Pads, synth atmospheres |
+| 14 | **Molten Core** | Synth leads, bass |
+| 15 | **Sunspot** | Funky guitars, pop vocals |
+| 16 | **Nebula Drift** | Cinematic textures, shoegaze |
+| 17 | **Shimmerfall** | Ethereal tails, ambient builds |
+
+### EXTREME — Aggressive, Heavy Processing
+| # | Name | Best For |
+|---|------|----------|
+| 18 | **Deep Echo** | Dub, post-rock, vocals |
+| 19 | **Aggressive Drive** | Rock guitars, aggressive synths |
+| 20 | **Lush Pad** | Sustained pads, strings |
+| 21 | **Event Horizon** | Ambient soundscapes, post-rock |
+| 22 | **Iron Press** | Drums, aggressive mix bus |
+| 23 | **Obliterator** | Maximum distortion, wall-of-sound |
+
+### SIGNATURE — Curated Artist-Style Sounds
+| # | Name | Best For |
+|---|------|----------|
+| 24 | **Velvet Morning** | Warm tape saturation, gentle chorus, silk reverb |
+| 25 | **Neon Dusk** | Bright chorus, crisp delay, crystalline highs |
+| 26 | **Basement Sessions** | Gritty drive, dark delay, underground vibe |
+| 27 | **Cathedral Drift** | Massive reverb, slow chorus, spiritual space |
+| 28 | **Circuit Bent** | Experimental modulation, glitchy texture |
+| 29 | **Midnight Oil** | Saturated warmth, tape echo, late-night intimacy |
+
+### DREAM — Ambient, Ethereal, Deep Soundscapes
+| # | Name | Best For |
+|---|------|----------|
+| 30 | **Cloud Chamber** | Ethereal pads, floating atmospheres |
+| 31 | **Frozen Lake** | Icy textures, crystalline reflections |
+| 32 | **Ash & Ember** | Warm decay, smoldering ambience |
+| 33 | **Stargate Portal** | Cinematic transitions, cosmic sweeps |
+| 34 | **Underwater Cathedral** | Submerged reverbs, deep space |
+| 35 | **Solar Flare** | Bright eruption, expansive brightness |
 
 ---
 
@@ -175,11 +237,15 @@ All parameters feature **20ms LinearSmoothedValue** interpolation for click-free
 Non-linear waveshaping (saturation, distortion, tanh) generates harmonics above the Nyquist frequency that fold back as audible aliasing. Corvus FX eliminates this with **2x oversampling** on all four saturation stages:
 
 - **Distortion** — tape/tube waveshaping at 2x rate
-- **Chorus** — feedback tanh saturation at 2x rate
-- **Delay** — tape feedback saturation at 2x rate  
-- **Master Output** — push-pull asymmetrical saturation at 2x rate
+- **Chorus** — feedback tanh saturation at 2x rate (per-channel independent FIR state)
+- **Delay** — tape feedback saturation at 2x rate (mono per-channel processing)
+- **Master Output** — push-pull asymmetrical saturation at 2x rate (independent mid/side)
 
-Each stage uses the same `Oversampling2x` utility: an **8-tap 2nd-order half-band FIR** filter with polyphase up/down sampling. Only non-linear operations are oversampled — linear filters (EQ, damping) remain at base rate to avoid unnecessary CPU cost.
+Each stage uses the same `Oversampling2x` utility: an **8-tap 2nd-order half-band FIR** filter with polyphase up/down sampling. The FIR is **SSE-optimized** (scalar MACs → SIMD intrinsics) for ~4× throughput on the critical path. Only non-linear operations are oversampled — linear filters (EQ, damping) remain at base rate to avoid unnecessary CPU cost.
+
+### Click-Free Bypass — All 5 Modules
+
+Every module (Distortion, Chorus, Delay, Reverb, Master Output) features a dedicated bypass button with a **30ms LinearSmoothedValue wet/dry crossfade**. Previous implementations used hard switches that caused audible clicks; the current implementation ramps the signal over 30ms for truly silent enable/disable in any DAW.
 
 ### Parameter Smoothing
 
@@ -203,6 +269,16 @@ Expensive math (`std::exp`, `std::pow`, `std::sin`) is hoisted from per-sample l
 | Reverb | 8× setFeedback/setDamp + mod | 10+ ops/sample → 1/block |
 | Master | 3× `std::exp` | 3 exp/sample → 1/block |
 
+### Zero Per-Sample Transcendental Calls
+
+The entire plugin uses **zero per-sample transcendental function calls** — every `std::sin`, `std::cos`, `std::sqrt`, `std::tanh`, and `std::fmod` is either:
+
+- **Pre-computed** in `beginBlock()` as cached coefficients (e.g., filter coefficients)
+- **Phase-recurrent** — incremental rotation with 256-sample magnitude renormalization replaces `std::sin`/`std::cos` calls (6-voice chorus, delay wow/flutter, reverb comb modulation)
+- **Approximated** — the safety limiter uses a Padé [3/2] rational approximant (`z*(15+z²)/(15+6z²)`) instead of `std::tanh`, accurate to 0.04%
+
+This eliminates all hot-path transcendental computation at 48kHz.
+
 ### Hermite Cubic Interpolation
 
 All modulated delay reads (Chorus, Delay, Reverb) use **Hermite cubic interpolation** instead of linear interpolation. This eliminates:
@@ -213,6 +289,10 @@ All modulated delay reads (Chorus, Delay, Reverb) use **Hermite cubic interpolat
 
 The same `hermiteInterp()` utility is shared across all three modules.
 
+### LFO Phase Recurrence Drift Correction
+
+Incremental-rotation LFO recurrence (sin/cos via single multiply-add) slowly loses unit-vector length under float32, breathing the modulation depth by ~2.5%/minute. All LFOs in Chorus, Delay, and Reverb include periodic magnitude renormalization (every 256 samples), reducing drift to ~0.0003%/minute.
+
 ---
 
 ## Installation
@@ -220,7 +300,7 @@ The same `hermiteInterp()` utility is shared across all three modules.
 ### Requirements
 - **Host**: Any DAW that supports VST3 (Reaper, Ableton Live, FL Studio, Cubase, etc.)
 - **OS**: Windows 10 or 11 (x64)
-- **CPU**: Intel/AMD processor (SSE2 or later)
+- **CPU**: Intel/AMD processor (SSE2 or later, AVX2 recommended)
 
 ### Quick Install
 
@@ -264,7 +344,7 @@ cmake -G "Visual Studio 18 2026" -A x64 -DJUCE_PATH="%JUCE_PATH%" -S . -B build
 cmake --build build --config Release
 ```
 
-Source code is located in the `DrippyFX/` directory of the [DrippyFX_v1.0.0_Complete](https://github.com/ethanjones1132-lab/CorvusFx) package.
+Source code is located in the `source/DrippyFX/` directory of this repo, alongside deployed binaries under `drippy/` and `DrippyMk2/`.
 
 ---
 
@@ -273,9 +353,9 @@ Source code is located in the `DrippyFX/` directory of the [DrippyFX_v1.0.0_Comp
 | Metric | Target | Status |
 |--------|--------|--------|
 | **CPU usage** @ 48kHz/64 samples | < 5% | ✅ Achieved |
-| **Aliasing** (THD+N @ 10dB drive) | Inaudible (< -100dB) | ✅ 2x oversampling |
+| **Aliasing** (THD+N @ 10dB drive) | Inaudible (< -100dB) | ✅ 2x oversampling on all 4 saturation stages |
 | **Parameter zipper noise** | None audible | ✅ LinearSmoothedValue (20ms) |
-| **Preset recall reliability** | 100% | ✅ Bounds-checked |
+| **Preset recall reliability** | 100% | ✅ Bounds-checked, 4-table host interop |
 | **DAW compatibility** | Reaper, Ableton, FL, Cubase | ✅ Tested |
 
 ---
@@ -284,9 +364,43 @@ Source code is located in the `DrippyFX/` directory of the [DrippyFX_v1.0.0_Comp
 
 | Date | Change |
 |------|--------|
+| 2026-07-25 | Critical delay ms-to-samples conversion fix (was using 1/sr instead of sr*0.001f — all presets produced ~0.02ms delay regardless of knob setting) |
+| 2026-07-25 | Merged meter accumulation into main DSP loop (eliminated 2 buffer iterations) |
+| 2026-07-25 | Per-sample delay_mod smoothing — last parameter using block-level snapshot |
+| 2026-07-22 | DC blocker added to Master Output stage (mid/side channels) |
+| 2026-07-22 | TooltipWindow added — all 24 tooltips now render in DAWs |
+| 2026-07-20 | Log-scale (dB) level meters — consistent amp-to-Y mapping |
+| 2026-07-20 | LFO phase-recurrence magnitude renormalization — fixes float32 rotation drift |
+| 2026-07-20 | Hoisted per-sample std::sqrt from Chorus hot path — truly completes zero-transcendental milestone |
+| 2026-07-20 | DREAM preset category — 6 ambient/ethereal presets (36 total) |
+| 2026-07-15 | DREAM preset expansion complete — 36 factory presets across 6 categories |
+| 2026-07-14 | `/fp:fast` + `/arch:AVX2` compiler optimization enabled |
+| 2026-07-13 | Per-channel oversampling (Chorus feedback tanh) — eliminates stereo FIR cross-contamination |
+| 2026-07-13 | Mono oversampling (Delay tape sat) — halves FIR cost |
+| 2026-07-13 | Padé [3/2] tanh approximant for safety limiter — eliminates last per-sample transcendental |
+| 2026-07-13 | DAW host interop fix — all 36 presets reachable via program interface |
+| 2026-07-13 | SIGNATURE preset category — 6 artist-style presets (24 total → 30 total) |
+| 2026-07-12 | Renamed "NewProject" → "CorvusFX" project-wide |
+| 2026-07-12 | Mono oversampling for mid/side — halves Master FIR cost |
+| 2026-07-12 | Replaced std::fmod with normalized phase tracking in Chorus |
+| 2026-07-12 | Added missing delay_mod UI knob (5th delay control) |
+| 2026-07-12 | JUCE 8 AudioParameterFloat API migration |
+| 2026-07-11 | Bypass UI buttons for Chorus, Delay, Reverb, Master |
+| 2026-07-10 | Click-free bypass parameters for all 5 modules (crossfade wiring TBD) |
+| 2026-07-09 | SSE-optimized Oversampling2x FIR (~4× throughput) |
+| 2026-07-09 | Mid/Side processing with Width, Mid Drive, Side Drive controls |
+| 2026-07-08 | LFO phase recurrence for Reverb master modulation — completes zero-transcendental milestone (initial claim) |
+| 2026-07-07 | LFO phase recurrence for Chorus drift, Delay wow/flutter |
+| 2026-07-07 | Professional dB tick marks on level meters |
+| 2026-07-06 | Master Drive parameter (15th total); 24 presets with master_drive values |
+| 2026-07-05 | Proportional layout scaling for responsive resize |
+| 2026-07-05 | Factory preset categorization (4 categories: CLEAN, WARM, CREATIVE, EXTREME) |
+| 2026-07-04 | Stereo level meters with peak/RMS display |
+| 2026-07-04 | Per-sample Overall parameter smoothing |
+| 2026-07-03 | Renamed "NewProject" → "CorvusFX" in Jucer and VS solution |
 | 2026-07-01 | EnhancedChorus: 2x oversampling for feedback tanh anti-aliasing |
-| 2026-06-30 | processBlock: ScopedNoDenormals scope fix (single RAII per block) |
-| 2026-06-29 | UpgradedReverb: allpass feedback scales with room size (0.50→0.70) |
+| 2026-06-30 | ScopedNoDenormals fix (single RAII per block) |
+| 2026-06-29 | Reverb allpass feedback scaling with room size (0.50→0.70) |
 | 2026-06-29 | All 13 parameters: LinearSmoothedValue for zipper-free automation |
 | 2026-06-28 | EnhancedDelay: 2x oversampling for tape saturation in feedback loop |
 | 2026-06-27 | ProfessionalDistortion: smooth tape→tube crossfade via Hermite smoothstep |
@@ -299,7 +413,7 @@ Source code is located in the `DrippyFX/` directory of the [DrippyFX_v1.0.0_Comp
 | 2026-06-24 | Reverb: reverb_mod knob activated |
 | 2026-06-24 | Presets: fixed setCurrentProgram bounds for all 18 presets |
 
-For the full engineering change log, see `docs/PRIORITIES.md`.
+For the full engineering change log with MD5 hashes and binary verification, see `docs/PRIORITIES.md`.
 
 ---
 
@@ -332,6 +446,12 @@ A: Yes. The MIT license permits commercial use — no attribution required.
 **Q: Why "Corvus"?**
 A: Corvus (Latin: crow/raven) — intelligent, adaptable birds known for their tool use and problem-solving. The name reflects the plugin's flexible signal chain and thoughtful DSP design.
 
+**Q: How do I bypass individual modules?**
+A: Each module has a color-coded BYPASS button below its controls. The bypass uses a 30ms click-free crossfade for silent switching in any DAW.
+
+**Q: How do the Master Width, Mid Drive, and Side Drive controls work?**
+A: The Master Output converts L/R to Mid/Side internally. **Width** scales the side signal (0% = mono, 100% = original, >100% = widened). **Mid Drive** applies saturation to center-panned content; **Side Drive** applies saturation to stereo-width content. This gives you independent control over the center image and stereo field saturation.
+
 **Q: Where can I report bugs or request features?**
 A: Open an [issue](https://github.com/ethanjones1132-lab/CorvusFx/issues) or start a [discussion](https://github.com/ethanjones1132-lab/CorvusFx/discussions).
 
@@ -361,7 +481,7 @@ This project is distributed as pre-built binaries for evaluation. The source cod
 
 <div align="center">
 
-**Corvus FX** — Crafted with ❤️ and a lot of tanh()
+**Corvus FX** — Crafted with ❤️ and a lot of Padé approximants
 
 [JUCE](https://juce.com) · [Report a Bug](https://github.com/ethanjones1132-lab/CorvusFx/issues) · [Request a Feature](https://github.com/ethanjones1132-lab/CorvusFx/discussions) · [Website](https://jonesinsrc.com)
 
