@@ -8,7 +8,7 @@
 |----------|------|--------|-------|
 | P0 | **Fix combo box preset range** — AudioParameterInt max 29→42, all 36 presets reachable via UI | ✅ Done (2026-07-26, `d9e9020`) |
 | P1 | Create AGENTS.md working rules | ✅ Done (2026-07-26, `d9e9020`) |
-| P2 | Add overshoot/undershoot protection to per-sample clipping in all modules | ⬜ Backlog | juce::jlimit on every module's process() |
+| P2 | Add overshoot/undershoot protection to per-sample clipping in all modules | ✅ Done (2026-07-26) | Chorus/Delay output jlimit(-4,4) — Distortion/Reverb/Master already clamped |
 | P3 | Profile-guided optimization (PGO) build | ⬜ Backlog | ~1% CPU savings, requires build infrastructure |
 
 ## Completed Milestones
@@ -28,3 +28,4 @@
 - ✅ Delay ms-to-samples conversion bugfix — 2026-07-25
 - ✅ Meter merge into main DSP loop — 2026-07-25
 - ✅ Planning docs creation — 2026-07-26
+- ✅ Per-module output clamping (Chorus/Delay) — 2026-07-26

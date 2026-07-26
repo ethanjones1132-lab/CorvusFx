@@ -793,7 +793,7 @@ struct EnhancedChorus
         float dryGain = chorusBlockCoeffs.dryGain;
         float wetGain = chorusBlockCoeffs.wetGain;
 
-        return input * dryGain + wetOut * wetGain;
+        return juce::jlimit(-4.0f, 4.0f, input * dryGain + wetOut * wetGain);
     }
 
     void advanceWritePos()
@@ -983,8 +983,8 @@ struct EnhancedDelay
         if (++writePos[0] >= MAX_DELAY) writePos[0] = 0;
         if (++writePos[1] >= MAX_DELAY) writePos[1] = 0;
 
-        outL = inL * (1.0f - mix) + delayedL * mix;
-        outR = inR * (1.0f - mix) + delayedR * mix;
+        outL = juce::jlimit(-4.0f, 4.0f, inL * (1.0f - mix) + delayedL * mix);
+        outR = juce::jlimit(-4.0f, 4.0f, inR * (1.0f - mix) + delayedR * mix);
     }
 };
 
