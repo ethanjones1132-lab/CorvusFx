@@ -1146,6 +1146,7 @@ struct UpgradedReverb
         float modDepth = 0.0f;
         float inputGain = 0.045f;
         float wetGain = 0.0f;
+        float dryGain = 1.0f;     // Equal-power dry gain: cos(mix*pi/2)
         float apFb = 0.6f;      // Allpass feedback: scales with room size
         float modPhaseIncrement = 0.0f;  // 0.37f / sr — cached for comb modulation LFO
         // Pre-delay in samples (cached per block)
@@ -1181,8 +1182,10 @@ struct UpgradedReverb
         blockCoeffs.damp2 = 1.0f - blockCoeffs.damp;
         // Modulation depth: 0–1.5 samples of read offset
         blockCoeffs.modDepth = reverbMod * 1.5f;
-        // Wet gain (matched to higher inputGain)
-        blockCoeffs.wetGain = wetMix * 1.5f;
+        // Equal-power crossfade gains: constant perceived level across mix range
+        // cos(mix*pi/2) for dry, sin(mix*pi/2) * 1.5 for wet (reverb level compensation)
+        blockCoeffs.dryGain = std::cos(wetMix * juce::MathConstants<float>::halfPi);
+        blockCoeffs.wetGain = std::sin(wetMix * juce::MathConstants<float>::halfPi) * 1.5f;
         // Cache pre-delay and width per block
         blockCoeffs.preDelaySmp = juce::jlimit(0, PREDELAY_MAX - 1,
             (int)(preDelayMs * 0.001f * sampleRate));
@@ -1358,9 +1361,10 @@ struct UpgradedReverb
         revL = mid + side;
         revR = mid - side;
 
-        // Wet/dry mix (matched to higher inputGain) - use cached wetGain
-        outL = inL * (1.0f - blockCoeffs.wetGain / 1.5f) + revL * blockCoeffs.wetGain;
-        outR = inR * (1.0f - blockCoeffs.wetGain / 1.5f) + revR * blockCoeffs.wetGain;
+        // Equal-power wet/dry crossfade -- constant perceived level across mix range
+        // Uses cached equal-power gains from beginBlock()
+        outL = inL * blockCoeffs.dryGain + revL * blockCoeffs.wetGain;
+        outR = inR * blockCoeffs.dryGain + revR * blockCoeffs.wetGain;
 
         outL = juce::jlimit(-4.0f, 4.0f, outL);
         outR = juce::jlimit(-4.0f, 4.0f, outR);
