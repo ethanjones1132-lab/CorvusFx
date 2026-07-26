@@ -6,8 +6,8 @@
 
 | Priority | Item | Status | Notes |
 |----------|------|--------|-------|
-| P0 | **Fix combo box preset range** — AudioParameterInt max 29 but 42 combo items exist; ~10 presets unreachable via UI | 🔶 In progress | Editting `PluginProcessor.cpp` line 224 |
-| P1 | Create AGENTS.md working rules | ✅ Done (2026-07-26, this session) |
+| P0 | **Fix combo box preset range** — AudioParameterInt max 29→42, all 36 presets reachable via UI | ✅ Done (2026-07-26, `d9e9020`) |
+| P1 | Create AGENTS.md working rules | ✅ Done (2026-07-26, `d9e9020`) |
 | P2 | Add overshoot/undershoot protection to per-sample clipping in all modules | ⬜ Backlog | juce::jlimit on every module's process() |
 | P3 | Profile-guided optimization (PGO) build | ⬜ Backlog | ~1% CPU savings, requires build infrastructure |
 
