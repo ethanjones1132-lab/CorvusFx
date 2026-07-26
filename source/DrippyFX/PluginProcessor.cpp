@@ -49,12 +49,11 @@ void CorvusFXAudioProcessor::parameterChanged(const juce::String& parameterID, f
 
 void CorvusFXAudioProcessor::loadPreset(int index)
 {
-    // index is the combo box item position (0-29), which maps directly
-    // to the preset array index. The JUCE ComboBoxAttachment maps
-    // item position -> parameter value linearly, and the presets[]
-    // array is ordered to match the combo box layout.
-    // Combo order: CLEAN [0-5], WARM [6-11], CREATIVE [12-17], EXTREME [18-23], SIGNATURE [24-29]
-    if (index < 0 || index >= 30) return;
+    // index is the preset array index (0-35), mapped from combo item ID
+    // via idToPreset[] in parameterChanged(), or directly from DAW host
+    // via setCurrentProgram's presetToId[] lookup.
+    // Combo order: CLEAN [0-5], WARM [6-11], CREATIVE [12-17], EXTREME [18-23], SIGNATURE [24-29], DREAM [30-35]
+    if (index < 0 || index >= 36) return;
     
     //                    fat  cD   cR    cM   dT   dFb  dM   dDmp dMod rS   rDmp rM   rMod  mDrv mWid mMid mSide dByp cByp dByp rByp mByp
     struct P { float fat, cD, cR, cM, dT, dFb, dM, dDmp, dMod, rS, rDmp, rM, rMod, mDrv, mWid, mMid, mSide, distByp, chorusByp, delayByp, reverbByp, masterByp; };
@@ -221,7 +220,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::crea
     params.push_back(pctParam("master_mid_drive", "Master Mid Drive", 0));
     params.push_back(pctParam("master_side_drive", "Master Side Drive", 0));
     params.push_back(std::make_unique<juce::AudioParameterBool>("master_bypass", "Master Bypass", false));
-    params.push_back(std::make_unique<juce::AudioParameterInt>("preset", "Preset", 0, 29, 0));
+    params.push_back(std::make_unique<juce::AudioParameterInt>("preset", "Preset", 0, 42, 2));
     return { params.begin(), params.end() };
 }
 
