@@ -31,9 +31,9 @@
 
 ## Phase 4: UI Completeness 🔶 (In progress)
 
+- ✅ Knob right-click → MIDI learn — 2026-07-27 (`a5c09ae`)
 - ✅ Preset A/B compare (snapshot/restore 23 parameters) — 2026-07-27 (`d4f7e81`)
 - ✅ Combo box preset range fixed (0-29→0-42, all 36 presets reachable) — 2026-07-26 (`d9e9020`)
-- ⬜ Knob right-click → MIDI learn
 - ⬜ Undo/redo support
 - ⬜ Dark/light theme toggle (future stretch)
 
@@ -49,5 +49,6 @@
 |--------|---------|--------|
 | Presets reachable via combo box | 36/36 | 36/36 ✅ |
 | Presets reachable via DAW | 36/36 | 36/36 ✅ |
-| Compile warnings | 0 | 0 ✅ |
+| Compile warnings | 37 | 0 🔶 |
 | Per-sample transcendental calls | 0 | 0 ✅ |
+| Knobs with MIDI learn | 18/18 | 18/18 ✅ |

@@ -6,13 +6,13 @@
 
 | Priority | Item | Status | Notes |
 |----------|------|--------|-------|
-| P2 | **Knob right-click → MIDI learn** — DAW-standard MIDI learn context menu | ⬜ Open | Phase 4 UI completeness |
 | P3 | **Undo/redo support** — undo manager for parameter changes | ⬜ Open | Phase 4, needs JUCE UndoManager integration |
 | P3 | **Profile-guided optimization (PGO) build** | ⬜ Backlog | ~1% CPU savings, requires build infrastructure |
 | P3 | **Dark/light theme toggle** | ⬜ Backlog | Phase 4 stretch goal |
 
 ## Completed Milestones
 
+- ✅ Knob right-click → MIDI learn — 2026-07-27 (`a5c09ae`)
 - ✅ Preset A/B compare — 2026-07-27 (`d4f7e81`)
 - ✅ All 4 saturation stages oversampled (Distortion, Chorus, Delay, Master) — 2026-07-01
 - ✅ Zero per-sample transcendental calls — 2026-07-13
