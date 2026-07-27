@@ -1,6 +1,6 @@
 # ROADMAP.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-27 (overnight pass)
+> **Last updated:** 2026-07-27
 
 ## Phase 1: Foundation ✅ (2026-06-24 through 2026-07-09)
 
@@ -31,10 +31,10 @@
 
 ## Phase 4: UI Completeness 🔶 (In progress)
 
+- ✅ Preset A/B compare (snapshot/restore 23 parameters) — 2026-07-27 (`d4f7e81`)
 - ✅ Combo box preset range fixed (0-29→0-42, all 36 presets reachable) — 2026-07-26 (`d9e9020`)
-- ⬜ Preset A/B compare
-- ⬜ Undo/redo support
 - ⬜ Knob right-click → MIDI learn
+- ⬜ Undo/redo support
 - ⬜ Dark/light theme toggle (future stretch)
 
 ## Phase 5: CPU Optimization ⬜ (Backlog)

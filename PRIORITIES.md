@@ -1,12 +1,11 @@
 # PRIORITIES.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-27 (overnight pass)
+> **Last updated:** 2026-07-27
 
 ## Active Priorities
 
 | Priority | Item | Status | Notes |
 |----------|------|--------|-------|
-| P1 | **Preset A/B compare** — toggle between two preset states for quick auditioning | ⬜ Open | Phase 4 UI completeness |
 | P2 | **Knob right-click → MIDI learn** — DAW-standard MIDI learn context menu | ⬜ Open | Phase 4 UI completeness |
 | P3 | **Undo/redo support** — undo manager for parameter changes | ⬜ Open | Phase 4, needs JUCE UndoManager integration |
 | P3 | **Profile-guided optimization (PGO) build** | ⬜ Backlog | ~1% CPU savings, requires build infrastructure |
@@ -14,6 +13,7 @@
 
 ## Completed Milestones
 
+- ✅ Preset A/B compare — 2026-07-27 (`d4f7e81`)
 - ✅ All 4 saturation stages oversampled (Distortion, Chorus, Delay, Master) — 2026-07-01
 - ✅ Zero per-sample transcendental calls — 2026-07-13
 - ✅ Preset expansion 18→36 (CLEAN/WARM/CREATIVE/EXTREME/SIGNATURE/DREAM) — 2026-07-15
