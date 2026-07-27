@@ -87,7 +87,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.setTooltip("Select factory preset — 36 curated sounds from clean enhancement to deep ambient soundscapes");
     addAndMakeVisible(presetSelector);
 
-    auto setupKnob = [this](AnimatedKnob& k, juce::Label& l, const juce::String& txt, const juce::String& tooltip = "") {
+    auto setupKnob = [this](AnimatedKnob& k, juce::Label& l, const juce::String& txt, const juce::String& paramID, const juce::String& tooltip = "") {
         k.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 70, 18);
         k.setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xffc0c0d0));
         k.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xff0c0c1a));
@@ -100,9 +100,26 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
         l.setJustificationType(juce::Justification::centred);
         l.setColour(juce::Label::textColourId, juce::Colour(0xff999aaa));
         addAndMakeVisible(l);
+        k.linkedParamID = paramID;
+        k.onRightClick = [this, &k](const juce::MouseEvent&) {
+            auto& proc = audioProcessor;
+            juce::PopupMenu menu;
+            menu.addItem("MIDI Learn", [&proc, &k]() {
+                proc.startMidiLearn(k.linkedParamID);
+            });
+            if (proc.hasMidiMapping(k.linkedParamID))
+                menu.addItem("Forget MIDI Mapping", [&proc, &k]() {
+                    proc.clearMidiMapping(k.linkedParamID);
+                });
+            menu.addSeparator();
+            menu.addItem("Clear All MIDI Maps", [&proc]() {
+                proc.clearAllMidiMappings();
+            });
+            menu.showMenuAsync(juce::PopupMenu::Options());
+        };
         };
 
-    setupKnob(overallKnob, overallLabel, "OVERALL", "Global wet/dry mix — blends the full effect chain with the dry signal");
+    setupKnob(overallKnob, overallLabel, "OVERALL", "overall", "Global wet/dry mix — blends the full effect chain with the dry signal");
     overallLabel.setFont(juce::Font(14.0f, juce::Font::bold));
     overallLabel.setColour(juce::Label::textColourId, juce::Colour(0xffb0b0c8));
 
@@ -150,23 +167,23 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     masterBypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffcc88aa));
     masterBypassButton.setTooltip("Bypass the master output stage entirely — click-free crossfade");
 
-    setupKnob(fatnessKnob, fatnessLabel, "DRIVE", "Distortion amount — blends tape saturation at low settings into tube warmth at high settings");
-    setupKnob(chorusDepthKnob, chorusDepthLabel, "DEPTH", "Chorus modulation depth — controls pitch excursion amount");
-    setupKnob(chorusRateKnob, chorusRateLabel, "RATE", "Chorus LFO speed (Hz) — 6 decorrelated voices never align");
-    setupKnob(chorusMixKnob, chorusMixLabel, "MIX", "Chorus wet/dry balance — 10% dry anchor keeps pitch stable at full wet");
-    setupKnob(delayTimeKnob, delayTimeLabel, "TIME", "Delay time in milliseconds — 0 to 2000ms with tape-style interpolation");
-    setupKnob(delayFeedbackKnob, delayFeedbackLabel, "FEEDBACK", "Delay feedback amount — exponential mapping for musical response");
-    setupKnob(delayMixKnob, delayMixLabel, "MIX", "Delay wet/dry balance");
-    setupKnob(delayDampingKnob, delayDampingLabel, "DAMPING", "Delay feedback tone — high values = darker, more tape-like repeats");
-    setupKnob(delayModKnob, delayModLabel, "MOD", "Delay tape modulation depth — wow and flutter intensity for vintage tape character");
-    setupKnob(reverbSizeKnob, reverbSizeLabel, "SIZE", "Reverb room size — controls both decay time and diffusion character");
-    setupKnob(reverbDampingKnob, reverbDampingLabel, "DAMPING", "Reverb high-frequency absorption — higher = shorter, darker tail");
-    setupKnob(reverbMixKnob, reverbMixLabel, "MIX", "Reverb wet/dry balance");
-    setupKnob(reverbModKnob, reverbModLabel, "MOD", "Reverb modulation depth — adds organic movement to the reverb tail");
-    setupKnob(masterDriveKnob, masterDriveLabel, "MASTER DRIVE", "Master output saturation — push-pull even harmonics for analog warmth");
-    setupKnob(masterWidthKnob, masterWidthLabel, "WIDTH", "Stereo width — 0% = mono, 100% = original stereo, >100% = widened");
-    setupKnob(masterMidDriveKnob, masterMidDriveLabel, "MID DRIVE", "Mid channel saturation — push-pull even harmonics on center content");
-    setupKnob(masterSideDriveKnob, masterSideDriveLabel, "SIDE DRIVE", "Side channel saturation — push-pull even harmonics on stereo width");
+    setupKnob(fatnessKnob, fatnessLabel, "DRIVE", "fatness", "Distortion amount — blends tape saturation at low settings into tube warmth at high settings");
+    setupKnob(chorusDepthKnob, chorusDepthLabel, "DEPTH", "chorus_depth", "Chorus modulation depth — controls pitch excursion amount");
+    setupKnob(chorusRateKnob, chorusRateLabel, "RATE", "chorus_rate", "Chorus LFO speed (Hz) — 6 decorrelated voices never align");
+    setupKnob(chorusMixKnob, chorusMixLabel, "MIX", "chorus_mix", "Chorus wet/dry balance — 10% dry anchor keeps pitch stable at full wet");
+    setupKnob(delayTimeKnob, delayTimeLabel, "TIME", "delay_time", "Delay time in milliseconds — 0 to 2000ms with tape-style interpolation");
+    setupKnob(delayFeedbackKnob, delayFeedbackLabel, "FEEDBACK", "delay_feedback", "Delay feedback amount — exponential mapping for musical response");
+    setupKnob(delayMixKnob, delayMixLabel, "MIX", "delay_mix", "Delay wet/dry balance");
+    setupKnob(delayDampingKnob, delayDampingLabel, "DAMPING", "delay_damping", "Delay feedback tone — high values = darker, more tape-like repeats");
+    setupKnob(delayModKnob, delayModLabel, "MOD", "delay_mod", "Delay tape modulation depth — wow and flutter intensity for vintage tape character");
+    setupKnob(reverbSizeKnob, reverbSizeLabel, "SIZE", "reverb_size", "Reverb room size — controls both decay time and diffusion character");
+    setupKnob(reverbDampingKnob, reverbDampingLabel, "DAMPING", "reverb_damping", "Reverb high-frequency absorption — higher = shorter, darker tail");
+    setupKnob(reverbMixKnob, reverbMixLabel, "MIX", "reverb_mix", "Reverb wet/dry balance");
+    setupKnob(reverbModKnob, reverbModLabel, "MOD", "reverb_mod", "Reverb modulation depth — adds organic movement to the reverb tail");
+    setupKnob(masterDriveKnob, masterDriveLabel, "MASTER DRIVE", "master_drive", "Master output saturation — push-pull even harmonics for analog warmth");
+    setupKnob(masterWidthKnob, masterWidthLabel, "WIDTH", "master_width", "Stereo width — 0% = mono, 100% = original stereo, >100% = widened");
+    setupKnob(masterMidDriveKnob, masterMidDriveLabel, "MID DRIVE", "master_mid_drive", "Mid channel saturation — push-pull even harmonics on center content");
+    setupKnob(masterSideDriveKnob, masterSideDriveLabel, "SIDE DRIVE", "master_side_drive", "Side channel saturation — push-pull even harmonics on stereo width");
 
     // Attachments
     overallAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "overall", overallKnob);

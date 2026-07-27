@@ -231,7 +231,7 @@ const juce::String CorvusFXAudioProcessor::getName() const
 #endif
     return JucePlugin_Name;
 }
-bool CorvusFXAudioProcessor::acceptsMidi() const { return false; }
+bool CorvusFXAudioProcessor::acceptsMidi() const { return true; }
 bool CorvusFXAudioProcessor::producesMidi() const { return false; }
 bool CorvusFXAudioProcessor::isMidiEffect() const { return false; }
 double CorvusFXAudioProcessor::getTailLengthSeconds() const { return 8.0; }
@@ -277,6 +277,33 @@ const juce::String CorvusFXAudioProcessor::getProgramName(int i) {
     return (i >= 0 && i < 36) ? n[i] : juce::String();
 }
 void CorvusFXAudioProcessor::changeProgramName(int, const juce::String&) {}
+
+
+// MIDI Learn: map management
+bool CorvusFXAudioProcessor::hasMidiMapping(const juce::String& paramID) const
+{
+    for (const auto& [cc, pid] : midiMap)
+        if (pid == paramID) return true;
+    return false;
+}
+
+void CorvusFXAudioProcessor::clearMidiMapping(const juce::String& paramID)
+{
+    const juce::ScopedLock lock(midiMapLock);
+    for (auto it = midiMap.begin(); it != midiMap.end(); )
+    {
+        if (it->second == paramID)
+            it = midiMap.erase(it);
+        else
+            ++it;
+    }
+}
+
+void CorvusFXAudioProcessor::clearAllMidiMappings()
+{
+    const juce::ScopedLock lock(midiMapLock);
+    midiMap.clear();
+}
 
 // Preset A/B Compare
 // Snapshot/restore all 23 non-preset parameters from normalized 0-1 values.
@@ -417,7 +444,7 @@ bool CorvusFXAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) 
 #endif
 
 //==============================================================================
-void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
     const int numChannels = buffer.getNumChannels();
@@ -468,7 +495,72 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     bypassGainReverb.setTargetValue(reverbBypass ? 0.0f : 1.0f);
     bypassGainMaster.setTargetValue(masterBypass ? 0.0f : 1.0f);
 
-    // Snapshot smoothed values for the beginning of this block.
+    // MIDI Learn: apply CC to parameter mappings from MIDI input
+    // When midiLearnActive is true, the next CC message captures that CC
+    // for the target parameter (triggered by right-click in the UI).
+    {
+        const juce::ScopedLock lock(midiMapLock);
+        if (!midiMessages.isEmpty())
+        {
+            for (const auto& metadata : midiMessages)
+            {
+                auto msg = metadata.getMessage();
+                if (msg.isController())
+                {
+                    int cc = msg.getControllerNumber();
+                    float normValue = msg.getControllerValue() / 127.0f;
+                    if (midiLearnActive)
+                    {
+                        // Capture this CC for the target parameter
+                        midiMap[cc] = midiLearnParamID;
+                        midiLearnActive = false;
+                        auto* p = apvts.getParameter(midiLearnParamID);
+                        if (p) p->setValueNotifyingHost(normValue);
+                        break;
+                    }
+                    // Apply existing mapping
+                    auto it = midiMap.find(cc);
+                    if (it != midiMap.end())
+                    {
+                        auto* p = apvts.getParameter(it->second);
+                        if (p) p->setValueNotifyingHost(normValue);
+                    }
+                }
+            }
+        }
+    }
+    
+    // MIDI Learn: apply CC to parameter mappings from MIDI input
+    {
+        const juce::ScopedLock lock(midiMapLock);
+        if (!midiMessages.isEmpty())
+        {
+            for (const auto& metadata : midiMessages)
+            {
+                auto msg = metadata.getMessage();
+                if (msg.isController())
+                {
+                    int cc = msg.getControllerNumber();
+                    float normValue = msg.getControllerValue() / 127.0f;
+                    if (midiLearnActive)
+                    {
+                        midiMap[cc] = midiLearnParamID;
+                        midiLearnActive = false;
+                        auto* p = apvts.getParameter(midiLearnParamID);
+                        if (p) p->setValueNotifyingHost(normValue);
+                        break;
+                    }
+                    auto it = midiMap.find(cc);
+                    if (it != midiMap.end())
+                    {
+                        auto* p = apvts.getParameter(it->second);
+                        if (p) p->setValueNotifyingHost(normValue);
+                    }
+                }
+            }
+        }
+    }
+// Snapshot smoothed values for the beginning of this block.
     // beginBlock() calls use these block-level snapshots since their
     // coefficient caches don't need per-sample ramping (the cached
     // exp() values are ~constant over a 64-sample block).
@@ -684,6 +776,20 @@ void CorvusFXAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+
+    // Save MIDI Learn mappings as a child element
+    auto* mapsXml = xml->createNewChildElement("midiMaps");
+    if (mapsXml)
+    {
+        const juce::ScopedLock lock(midiMapLock);
+        for (const auto& [cc, paramID] : midiMap)
+        {
+            auto* mapXml = mapsXml->createNewChildElement("map");
+            mapXml->setAttribute("cc", cc);
+            mapXml->setAttribute("param", paramID);
+        }
+    }
+
     copyXmlToBinary(*xml, destData);
 }
 
@@ -691,7 +797,23 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
 {
     std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(data, sizeInBytes));
     if (xml && xml->hasTagName(apvts.state.getType()))
+    {
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
+
+        // Restore MIDI Learn mappings
+        if (auto* mapsXml = xml->getChildByName("midiMaps"))
+        {
+            const juce::ScopedLock lock(midiMapLock);
+            midiMap.clear();
+            for (auto* mapXml : mapsXml->getChildWithTagNameIterator("map"))
+            {
+                int cc = mapXml->getIntAttribute("cc");
+                juce::String paramID = mapXml->getStringAttribute("param");
+                if (paramID.isNotEmpty())
+                    midiMap[cc] = paramID;
+            }
+        }
+    }
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new CorvusFXAudioProcessor(); }

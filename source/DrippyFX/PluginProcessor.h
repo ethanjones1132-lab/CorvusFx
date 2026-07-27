@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <xmmintrin.h>  // SSE intrinsics for oversampling FIR optimization
 #include <array>
+#include <map>
 
 //==============================================================================
 // UTILITY: Hermite cubic interpolation — artifact-free delay reads
@@ -1553,6 +1554,15 @@ public:
     void loadSlotB();
     bool isSlotA() const { return abSlotIsA; }
 
+    // MIDI Learn
+    void startMidiLearn(const juce::String& paramID) { midiLearnParamID = paramID; midiLearnActive = true; }
+    void stopMidiLearn() { midiLearnActive = false; }
+    bool hasMidiMapping(const juce::String& paramID) const;
+    void clearMidiMapping(const juce::String& paramID);
+    void clearAllMidiMappings();
+    const std::map<int, juce::String>& getMidiMappings() const { return midiMap; }
+
+
 private:
     EnhancedChorus chorus;
     EnhancedDelay delay;
@@ -1598,6 +1608,10 @@ private:
     juce::LinearSmoothedValue<float> bypassGainDelay;
     juce::LinearSmoothedValue<float> bypassGainReverb;
     juce::LinearSmoothedValue<float> bypassGainMaster;
+
+    // MIDI Learn - maps MIDI CC numbers to parameter IDs
+    std::map<int, juce::String> midiMap;
+    juce::CriticalSection midiMapLock;
 
 
     // Preset A/B Snapshot Storage
@@ -1605,6 +1619,9 @@ private:
     std::array<float, NUM_AB_PARAMS> snapshotA = {};
     std::array<float, NUM_AB_PARAMS> snapshotB = {};
     bool abSlotIsA = true;
+    // MIDI Learn State (accessed across audio/message threads)
+    std::atomic<bool> midiLearnActive{false};
+    juce::String midiLearnParamID;
     // ── Level Meter State ──
     // Smoothed peak/RMS meters for input and output.
     // Updated in processBlock (audio thread), read by editor (message thread)

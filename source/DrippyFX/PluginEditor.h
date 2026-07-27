@@ -11,10 +11,21 @@ public:
     AnimatedKnob() { setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag); setTextBoxStyle(juce::Slider::TextBoxBelow, false, 70, 18); startTimer(30); }
     void mouseEnter(const juce::MouseEvent& e) override { juce::Slider::mouseEnter(e); hov = true; }
     void mouseExit(const juce::MouseEvent& e) override { juce::Slider::mouseExit(e);  hov = false; }
-    void mouseDown(const juce::MouseEvent& e) override { juce::Slider::mouseDown(e);  prs = true; }
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        if (e.mods.isRightButtonDown())
+        {
+            if (onRightClick) onRightClick(e);
+            return;
+        }
+        juce::Slider::mouseDown(e);  prs = true;
+    }
     void mouseUp(const juce::MouseEvent& e) override { juce::Slider::mouseUp(e);    prs = false; }
     void timerCallback() override { float t = prs ? 1.4f : (hov ? 1.0f : 0.0f); glow += (t - glow) * 0.12f; if (std::abs(t - glow) > 0.005f) repaint(); }
     float getGlowAmount() const { return glow; }
+    juce::String linkedParamID;
+    std::function<void(const juce::MouseEvent&)> onRightClick;
+
 private:
     bool hov = false, prs = false; float glow = 0.0f;
 };
