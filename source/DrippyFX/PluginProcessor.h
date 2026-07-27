@@ -147,22 +147,22 @@ struct Oversampling2x
     // SSE-optimized 8-tap FIR convolution
     // state: circular buffer, idx: write position
     // Returns dot product of state[idx], state[idx-1]... with coeffs[0..7]
-    inline float firSSE(const float* state, int idx) const
+    inline float firSSE(const float* state, int readIdx) const
     {
         // Load 8 state samples in order: idx, idx-1, ..., idx-7 (wrapped)
         // Since FILTER_TAPS=8, we can load as two __m128 vectors
         __m128 s0 = _mm_set_ps(
-            state[(idx - 3 + FILTER_TAPS) % FILTER_TAPS],
-            state[(idx - 2 + FILTER_TAPS) % FILTER_TAPS],
-            state[(idx - 1 + FILTER_TAPS) % FILTER_TAPS],
-            state[idx]
+            state[(readIdx - 3 + FILTER_TAPS) % FILTER_TAPS],
+            state[(readIdx - 2 + FILTER_TAPS) % FILTER_TAPS],
+            state[(readIdx - 1 + FILTER_TAPS) % FILTER_TAPS],
+            state[readIdx]
         );  // s0 = [s[idx-3], s[idx-2], s[idx-1], s[idx]]
 
         __m128 s1 = _mm_set_ps(
-            state[(idx - 7 + FILTER_TAPS) % FILTER_TAPS],
-            state[(idx - 6 + FILTER_TAPS) % FILTER_TAPS],
-            state[(idx - 5 + FILTER_TAPS) % FILTER_TAPS],
-            state[(idx - 4 + FILTER_TAPS) % FILTER_TAPS]
+            state[(readIdx - 7 + FILTER_TAPS) % FILTER_TAPS],
+            state[(readIdx - 6 + FILTER_TAPS) % FILTER_TAPS],
+            state[(readIdx - 5 + FILTER_TAPS) % FILTER_TAPS],
+            state[(readIdx - 4 + FILTER_TAPS) % FILTER_TAPS]
         );  // s1 = [s[idx-7], s[idx-6], s[idx-5], s[idx-4]]
 
         // Multiply with coefficients (coeffs[0..3] with s[idx..idx-3], coeffs[4..7] with s[idx-4..idx-7])
@@ -184,14 +184,14 @@ struct Oversampling2x
     }
 
     // SSE-optimized 4-tap half-band FIR (even taps only: 0,2,4,6)
-    inline float firHalfBandSSE(const float* state, int idx) const
+    inline float firHalfBandSSE(const float* state, int readIdx) const
     {
-        // Load state[idx], state[idx-2], state[idx-4], state[idx-6]
+        // Load state[readIdx], state[idx-2], state[idx-4], state[idx-6]
         __m128 s = _mm_set_ps(
-            state[(idx - 6 + FILTER_TAPS) % FILTER_TAPS],
-            state[(idx - 4 + FILTER_TAPS) % FILTER_TAPS],
-            state[(idx - 2 + FILTER_TAPS) % FILTER_TAPS],
-            state[idx]
+            state[(readIdx - 6 + FILTER_TAPS) % FILTER_TAPS],
+            state[(readIdx - 4 + FILTER_TAPS) % FILTER_TAPS],
+            state[(readIdx - 2 + FILTER_TAPS) % FILTER_TAPS],
+            state[readIdx]
         );  // s = [s[idx-6], s[idx-4], s[idx-2], s[idx]]
 
         // Reverse to match evenTaps order: c0, c2, c4, c6

@@ -143,7 +143,7 @@ public:
         auto drawDbScale = [&](float xStart, float scaleW)
         {
             g.setColour(juce::Colour(0xff555577));
-            g.setFont(juce::Font(7.0f));
+            g.setFont(juce::Font(juce::FontOptions(7.0f)));
             
             struct DbMark { float db; const char* label; };
             static const DbMark marks[] = {
@@ -164,10 +164,10 @@ public:
             int y = (int)(bounds.getY() + (std::abs(m.db) / 60.0f) * h);
                 // Tick mark
                 g.setColour(juce::Colour(0xff444466));
-                g.drawLine(scaleLeft - 6, y, scaleLeft, y, 1.0f);
+                g.drawLine(scaleLeft - 6, (float)y, scaleLeft, (float)y, 1.0f);
                 // Label
                 g.setColour(juce::Colour(0xff666688));
-                g.drawText(m.label, scaleLeft - 28, y - 5, 24, 10, juce::Justification::centredRight);
+                g.drawText(m.label, (int)(scaleLeft - 28), y - 5, 24, 10, juce::Justification::centredRight);
             }
         };
         
@@ -222,9 +222,9 @@ public:
 
         // Labels
         g.setColour(juce::Colour(0xff555577));
-        g.setFont(juce::Font(8.0f));
-        g.drawText("IN", xInL, bounds.getBottom() - 14, barW * 2, 12, juce::Justification::centred);
-        g.drawText("OUT", xOutL, bounds.getBottom() - 14, barW * 2, 12, juce::Justification::centred);
+        g.setFont(juce::Font(juce::FontOptions(8.0f)));
+        g.drawText("IN", xInL, (int)(bounds.getBottom() - 14), barW * 2, 12, juce::Justification::centred);
+        g.drawText("OUT", xOutL, (int)(bounds.getBottom() - 14), barW * 2, 12, juce::Justification::centred);
 
         // Peak hold decay - handled externally by timer callback
     }
@@ -750,7 +750,7 @@ public:
         auto ta = getLocalBounds().toFloat().removeFromTop(32);
         juce::ColourGradient tb(accent.withAlpha(.12f), ta.getX(), ta.getY(), accent.withAlpha(.03f), ta.getRight(), ta.getBottom(), false);
         g.setGradientFill(tb); g.fillRoundedRectangle(ta.reduced(2, 2), 8);
-        g.setColour(accent.withAlpha(.9f)); g.setFont(juce::Font(14, juce::Font::bold)); g.drawText(title, ta, juce::Justification::centred);
+        g.setColour(accent.withAlpha(.9f)); g.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold))); g.drawText(title, ta, juce::Justification::centred);
     }
 private:
     juce::String title; juce::Colour accent;

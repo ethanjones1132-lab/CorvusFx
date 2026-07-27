@@ -17,20 +17,20 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     animatedBackground.toBack();
 
     titleLabel.setText("CORVUS FX", juce::dontSendNotification);
-    titleLabel.setFont(juce::Font(52.0f, juce::Font::bold));
+    titleLabel.setFont(juce::Font(juce::FontOptions(52.0f, juce::Font::bold)));
     titleLabel.setJustificationType(juce::Justification::centred);
     titleLabel.setColour(juce::Label::textColourId, juce::Colour(0xffb366ff));
     addAndMakeVisible(titleLabel);
 
     presetLabel.setText("PRESET", juce::dontSendNotification);
-    presetLabel.setFont(juce::Font(12.0f, juce::Font::bold));
+    presetLabel.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
     presetLabel.setJustificationType(juce::Justification::centred);
     presetLabel.setColour(juce::Label::textColourId, juce::Colour(0xff888899));
     addAndMakeVisible(presetLabel);
 
     // Factory preset categorization: grouped by vibe with disabled separator items
     // Category 1: CLEAN — transparent enhancement, pristine highs (6 presets)
-    presetSelector.addItem("═══ CLEAN ═══", 1);   presetSelector.setItemEnabled(1, false);
+    presetSelector.addItem("--- CLEAN ---", 1);   presetSelector.setItemEnabled(1, false);
     presetSelector.addItem("Clean Sparkle", 2);
     presetSelector.addItem("Crystal Shimmer", 3);
     presetSelector.addItem("Silk Thread", 4);
@@ -39,7 +39,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.addItem("Air Lift", 7);
     
     // Category 2: WARM — analog-style saturation, musical thickening (6 presets)
-    presetSelector.addItem("═══ WARM ═══", 8);    presetSelector.setItemEnabled(8, false);
+    presetSelector.addItem("--- WARM ---", 8);    presetSelector.setItemEnabled(8, false);
     presetSelector.addItem("Warm Glow", 9);
     presetSelector.addItem("Vintage Vibe", 10);
     presetSelector.addItem("Thick Sauce", 11);
@@ -48,7 +48,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.addItem("Tube Glow", 14);
     
     // Category 3: CREATIVE — modulation-forward, sound design (6 presets)
-    presetSelector.addItem("═══ CREATIVE ═══", 15); presetSelector.setItemEnabled(15, false);
+    presetSelector.addItem("--- CREATIVE ---", 15); presetSelector.setItemEnabled(15, false);
     presetSelector.addItem("Dreamy Space", 16);
     presetSelector.addItem("Cosmic Wide", 17);
     presetSelector.addItem("Molten Core", 18);
@@ -57,7 +57,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.addItem("Shimmerfall", 21);
     
     // Category 4: EXTREME — aggressive, heavy processing (6 presets)
-    presetSelector.addItem("═══ EXTREME ═══", 22); presetSelector.setItemEnabled(22, false);
+    presetSelector.addItem("--- EXTREME ---", 22); presetSelector.setItemEnabled(22, false);
     presetSelector.addItem("Deep Echo", 23);
     presetSelector.addItem("Aggressive Drive", 24);
     presetSelector.addItem("Lush Pad", 25);
@@ -66,7 +66,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.addItem("Obliterator", 28);
     
     // Category 5: SIGNATURE — curated artist-style sounds, distinct character (6 presets)
-    presetSelector.addItem("═══ SIGNATURE ═══", 29); presetSelector.setItemEnabled(29, false);
+    presetSelector.addItem("--- SIGNATURE ---", 29); presetSelector.setItemEnabled(29, false);
     presetSelector.addItem("Velvet Morning", 30);
     presetSelector.addItem("Neon Dusk", 31);
     presetSelector.addItem("Basement Sessions", 32);
@@ -75,7 +75,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.addItem("Midnight Oil", 35);
     
     // Category 6: DREAM — ambient, ethereal, deep soundscapes (6 presets)
-    presetSelector.addItem("═══ DREAM ═══", 36); presetSelector.setItemEnabled(36, false);
+    presetSelector.addItem("--- DREAM ---", 36); presetSelector.setItemEnabled(36, false);
     presetSelector.addItem("Cloud Chamber", 37);
     presetSelector.addItem("Frozen Lake", 38);
     presetSelector.addItem("Ash & Ember", 39);
@@ -96,7 +96,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
             k.setTooltip(tooltip);
         addAndMakeVisible(k);
         l.setText(txt, juce::dontSendNotification);
-        l.setFont(juce::Font(11.0f, juce::Font::bold));
+        l.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
         l.setJustificationType(juce::Justification::centred);
         l.setColour(juce::Label::textColourId, juce::Colour(0xff999aaa));
         addAndMakeVisible(l);
@@ -120,7 +120,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
         };
 
     setupKnob(overallKnob, overallLabel, "OVERALL", "overall", "Global wet/dry mix — blends the full effect chain with the dry signal");
-    overallLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+    overallLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
     overallLabel.setColour(juce::Label::textColourId, juce::Colour(0xffb0b0c8));
 
     addAndMakeVisible(distortionSection);
@@ -280,7 +280,7 @@ void CorvusFXAudioProcessorEditor::paint(juce::Graphics& g)
 
     // Version text
     g.setColour(juce::Colour(0xff444466));
-    g.setFont(juce::Font(9.0f));
+    g.setFont(juce::Font(juce::FontOptions(9.0f)));
     g.drawText("CorvusFX v1.0 | Professional Multi-FX Suite",
         getLocalBounds().removeFromBottom(15), juce::Justification::centred, true);
 }
