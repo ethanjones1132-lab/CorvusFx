@@ -194,6 +194,41 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     masterSideDriveAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "master_side_drive", masterSideDriveKnob);
     presetAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(audioProcessor.apvts, "preset", presetSelector);
 
+    // Preset A/B Compare buttons
+    btnSlotA.setButtonText("A");
+    btnSlotA.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a2a50));
+    btnSlotA.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xffb366ff));
+    btnSlotA.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff8888aa));
+    btnSlotA.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffffffff));
+    btnSlotA.setClickingTogglesState(false);
+    btnSlotA.setRadioGroupId(1001);
+    btnSlotA.setTooltip("Load preset snapshot A");
+    btnSlotA.onClick = [this] { audioProcessor.loadSlotA(); btnSlotA.setToggleState(true, juce::dontSendNotification); btnSlotB.setToggleState(false, juce::dontSendNotification); };
+    addAndMakeVisible(btnSlotA);
+
+    btnSlotB.setButtonText("B");
+    btnSlotB.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a2a50));
+    btnSlotB.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xffb366ff));
+    btnSlotB.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff8888aa));
+    btnSlotB.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffffffff));
+    btnSlotB.setClickingTogglesState(false);
+    btnSlotB.setRadioGroupId(1001);
+    btnSlotB.setTooltip("Load preset snapshot B");
+    btnSlotB.onClick = [this] { audioProcessor.loadSlotB(); btnSlotB.setToggleState(true, juce::dontSendNotification); btnSlotA.setToggleState(false, juce::dontSendNotification); };
+    addAndMakeVisible(btnSlotB);
+
+    btnSaveAB.setButtonText("SAVE");
+    btnSaveAB.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1a1a30));
+    btnSaveAB.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff8888aa));
+    btnSaveAB.setTooltip("Save current knob positions to the active slot (A or B)");
+    btnSaveAB.onClick = [this] { if (audioProcessor.isSlotA()) audioProcessor.saveSlotA(); else audioProcessor.saveSlotB(); };
+    addAndMakeVisible(btnSaveAB);
+
+    // Default: A is active -- snapshot both slots with initial state
+    btnSlotA.setToggleState(true, juce::dontSendNotification);
+    audioProcessor.saveSlotA();
+    audioProcessor.saveSlotB();
+
     // Level meter
     addAndMakeVisible(levelMeter);
 }
@@ -250,9 +285,20 @@ void CorvusFXAudioProcessorEditor::resized()
     // ── Top: title + preset ──
     auto topSection = area.removeFromTop(sc(100));
     titleLabel.setBounds(topSection.removeFromTop(sc(60)).reduced(sc(20), sc(5)));
-    auto presetArea = topSection.reduced(sc(250), sc(5));
+    auto presetArea = topSection.reduced(sc(160), sc(5));
     presetLabel.setBounds(presetArea.removeFromTop(sc(15)));
-    presetSelector.setBounds(presetArea);
+    auto presetRow = presetArea;
+    // A/B compare buttons -- right of preset selector
+    auto abBtnArea = presetRow.removeFromRight(sc(170));
+    int abH = sc(22);
+    int abW = sc(32);
+    int topOff = sc(3);
+    btnSlotA.setBounds(abBtnArea.removeFromLeft(abW).withHeight(abH).withTrimmedTop(topOff));
+    abBtnArea.removeFromLeft(sc(4));
+    btnSlotB.setBounds(abBtnArea.removeFromLeft(abW).withHeight(abH).withTrimmedTop(topOff));
+    abBtnArea.removeFromLeft(sc(6));
+    btnSaveAB.setBounds(abBtnArea.removeFromLeft(sc(60)).withHeight(abH).withTrimmedTop(topOff));
+    presetSelector.setBounds(presetRow);
 
     // ── Level Meter (between title/preset and overall knob) ──
     auto meterArea = area.removeFromTop(sc(60)).reduced(area.getWidth() / 4, 0);

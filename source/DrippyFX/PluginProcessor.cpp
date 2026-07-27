@@ -278,6 +278,57 @@ const juce::String CorvusFXAudioProcessor::getProgramName(int i) {
 }
 void CorvusFXAudioProcessor::changeProgramName(int, const juce::String&) {}
 
+// Preset A/B Compare
+// Snapshot/restore all 23 non-preset parameters from normalized 0-1 values.
+static constexpr const char* abParamIds[23] = {
+    "overall","fatness","chorus_depth","chorus_rate","chorus_mix",
+    "delay_time","delay_feedback","delay_mix","delay_damping","delay_mod",
+    "reverb_size","reverb_damping","reverb_mix","reverb_mod",
+    "master_drive","master_width","master_mid_drive","master_side_drive",
+    "distortion_bypass","chorus_bypass","delay_bypass","reverb_bypass","master_bypass"
+};
+
+void CorvusFXAudioProcessor::saveSlotA()
+{
+    for (int i = 0; i < NUM_AB_PARAMS; ++i)
+    {
+        auto* p = apvts.getParameter(abParamIds[i]);
+        if (p) snapshotA[i] = p->getValue();
+    }
+    abSlotIsA = true;
+}
+
+void CorvusFXAudioProcessor::saveSlotB()
+{
+    for (int i = 0; i < NUM_AB_PARAMS; ++i)
+    {
+        auto* p = apvts.getParameter(abParamIds[i]);
+        if (p) snapshotB[i] = p->getValue();
+    }
+    abSlotIsA = false;
+}
+
+void CorvusFXAudioProcessor::loadSlotA()
+{
+    for (int i = 0; i < NUM_AB_PARAMS; ++i)
+    {
+        auto* p = apvts.getParameter(abParamIds[i]);
+        if (p) p->setValueNotifyingHost(snapshotA[i]);
+    }
+    abSlotIsA = true;
+}
+
+void CorvusFXAudioProcessor::loadSlotB()
+{
+    for (int i = 0; i < NUM_AB_PARAMS; ++i)
+    {
+        auto* p = apvts.getParameter(abParamIds[i]);
+        if (p) p->setValueNotifyingHost(snapshotB[i]);
+    }
+    abSlotIsA = false;
+}
+
+
 void CorvusFXAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     lastSampleRate = sampleRate;

@@ -5,6 +5,7 @@
 #include <cstring>
 #include <algorithm>
 #include <xmmintrin.h>  // SSE intrinsics for oversampling FIR optimization
+#include <array>
 
 //==============================================================================
 // UTILITY: Hermite cubic interpolation — artifact-free delay reads
@@ -1545,6 +1546,13 @@ public:
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     void loadPreset(int index);
 
+    // Preset A/B Compare
+    void saveSlotA();
+    void saveSlotB();
+    void loadSlotA();
+    void loadSlotB();
+    bool isSlotA() const { return abSlotIsA; }
+
 private:
     EnhancedChorus chorus;
     EnhancedDelay delay;
@@ -1591,6 +1599,12 @@ private:
     juce::LinearSmoothedValue<float> bypassGainReverb;
     juce::LinearSmoothedValue<float> bypassGainMaster;
 
+
+    // Preset A/B Snapshot Storage
+    static constexpr int NUM_AB_PARAMS = 23;
+    std::array<float, NUM_AB_PARAMS> snapshotA = {};
+    std::array<float, NUM_AB_PARAMS> snapshotB = {};
+    bool abSlotIsA = true;
     // ── Level Meter State ──
     // Smoothed peak/RMS meters for input and output.
     // Updated in processBlock (audio thread), read by editor (message thread)

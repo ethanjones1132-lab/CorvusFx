@@ -797,5 +797,8 @@ private:
     // Activates hover tooltips for all knobs/buttons (JUCE renders no
     // tooltips without a TooltipWindow instance in the component tree).
     juce::TooltipWindow tooltipWindow { this, 600 };
+
+    // Preset A/B compare buttons
+    juce::TextButton btnSlotA, btnSlotB, btnSaveAB;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CorvusFXAudioProcessorEditor)
 };
