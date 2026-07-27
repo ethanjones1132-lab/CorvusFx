@@ -1,15 +1,16 @@
 # PRIORITIES.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-26 (evening pass)
+> **Last updated:** 2026-07-27 (overnight pass)
 
 ## Active Priorities
 
 | Priority | Item | Status | Notes |
 |----------|------|--------|-------|
-| P0 | **Fix combo box preset range** — AudioParameterInt max 29→42, all 36 presets reachable via UI | ✅ Done (2026-07-26, `d9e9020`) |
-| P1 | Create AGENTS.md working rules | ✅ Done (2026-07-26, `d9e9020`) |
-| P2 | Add overshoot/undershoot protection to per-sample clipping in all modules | ✅ Done (2026-07-26) | Chorus/Delay output jlimit(-4,4) — Distortion/Reverb/Master already clamped |
-| P3 | Profile-guided optimization (PGO) build | ⬜ Backlog | ~1% CPU savings, requires build infrastructure |
+| P1 | **Preset A/B compare** — toggle between two preset states for quick auditioning | ⬜ Open | Phase 4 UI completeness |
+| P2 | **Knob right-click → MIDI learn** — DAW-standard MIDI learn context menu | ⬜ Open | Phase 4 UI completeness |
+| P3 | **Undo/redo support** — undo manager for parameter changes | ⬜ Open | Phase 4, needs JUCE UndoManager integration |
+| P3 | **Profile-guided optimization (PGO) build** | ⬜ Backlog | ~1% CPU savings, requires build infrastructure |
+| P3 | **Dark/light theme toggle** | ⬜ Backlog | Phase 4 stretch goal |
 
 ## Completed Milestones
 
