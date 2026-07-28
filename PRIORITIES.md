@@ -1,12 +1,12 @@
 # PRIORITIES.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-28
+> **Last updated:** 2026-07-28 (afternoon)
 
 ## Active Priorities
 
 | Priority | Item | Status | Notes |
 |----------|------|--------|-------|
-| P3 | **Undo/redo support** — undo manager for parameter changes | ⬜ Open | Phase 4, needs JUCE UndoManager integration |
+| P2 | **Randomize preset button** — one-click creative inspiration | ⬜ Open | Phase 4, randomize 23 non-preset parameters |
 | P3 | **Profile-guided optimization (PGO) build** | ⬜ Backlog | ~1% CPU savings, requires build infrastructure |
 | P3 | **Dark/light theme toggle** | ⬜ Backlog | Phase 4 stretch goal |
 

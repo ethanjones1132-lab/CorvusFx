@@ -160,6 +160,28 @@ void CorvusFXAudioProcessor::loadPreset(int index)
     set("master_bypass", p.masterByp);
 }
 
+void CorvusFXAudioProcessor::randomizePreset()
+{
+    // Iterate all parameters and set random values for instant creative exploration.
+    // Skips the preset parameter (factory preset index stays unchanged).
+    // Bypass buttons have ~15% chance of being active; continuous params get full-range random.
+    juce::Random rng;
+    auto& params = getParameters();
+    for (auto* param : params)
+    {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(param);
+        if (!ranged) continue;
+        if (ranged->getParameterID() == "preset")
+            continue;
+
+        bool isBool = dynamic_cast<juce::AudioParameterBool*>(ranged) != nullptr;
+        if (isBool)
+            ranged->setValueNotifyingHost(rng.nextFloat() < 0.15f ? 1.0f : 0.0f);
+        else
+            ranged->setValueNotifyingHost(rng.nextFloat());
+    }
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;

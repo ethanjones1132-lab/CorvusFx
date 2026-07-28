@@ -1547,6 +1547,7 @@ public:
     juce::UndoManager undoManager;
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     void loadPreset(int index);
+    void randomizePreset();
 
     // Preset A/B Compare
     void saveSlotA();

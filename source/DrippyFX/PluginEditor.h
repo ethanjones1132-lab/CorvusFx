@@ -812,5 +812,7 @@ private:
 
     // Preset A/B compare buttons
     juce::TextButton btnSlotA, btnSlotB, btnSaveAB;
+    // Randomize preset button
+    juce::TextButton randomizeButton;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CorvusFXAudioProcessorEditor)
 };

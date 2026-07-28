@@ -242,6 +242,14 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     btnSaveAB.onClick = [this] { if (audioProcessor.isSlotA()) audioProcessor.saveSlotA(); else audioProcessor.saveSlotB(); };
     addAndMakeVisible(btnSaveAB);
 
+    // Randomize Preset button — one-click creative inspiration
+    randomizeButton.setButtonText("RND");
+    randomizeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a2a50));
+    randomizeButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb366ff));
+    randomizeButton.setTooltip("Randomize all parameters for instant creative exploration — bypass buttons rarely engage");
+    randomizeButton.onClick = [this] { audioProcessor.randomizePreset(); };
+    addAndMakeVisible(randomizeButton);
+
     // Default: A is active -- snapshot both slots with initial state
     btnSlotA.setToggleState(true, juce::dontSendNotification);
     audioProcessor.saveSlotA();
@@ -326,7 +334,7 @@ void CorvusFXAudioProcessorEditor::resized()
     presetLabel.setBounds(presetArea.removeFromTop(sc(15)));
     auto presetRow = presetArea;
     // A/B compare buttons -- right of preset selector
-    auto abBtnArea = presetRow.removeFromRight(sc(170));
+    auto abBtnArea = presetRow.removeFromRight(sc(220));
     int abH = sc(22);
     int abW = sc(32);
     int topOff = sc(3);
@@ -335,6 +343,8 @@ void CorvusFXAudioProcessorEditor::resized()
     btnSlotB.setBounds(abBtnArea.removeFromLeft(abW).withHeight(abH).withTrimmedTop(topOff));
     abBtnArea.removeFromLeft(sc(6));
     btnSaveAB.setBounds(abBtnArea.removeFromLeft(sc(60)).withHeight(abH).withTrimmedTop(topOff));
+    abBtnArea.removeFromLeft(sc(8));
+    randomizeButton.setBounds(abBtnArea.removeFromLeft(sc(40)).withHeight(abH).withTrimmedTop(topOff));
     presetSelector.setBounds(presetRow);
 
     // ── Level Meter (between title/preset and overall knob) ──
