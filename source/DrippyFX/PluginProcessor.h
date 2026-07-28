@@ -1544,6 +1544,7 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::AudioProcessorValueTreeState apvts;
+    juce::UndoManager undoManager;
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     void loadPreset(int index);
 
@@ -1608,7 +1609,8 @@ private:
     juce::LinearSmoothedValue<float> bypassGainDelay;
     juce::LinearSmoothedValue<float> bypassGainReverb;
     juce::LinearSmoothedValue<float> bypassGainMaster;
-
+
+
     // MIDI Learn - maps MIDI CC numbers to parameter IDs
     std::map<int, juce::String> midiMap;
     juce::CriticalSection midiMapLock;

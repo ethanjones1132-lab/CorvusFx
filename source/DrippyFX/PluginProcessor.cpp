@@ -16,7 +16,7 @@ CorvusFXAudioProcessor::CorvusFXAudioProcessor()
 #else
     :
 #endif
-apvts(*this, nullptr, "Parameters", createParameterLayout())
+apvts(*this, &undoManager, "Parameters", createParameterLayout())
 {
     apvts.addParameterListener("preset", this);
 }

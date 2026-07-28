@@ -767,6 +767,7 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     void timerCallback() override;
+    bool keyPressed(const juce::KeyPress& key) override;
 private:
     CorvusFXAudioProcessor& audioProcessor;
     CorvusLookAndFeel corvusLookAndFeel;

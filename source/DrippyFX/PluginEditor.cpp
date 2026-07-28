@@ -12,6 +12,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     setSize(1200, 700);
     setResizable(true, true);
     setResizeLimits(1000, 600, 1600, 900);
+    setWantsKeyboardFocus(true);
 
     addAndMakeVisible(animatedBackground);
     animatedBackground.toBack();
@@ -267,6 +268,25 @@ void CorvusFXAudioProcessorEditor::timerCallback()
     levelMeter.setOutputPeakR(meters.outPeakR.load(std::memory_order_relaxed));
     levelMeter.setOutputRmsL(meters.outRmsL.load(std::memory_order_relaxed));
     levelMeter.setOutputRmsR(meters.outRmsR.load(std::memory_order_relaxed));
+}
+
+bool CorvusFXAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
+{
+    auto& um = audioProcessor.undoManager;
+    if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'Z')
+    {
+        if (key.getModifiers().isShiftDown())
+            um.redo();
+        else
+            um.undo();
+        return true;
+    }
+    if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'Y')
+    {
+        um.redo();
+        return true;
+    }
+    return false;
 }
 
 void CorvusFXAudioProcessorEditor::paint(juce::Graphics& g)
