@@ -1,6 +1,6 @@
 # ROADMAP.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-28
+> **Last updated:** 2026-07-28 (afternoon)
 
 ## Phase 1: Foundation ✅ (2026-06-24 through 2026-07-09)
 
@@ -36,6 +36,7 @@
 - ✅ Combo box preset range fixed (0-29→0-42, all 36 presets reachable) — 2026-07-26 (`d9e9020`)
 - ✅ Compile warnings reduced 37→0 (JUCE 8 FontOptions migration, float→int casts, unicode separators) — 2026-07-27 (`6fa7349`)
 - ✅ Undo/redo support (Ctrl+Z/Y keyboard shortcuts, UndoManager) — 2026-07-28 (`69f4bc1`)
+- ✅ **Randomize preset button** (RND button, 23-param randomization) — 2026-07-28 (`0ceb202`)
 - ⬜ Dark/light theme toggle (future stretch)
 
 ## Phase 5: CPU Optimization ⬜ (Backlog)
