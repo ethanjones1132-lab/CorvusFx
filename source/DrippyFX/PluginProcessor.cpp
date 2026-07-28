@@ -529,37 +529,6 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             }
         }
     }
-    
-    // MIDI Learn: apply CC to parameter mappings from MIDI input
-    {
-        const juce::ScopedLock lock(midiMapLock);
-        if (!midiMessages.isEmpty())
-        {
-            for (const auto& metadata : midiMessages)
-            {
-                auto msg = metadata.getMessage();
-                if (msg.isController())
-                {
-                    int cc = msg.getControllerNumber();
-                    float normValue = msg.getControllerValue() / 127.0f;
-                    if (midiLearnActive)
-                    {
-                        midiMap[cc] = midiLearnParamID;
-                        midiLearnActive = false;
-                        auto* p = apvts.getParameter(midiLearnParamID);
-                        if (p) p->setValueNotifyingHost(normValue);
-                        break;
-                    }
-                    auto it = midiMap.find(cc);
-                    if (it != midiMap.end())
-                    {
-                        auto* p = apvts.getParameter(it->second);
-                        if (p) p->setValueNotifyingHost(normValue);
-                    }
-                }
-            }
-        }
-    }
 // Snapshot smoothed values for the beginning of this block.
     // beginBlock() calls use these block-level snapshots since their
     // coefficient caches don't need per-sample ramping (the cached
