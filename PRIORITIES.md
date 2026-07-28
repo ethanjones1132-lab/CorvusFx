@@ -1,6 +1,6 @@
 # PRIORITIES.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-27
+> **Last updated:** 2026-07-28
 
 ## Active Priorities
 
@@ -13,6 +13,7 @@
 ## Completed Milestones
 
 - ✅ Compile warnings: 37 → 0 (FontOptions migration, casts, unicode fix) — 2026-07-27 (`6fa7349`)
+- ✅ Undo/Redo support (Ctrl+Z/Y) — 2026-07-28 (`69f4bc1`)
 - ✅ Knob right-click → MIDI learn — 2026-07-27 (`a5c09ae`)
 - ✅ Preset A/B compare — 2026-07-27 (`d4f7e81`)
 - ✅ All 4 saturation stages oversampled (Distortion, Chorus, Delay, Master) — 2026-07-01
