@@ -1,18 +1,18 @@
 # PRIORITIES.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-28 (afternoon)
+> **Last updated:** 2026-07-28 (evening)
 
 ## Active Priorities
 
 | Priority | Item | Status | Notes |
 |----------|------|--------|-------|
-| P2 | **Randomize preset button** — one-click creative inspiration | ⬜ Open | Phase 4, randomize 23 non-preset parameters |
 | P3 | **Profile-guided optimization (PGO) build** | ⬜ Backlog | ~1% CPU savings, requires build infrastructure |
 | P3 | **Dark/light theme toggle** | ⬜ Backlog | Phase 4 stretch goal |
 
 ## Completed Milestones
 
 - ✅ Compile warnings: 37 → 0 (FontOptions migration, casts, unicode fix) — 2026-07-27 (`6fa7349`)
+- ✅ Randomize preset button (RND button, 23-param randomization) — 2026-07-28 (`0ceb202`)
 - ✅ Undo/Redo support (Ctrl+Z/Y) — 2026-07-28 (`69f4bc1`)
 - ✅ Knob right-click → MIDI learn — 2026-07-27 (`a5c09ae`)
 - ✅ Preset A/B compare — 2026-07-27 (`d4f7e81`)

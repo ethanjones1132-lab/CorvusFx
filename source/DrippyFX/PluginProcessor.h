@@ -1399,21 +1399,10 @@ struct MasterOutputStage
         float smCoeff = 0.0f;
     } blockCoeffs;
 
-    void prepare(double sr)
-    {
-        sampleRate = sr;
-        oversampleMid.prepare(sr);
-        oversampleSide.prepare(sr);
-        hfShelfL.reset(); hfShelfR.reset();
-        lfShelfL.reset(); lfShelfR.reset();
-        smoothL.reset();  smoothR.reset();
-        dcMid.reset();  dcSide.reset();
-        beginBlock(); // Initialize block coefficients at default sample rate
-    }
-
-    // Block-level coefficient cache — avoids recomputing std::exp() every sample.
-    // Call once per audio block (unconditionally, since master output always runs).
-    void beginBlock()
+    // Compute sample-rate-dependent filter coefficients once on prepare(),
+    // not on every block. These depend only on sample rate, which never
+    // changes during playback — 3 redundant std::exp() per block save nothing.
+    void computeCoeffs()
     {
         float sr = static_cast<float>(sampleRate);
         // HF shelf: ~12kHz corner, gentle analog-style rolloff
@@ -1423,6 +1412,22 @@ struct MasterOutputStage
         // Final smoothing: ~17kHz ultra-gentle anti-harsh
         blockCoeffs.smCoeff = std::exp(-6.2832f * 17000.0f / sr);
     }
+
+    void prepare(double sr)
+    {
+        sampleRate = sr;
+        oversampleMid.prepare(sr);
+        oversampleSide.prepare(sr);
+        hfShelfL.reset(); hfShelfR.reset();
+        lfShelfL.reset(); lfShelfR.reset();
+        smoothL.reset();  smoothR.reset();
+        dcMid.reset();  dcSide.reset();
+        computeCoeffs(); // Cache sample-rate-dependent coefficients (not on every block)
+    }
+
+    // Coefficients are cached in prepare() — beginBlock() is now a no-op
+    // kept for API compatibility (called from processBlock each block).
+    void beginBlock() { }
 
     void reset()
     {
