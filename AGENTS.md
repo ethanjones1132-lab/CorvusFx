@@ -1,6 +1,6 @@
 # AGENTS.md — Corvus VST (DrippyFX) Agent Working Rules
 
-> **Last updated:** 2026-07-26
+> **Last updated:** 2026-07-28
 
 ## Project Structure
 
