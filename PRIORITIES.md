@@ -1,6 +1,6 @@
 # PRIORITIES.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-29 (morning pass)
+> **Last updated:** 2026-07-29 (evening pass)
 
 ## Active Priorities
 
@@ -36,3 +36,4 @@
 - ✅ Planning docs creation — 2026-07-26
 - ✅ Per-module output clamping (Chorus/Delay) — 2026-07-26
 - ✅ Equal-power reverb wet/dry crossfade — 2026-07-26 (`82a6235`)
+- ✅ Cache msToSamples in ChorusBlockCoeffs (eliminates redundant double promotion in hot loop) — 2026-07-29 (`a79922c`)
