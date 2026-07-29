@@ -296,6 +296,10 @@ struct ProfessionalDistortion
         sampleRate = sr;
         oversample.prepare(sr);
         reset();
+        // Cache sample-rate-dependent filter coefficients (not on every block)
+        blockCoeffs.hpCoeff  = static_cast<float>(std::exp(-6.2832f * 30.0f / sr));
+        blockCoeffs.empCoeff = static_cast<float>(std::exp(-6.2832f * 4500.0f / sr));
+        blockCoeffs.warmCoeff = static_cast<float>(std::exp(-6.2832f * 5500.0f / sr));
     }
 
     void reset()
@@ -359,11 +363,8 @@ struct ProfessionalDistortion
         blockCoeffs.bypass = false;
         float sr = static_cast<float>(sampleRate);
         blockCoeffs.drive = 1.0f + amount * amount * 7.0f;
-        blockCoeffs.hpCoeff = std::exp(-6.2832f * 30.0f / sr);
-        blockCoeffs.empCoeff = std::exp(-6.2832f * 4500.0f / sr);
         float postFreq = 6000.0f + (1.0f - amount) * 10000.0f;
         blockCoeffs.postCoeff = std::exp(-6.2832f * postFreq / sr);
-        blockCoeffs.warmCoeff = std::exp(-6.2832f * 5500.0f / sr);
         blockCoeffs.empAmount = amount * 0.18f;
         blockCoeffs.warmAmt = amount * 0.12f;
         blockCoeffs.makeup = 1.0f + amount * 0.8f;
@@ -549,8 +550,6 @@ struct EnhancedChorus
     void beginBlock(float depth, float mix, float rate)
     {
         float sr = static_cast<float>(sampleRate);
-        chorusBlockCoeffs.toneCoeff = std::exp(-6.2832f * 16000.0f / sr);
-        chorusBlockCoeffs.smoothCoeff = std::exp(-6.2832f * 14000.0f / sr);
         chorusBlockCoeffs.apCoeff = 0.3f + depth * 0.15f;
         chorusBlockCoeffs.mixDepthScale = 1.0f - mix * 0.35f;
         chorusBlockCoeffs.maxSwingMs = 2.8f * chorusBlockCoeffs.mixDepthScale;
@@ -594,6 +593,9 @@ struct EnhancedChorus
         sampleRate = sr;
         oversample[0].prepare(sr);
         oversample[1].prepare(sr);
+        // Cache sample-rate-dependent filter coefficients (not on every block)
+        chorusBlockCoeffs.toneCoeff = static_cast<float>(std::exp(-6.2832f * 16000.0f / sr));
+        chorusBlockCoeffs.smoothCoeff = static_cast<float>(std::exp(-6.2832f * 14000.0f / sr));
         std::memset(delayBuffer, 0, sizeof(delayBuffer));
         writePos = 0;
         feedbackState[0] = feedbackState[1] = 0.0f;
@@ -877,6 +879,8 @@ struct EnhancedDelay
         {
             fbLP[ch].reset(); fbHP[ch].reset(); dcBlock[ch].reset();
         }
+        // Feedback low-cut: fixed at 80Hz (cached in prepare(), not on every block)
+        blockCoeffs.fbHPCoeff = static_cast<float>(std::exp(-6.2832f * 80.0f / sr));
     }
 
     void beginBlock(float damping)
@@ -884,8 +888,6 @@ struct EnhancedDelay
         float sr = static_cast<float>(sampleRate);
         // Feedback high-cut: 2kHz at max damping → 18kHz at min damping
         blockCoeffs.fbLPCoeff = std::exp(-6.2832f * (2000.0f + (1.0f - damping) * 16000.0f) / sr);
-        // Feedback low-cut: fixed at 80Hz
-        blockCoeffs.fbHPCoeff = std::exp(-6.2832f * 80.0f / sr);
 
         // Block-level constant cache — eliminates redundant per-sample divides/multiplies.
         blockCoeffs.invSr = 1.0f / sr;
