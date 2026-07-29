@@ -1,6 +1,6 @@
 # ROADMAP.md — Corvus VST (DrippyFX)
 
-| **Last updated:** 2026-07-29 (overnight)
+> **Last updated:** 2026-07-29 (morning pass)
 
 ## Phase 1: Foundation ✅ (2026-06-24 through 2026-07-09)
 
@@ -29,7 +29,7 @@
 - Delay ms-to-samples conversion bugfix
 - All 36 presets reachable via DAW host
 
-## Phase 4: UI Completeness 🔶 (In progress)
+## Phase 4: UI Completeness ✅ (2026-07-26 through 2026-07-28)
 
 - ✅ Knob right-click → MIDI learn — 2026-07-27 (`a5c09ae`)
 - ✅ Preset A/B compare (snapshot/restore 23 parameters) — 2026-07-27 (`d4f7e81`)
@@ -37,12 +37,13 @@
 - ✅ Compile warnings reduced 37→0 (JUCE 8 FontOptions migration, float→int casts, unicode separators) — 2026-07-27 (`6fa7349`)
 - ✅ Undo/redo support (Ctrl+Z/Y keyboard shortcuts, UndoManager) — 2026-07-28 (`69f4bc1`)
 - ✅ **Randomize preset button** (RND button, 23-param randomization) — 2026-07-28 (`0ceb202`)
-- ⬜ Dark/light theme toggle (future stretch)
+- ⬜ Dark/light theme toggle (future stretch goal)
 
 ## Phase 5: CPU Optimization 🔶 (In progress)
 
+- ✅ Fix delay wow/flutter LFO rate bug (frozen LFO since 2026-07-08 API cleanup) — 2026-07-29 (`4333761`)
 - ✅ Hoist 6 sr-only std::exp()/block from beginBlock() to prepare() — 2026-07-29 (`6f94d28`)
-
+- ✅ Hoist 7 sr-only block constants from EnhancedDelay to prepare() — 2026-07-29 (`b8ebf9a`)
 - Profile-guided optimization (PGO) build
 - SIMD for remaining hot inner loops (if profiling shows need)
 - Antiderivative antialiasing as alternative to oversampling
@@ -56,3 +57,4 @@
 | Compile warnings | 0 | 0 ✅ |
 | Per-sample transcendental calls | 0 | 0 ✅ |
 | Knobs with MIDI learn | 18/18 | 18/18 ✅ |
+| Block-level sr-only hoist (exp + arithmetic) | 16/16 | 16/16 ✅ |

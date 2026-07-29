@@ -1,6 +1,6 @@
 # PRIORITIES.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-29 (overnight)
+> **Last updated:** 2026-07-29 (morning pass)
 
 ## Active Priorities
 
@@ -11,6 +11,8 @@
 
 ## Completed Milestones
 
+- ✅ Fix delay wow/flutter LFO rate bug — delta1 was (2*pi/sr)*(0.55/sr) instead of 2*pi*0.55/sr — 2026-07-29 (`4333761`)
+- ✅ Hoist 7 sr-only constants from EnhancedDelay::beginBlock() to prepare() — 2026-07-29 (`b8ebf9a`)
 - ✅ Hoist 6 sr-only std::exp()/block from beginBlock() to prepare() — Distortion/Chorus/Delay — 2026-07-29 (`6f94d28`)
 - ✅ Compile warnings: 37 → 0 (FontOptions migration, casts, unicode fix) — 2026-07-27 (`6fa7349`)
 - ✅ Randomize preset button (RND button, 23-param randomization) — 2026-07-28 (`0ceb202`)
