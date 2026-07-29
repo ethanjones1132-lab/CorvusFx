@@ -1,6 +1,6 @@
 # PRIORITIES.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-28 (evening)
+> **Last updated:** 2026-07-29 (overnight)
 
 ## Active Priorities
 
@@ -11,6 +11,7 @@
 
 ## Completed Milestones
 
+- ✅ Hoist 6 sr-only std::exp()/block from beginBlock() to prepare() — Distortion/Chorus/Delay — 2026-07-29 (`6f94d28`)
 - ✅ Compile warnings: 37 → 0 (FontOptions migration, casts, unicode fix) — 2026-07-27 (`6fa7349`)
 - ✅ Randomize preset button (RND button, 23-param randomization) — 2026-07-28 (`0ceb202`)
 - ✅ Undo/Redo support (Ctrl+Z/Y) — 2026-07-28 (`69f4bc1`)

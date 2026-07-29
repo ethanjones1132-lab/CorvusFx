@@ -1,6 +1,6 @@
 # ROADMAP.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-28 (afternoon)
+| **Last updated:** 2026-07-29 (overnight)
 
 ## Phase 1: Foundation ✅ (2026-06-24 through 2026-07-09)
 
@@ -39,7 +39,9 @@
 - ✅ **Randomize preset button** (RND button, 23-param randomization) — 2026-07-28 (`0ceb202`)
 - ⬜ Dark/light theme toggle (future stretch)
 
-## Phase 5: CPU Optimization ⬜ (Backlog)
+## Phase 5: CPU Optimization 🔶 (In progress)
+
+- ✅ Hoist 6 sr-only std::exp()/block from beginBlock() to prepare() — 2026-07-29 (`6f94d28`)
 
 - Profile-guided optimization (PGO) build
 - SIMD for remaining hot inner loops (if profiling shows need)
