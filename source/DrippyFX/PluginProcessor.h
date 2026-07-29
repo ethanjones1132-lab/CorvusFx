@@ -881,6 +881,14 @@ struct EnhancedDelay
         }
         // Feedback low-cut: fixed at 80Hz (cached in prepare(), not on every block)
         blockCoeffs.fbHPCoeff = static_cast<float>(std::exp(-6.2832f * 80.0f / sr));
+        // Precompute sr-only constants (not on every block)
+        blockCoeffs.invSr = 1.0f / static_cast<float>(sr);
+        blockCoeffs.modPhaseInc = 0.55f * blockCoeffs.invSr;
+        blockCoeffs.lfoCoeff = 6.2832f * blockCoeffs.invSr;
+        blockCoeffs.sampleRateK = static_cast<float>(sr) * 0.0006f;
+        blockCoeffs.maxDelayF = static_cast<float>(MAX_DELAY - 4);
+        blockCoeffs.msToSamples = static_cast<float>(sr) * 0.001f;
+        blockCoeffs.smooth = 0.9997f;
     }
 
     void beginBlock(float damping)
@@ -889,21 +897,12 @@ struct EnhancedDelay
         // Feedback high-cut: 2kHz at max damping → 18kHz at min damping
         blockCoeffs.fbLPCoeff = std::exp(-6.2832f * (2000.0f + (1.0f - damping) * 16000.0f) / sr);
 
-        // Block-level constant cache — eliminates redundant per-sample divides/multiplies.
-        blockCoeffs.invSr = 1.0f / sr;
-        blockCoeffs.modPhaseInc = 0.55f * blockCoeffs.invSr;
-        blockCoeffs.lfoCoeff = 6.2832f * blockCoeffs.invSr;
-        blockCoeffs.sampleRateK = sr * 0.0006f;
-        blockCoeffs.maxDelayF = (float)(MAX_DELAY - 4);
-        blockCoeffs.msToSamples = sr * 0.001f;  // ms to samples factor
-        blockCoeffs.smooth = 0.9997f;
-
         // ── LFO phase recurrence: precompute sin/cos of phase increments ──
         // Replaces 2 std::sin() calls per sample with 4 multiplies.
         // LFO has two sine components: base frequency and 5.13x base.
         // sin(φ + Δ) = sin(φ)cos(Δ) + cos(φ)sin(Δ)
         // cos(φ + Δ) = cos(φ)cos(Δ) - sin(φ)sin(Δ)
-        float delta1 = blockCoeffs.lfoCoeff * blockCoeffs.modPhaseInc;
+        float delta1 = 6.2832f * blockCoeffs.modPhaseInc;  // BUGFIX: was lfoCoeff * modPhaseInc (extra /sr)
         float delta2 = delta1 * 5.13f;
         blockCoeffs.lfoCosDelta = std::cos(delta1);
         blockCoeffs.lfoSinDelta = std::sin(delta1);
