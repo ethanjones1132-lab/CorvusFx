@@ -523,7 +523,8 @@ struct EnhancedChorus
             float maxSwingMs = 2.8f;        // max modulation swing in ms
             float driftDelta = 0.0f;        // drift phase increment per sample
             float rateToIncrement = 0.0f;   // twoPi / sr — cached for LFO rate→phase step
-            float invSr = 0.0f;               // 1.0 / sr — cached for normalized triangle phase advance
+            float invSr = 0.0f;
+                    float msToSamples = 0.0f;  // sr * 0.001f -- cached to avoid redundant double conv               // 1.0 / sr — cached for normalized triangle phase advance
             // Phase recurrence constants per voice — replaces 2× std::sin()/sample with 4 multiplies
                     float voiceCosDelta[NUM_VOICES] = {};  // cos(rate * rateScale * rateToIncrement) per voice
                     float voiceSinDelta[NUM_VOICES] = {};  // sin(rate * rateScale * rateToIncrement) per voice
@@ -556,6 +557,7 @@ struct EnhancedChorus
         chorusBlockCoeffs.driftDelta = 0.07f / sr;
         chorusBlockCoeffs.rateToIncrement = juce::MathConstants<float>::twoPi / sr;
         chorusBlockCoeffs.invSr = 1.0f / sr;
+        chorusBlockCoeffs.msToSamples = sr * 0.001f;
         // Precompute per-voice phase recurrence constants
         // sin/cos of per-voice phase delta → 4 multiplies/sample instead of 2 std::sin()/sample
         for (int i = 0; i < NUM_VOICES; ++i)
@@ -750,7 +752,7 @@ struct EnhancedChorus
             float modMs = lfo * depth * v.depthScale * chorusBlockCoeffs.maxSwingMs * (1.0f + drift);
             float delayMs = juce::jlimit(1.0f, 25.0f, v.centerDelay + modMs);
             float delaySmp = juce::jlimit(1.0f, static_cast<float>(BUFFER_SIZE - 4),
-                static_cast<float>(delayMs * 0.001 * sampleRate));
+                static_cast<float>(delayMs * chorusBlockCoeffs.msToSamples));
 
             float chGain = (channel == 0) ? v.panL : v.panR;
 
