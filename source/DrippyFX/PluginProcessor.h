@@ -819,7 +819,6 @@ struct EnhancedDelay
 
     OnePole fbLP[2], fbHP[2];
     float smoothedDelay[2] = {};
-    DCBlocker dcBlock[2];
     Oversampling2x oversample;    // 2x oversampling for tape saturation anti-aliasing
     int lfoTick = 0;              // LFO renormalization tick counter
 
@@ -877,7 +876,7 @@ struct EnhancedDelay
         blockCoeffs.lfo2Cos = 1.0f;
         for (int ch = 0; ch < 2; ++ch)
         {
-            fbLP[ch].reset(); fbHP[ch].reset(); dcBlock[ch].reset();
+            fbLP[ch].reset(); fbHP[ch].reset();
         }
         // Feedback low-cut: fixed at 80Hz (cached in prepare(), not on every block)
         blockCoeffs.fbHPCoeff = static_cast<float>(std::exp(-6.2832f * 80.0f / sr));
