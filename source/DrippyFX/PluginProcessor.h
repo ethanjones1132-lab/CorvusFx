@@ -1608,6 +1608,7 @@ private:
     juce::LinearSmoothedValue<float> smoothMasterWidth;
     juce::LinearSmoothedValue<float> smoothMasterMidDrive;
     juce::LinearSmoothedValue<float> smoothMasterSideDrive;
+    juce::LinearSmoothedValue<float> smoothOutputTrim;
 
     // Bypass crossfade gains -- when a module bypass is toggled, the wet/dry
     // mix ramps over ~30ms via LinearSmoothedValue instead of a hard switch,
@@ -1625,7 +1626,7 @@ private:
 
 
     // Preset A/B Snapshot Storage
-    static constexpr int NUM_AB_PARAMS = 23;
+    static constexpr int NUM_AB_PARAMS = 24;
     std::array<float, NUM_AB_PARAMS> snapshotA = {};
     std::array<float, NUM_AB_PARAMS> snapshotB = {};
     bool abSlotIsA = true;

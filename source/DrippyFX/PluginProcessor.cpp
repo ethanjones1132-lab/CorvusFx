@@ -56,91 +56,91 @@ void CorvusFXAudioProcessor::loadPreset(int index)
     if (index < 0 || index >= 36) return;
     
     //                    fat  cD   cR    cM   dT   dFb  dM   dDmp dMod rS   rDmp rM   rMod  mDrv mWid mMid mSide dByp cByp dByp rByp mByp
-    struct P { float fat, cD, cR, cM, dT, dFb, dM, dDmp, dMod, rS, rDmp, rM, rMod, mDrv, mWid, mMid, mSide, distByp, chorusByp, delayByp, reverbByp, masterByp; };
+    struct P { float fat, cD, cR, cM, dT, dFb, dM, dDmp, dMod, rS, rDmp, rM, rMod, mDrv, mWid, mMid, mSide, distByp, chorusByp, delayByp, reverbByp, masterByp, oTrim; };
     static const P presets[36] = {
         // ── CLEAN (pos 0-5): transparent enhancement, pristine highs ──────
         // 0: Clean Sparkle — subtle widening, pristine highs
-        {  8, 25, 1.2f, 35,   0,  0,  0,  0,  0,  20, 55, 10, 20,   0, 100,   0,   0, 0, 0, 0, 0, 0 },
+        {  8, 25, 1.2f, 35,   0,  0,  0,  0,  0,  20, 55, 10, 20,   0, 100,   0,   0, 0, 0, 0, 0, 0, 100 },
         // 1: Crystal Shimmer — chorus-forward, bright and airy
-        {  5, 60, 3.0f, 70, 130, 15, 15, 25, 40,  50, 25, 20, 75,   0, 100,   0,   0, 0, 0, 0, 0, 0 },
+        {  5, 60, 3.0f, 70, 130, 15, 15, 25, 40,  50, 25, 20, 75,   0, 100,   0,   0, 0, 0, 0, 0, 0, 100 },
         // 2: Silk Thread — ultra-smooth chorus, no drive, gentle space
-        {  0, 40, 0.5f, 60,   0,  0,  0,  0,  0,  35, 50, 12, 40,   0, 100,   0,   0, 0, 0, 0, 0, 0 },
+        {  0, 40, 0.5f, 60,   0,  0,  0,  0,  0,  35, 50, 12, 40,   0, 100,   0,   0, 0, 0, 0, 0, 0, 100 },
         // 3: Subtle Glue — bus cohesion, barely-there enhancement
-        { 28,  8, 1.2f, 18,  80, 12,  8, 45, 10,  25, 60,  8, 12,   0, 100,   0,   0, 0, 0, 0, 0, 0 },
+        { 28,  8, 1.2f, 18,  80, 12,  8, 45, 10,  25, 60,  8, 12,   0, 100,   0,   0, 0, 0, 0, 0, 0, 100 },
         // 4: Glass Canon — pristine stereo widening, shimmering highs, zero drive
-        {  0, 35, 2.8f, 40, 110,  8, 15, 15, 45,  45, 40, 22, 65,   0, 120,   0,   0, 0, 0, 0, 0, 0 },
+        {  0, 35, 2.8f, 40, 110,  8, 15, 15, 45,  45, 40, 22, 65,   0, 120,   0,   0, 0, 0, 0, 0, 0, 100 },
         // 5: Air Lift — gentle HF excitation, subtle chorus, airy top end
-        { 12, 30, 4.0f, 35,   0,  0,  0,  0,  0,  20, 30,  8, 55,   0, 100,   0,   0, 0, 0, 0, 0, 0 },
+        { 12, 30, 4.0f, 35,   0,  0,  0,  0,  0,  20, 30,  8, 55,   0, 100,   0,   0, 0, 0, 0, 0, 0, 100 },
 
         // ── WARM (pos 6-11): analog-style saturation, musical thickening ───
         // 6: Warm Glow — medium drive, gentle chorus thickening
-        { 40, 18, 1.8f, 30, 180, 20, 12, 55, 25,  35, 65, 15, 25,  20, 100,  10,   5, 0, 0, 0, 0, 0 },
+        { 40, 18, 1.8f, 30, 180, 20, 12, 55, 25,  35, 65, 15, 25,  20, 100,  10,   5, 0, 0, 0, 0, 0, 100 },
         // 7: Vintage Vibe — lo-fi warmth, rolled-off highs
-        { 55, 30, 0.7f, 40, 280, 32, 22, 80, 20,  55, 75, 18, 15,  30, 100,  15,  10, 0, 0, 0, 0, 0 },
+        { 55, 30, 0.7f, 40, 280, 32, 22, 80, 20,  55, 75, 18, 15,  30, 100,  15,  10, 0, 0, 0, 0, 0, 100 },
         // 8: Thick Sauce — heavy saturation, chorus thickening
-        { 72, 35, 2.2f, 45, 200, 28, 18, 50, 35,  40, 55, 18, 30,  40, 100,  20,  15, 0, 0, 0, 0, 0 },
+        { 72, 35, 2.2f, 45, 200, 28, 18, 50, 35,  40, 55, 18, 30,  40, 100,  20,  15, 0, 0, 0, 0, 0, 100 },
         // 9: Tight Punch — controlled, punchy, no excess
-        { 45, 12, 2.0f, 22, 100, 18, 10, 55, 15,  28, 65,  8, 18,  15, 100,   5,   5, 0, 0, 0, 0, 0 },
+        { 45, 12, 2.0f, 22, 100, 18, 10, 55, 15,  28, 65,  8, 18,  15, 100,   5,   5, 0, 0, 0, 0, 0, 100 },
         // 10: Cozy Hiss — cassette deck warmth, gentle wow, lo-fi magic
-        { 35, 15, 0.9f, 28, 220, 35, 20, 85, 55,  30, 70, 12, 40,  25, 100,  10,  10, 0, 0, 0, 0, 0 },
+        { 35, 15, 0.9f, 28, 220, 35, 20, 85, 55,  30, 70, 12, 40,  25, 100,  10,  10, 0, 0, 0, 0, 0, 100 },
         // 11: Tube Glow — mild tube drive, rich harmonics, subtle room verb
-        { 50, 10, 1.5f, 20,   0,  0,  0,  0,  0,  25, 50, 12, 25,  20, 100,  10,   0, 0, 0, 0, 0, 0 },
+        { 50, 10, 1.5f, 20,   0,  0,  0,  0,  0,  25, 50, 12, 25,  20, 100,  10,   0, 0, 0, 0, 0, 0, 100 },
 
         // ── CREATIVE (pos 12-17): modulation-forward, sound design ─────────
         // 12: Dreamy Space — low drive, deep chorus, big reverb
-        { 12, 50, 0.8f, 55, 420, 35, 25, 40, 30,  85, 30, 55, 65,  10, 110,   5,  15, 0, 0, 0, 0, 0 },
+        { 12, 50, 0.8f, 55, 420, 35, 25, 40, 30,  85, 30, 55, 65,  10, 110,   5,  15, 0, 0, 0, 0, 0, 100 },
         // 13: Cosmic Wide — maximum stereo width, deep modulation
-        { 22, 75, 3.5f, 65, 160, 25, 28, 30, 60,  80, 25, 45, 85,   0, 130,   0,  20, 0, 0, 0, 0, 0 },
+        { 22, 75, 3.5f, 65, 160, 25, 28, 30, 60,  80, 25, 45, 85,   0, 130,   0,  20, 0, 0, 0, 0, 0, 100 },
         // 14: Molten Core — heavy saturation into drenched chorus
-        { 78, 55, 1.5f, 70, 150, 22, 20, 45, 30,  25, 45, 12, 35,  50, 100,  25,  20, 0, 0, 0, 0, 0 },
+        { 78, 55, 1.5f, 70, 150, 22, 20, 45, 30,  25, 45, 12, 35,  50, 100,  25,  20, 0, 0, 0, 0, 0, 100 },
         // 15: Sunspot — fast bright chorus + short slapback delay
-        {  0, 45, 4.5f, 55,  65, 10, 25, 20, 35,  15, 40,  5, 50,   0, 100,   0,   0, 0, 0, 0, 0, 0 },
+        {  0, 45, 4.5f, 55,  65, 10, 25, 20, 35,  15, 40,  5, 50,   0, 100,   0,   0, 0, 0, 0, 0, 0, 100 },
         // 16: Nebula Drift — slow evolving chorus + long pre-delay reverb
-        { 20, 65, 0.3f, 55, 300, 40, 18, 50, 40,  88, 35, 55, 80,   5, 115,   0,  10, 0, 0, 0, 0, 0 },
+        { 20, 65, 0.3f, 55, 300, 40, 18, 50, 40,  88, 35, 55, 80,   5, 115,   0,  10, 0, 0, 0, 0, 0, 100 },
         // 17: Shimmerfall — cascading delay into shimmer reverb, ethereal wash
-        {  5, 40, 2.0f, 45, 350, 50, 40, 35, 45,  80, 15, 60, 90,  10, 120,   5,  15, 0, 0, 0, 0, 0 },
+        {  5, 40, 2.0f, 45, 350, 50, 40, 35, 45,  80, 15, 60, 90,  10, 120,   5,  15, 0, 0, 0, 0, 0, 100 },
 
         // ── EXTREME (pos 18-23): aggressive, heavy processing ──────────────
         // 18: Deep Echo — tape delay focus, dark repeats
-        { 18, 12, 1.5f, 20, 520, 58, 55, 75, 50,  45, 60, 15, 25,  15, 100,  10,  10, 0, 0, 0, 0, 0 },
+        { 18, 12, 1.5f, 20, 520, 58, 55, 75, 50,  45, 60, 15, 25,  15, 100,  10,  10, 0, 0, 0, 0, 0, 100 },
         // 19: Aggressive Drive — in-your-face distortion character
-        { 88, 15, 2.0f, 25, 200, 25, 15, 60, 25,  30, 55, 10, 20,  70, 100,  30,  20, 0, 0, 0, 0, 0 },
+        { 88, 15, 2.0f, 25, 200, 25, 15, 60, 25,  30, 55, 10, 20,  70, 100,  30,  20, 0, 0, 0, 0, 0, 100 },
         // 20: Lush Pad — massive reverb wash for sustained sounds
-        { 15, 45, 1.0f, 50, 380, 30, 15, 35, 30,  92, 20, 65, 70,   5, 120,   0,  15, 0, 0, 0, 0, 0 },
+        { 15, 45, 1.0f, 50, 380, 30, 15, 35, 30,  92, 20, 65, 70,   5, 120,   0,  15, 0, 0, 0, 0, 0, 100 },
         // 21: Event Horizon — long delay + heavy feedback into massive reverb
-        { 10, 20, 0.6f, 30, 800, 65, 45, 55, 45,  95, 15, 70, 90,  20, 125,  10,  25, 0, 0, 0, 0, 0 },
+        { 10, 20, 0.6f, 30, 800, 65, 45, 55, 45,  95, 15, 70, 90,  20, 125,  10,  25, 0, 0, 0, 0, 0, 100 },
         // 22: Iron Press — heavy parallel compression via drive + tight verb
-        { 65,  5, 1.8f, 15,  60, 15,  8, 70, 20,  18, 80,  6, 10,  40,  90,  20,  10, 0, 0, 0, 0, 0 },
+        { 65,  5, 1.8f, 15,  60, 15,  8, 70, 20,  18, 80,  6, 10,  40,  90,  20,  10, 0, 0, 0, 0, 0, 100 },
         // 23: Obliterator — maxed drive, deep chorus, long feedback, giant hall
-        { 95, 50, 1.2f, 55, 600, 70, 40, 65, 50,  90, 30, 55, 85,  80, 100,  40,  30, 0, 0, 0, 0, 0 },
+        { 95, 50, 1.2f, 55, 600, 70, 40, 65, 50,  90, 30, 55, 85,  80, 100,  40,  30, 0, 0, 0, 0, 0, 100 },
 
         // ── SIGNATURE (pos 24-29): curated artist-style sounds, distinct character ──
         // 24: Velvet Morning — warm tape saturation, gentle chorus, silk reverb
-        { 32, 22, 0.7f, 28, 120, 18, 12, 35, 15,  30, 55, 18, 35,  15, 100,   8,   5, 0, 0, 0, 0, 0 },
+        { 32, 22, 0.7f, 28, 120, 18, 12, 35, 15,  30, 55, 18, 35,  15, 100,   8,   5, 0, 0, 0, 0, 0, 100 },
         // 25: Neon Dusk — bright chorus, crisp delay, crystalline highs
-        {  8, 55, 3.2f, 45, 280, 22, 18, 15, 40,  60, 25, 35, 70,  10, 115,   0,  12, 0, 0, 0, 0, 0 },
+        {  8, 55, 3.2f, 45, 280, 22, 18, 15, 40,  60, 25, 35, 70,  10, 115,   0,  12, 0, 0, 0, 0, 0, 100 },
         // 26: Basement Sessions — gritty drive, dark delay, underground vibe
-        { 62, 18, 1.1f, 20, 450, 45, 35, 65, 30,  40, 65, 12, 20,  45,  95,  18,  15, 0, 0, 0, 0, 0 },
+        { 62, 18, 1.1f, 20, 450, 45, 35, 65, 30,  40, 65, 12, 20,  45,  95,  18,  15, 0, 0, 0, 0, 0, 100 },
         // 27: Cathedral Drift — massive reverb, slow chorus, spiritual space
-        {  0, 48, 0.25f, 60, 900, 55, 30, 25, 50,  95, 20, 70, 85,   0, 130,   0,  20, 0, 0, 0, 0, 0 },
+        {  0, 48, 0.25f, 60, 900, 55, 30, 25, 50,  95, 20, 70, 85,   0, 130,   0,  20, 0, 0, 0, 0, 0, 100 },
         // 28: Circuit Bent — experimental modulation, glitchy texture
-        { 45, 70, 4.8f, 65,  45, 12, 25, 10, 60,  25, 40, 15, 60,  25, 105,   5,  18, 0, 0, 0, 0, 0 },
+        { 45, 70, 4.8f, 65,  45, 12, 25, 10, 60,  25, 40, 15, 60,  25, 105,   5,  18, 0, 0, 0, 0, 0, 100 },
         // 29: Midnight Oil — saturated warmth, tape echo, late-night intimacy
-        { 58, 15, 0.6f, 30, 320, 40, 28, 80, 45,  35, 70, 18, 25,  35, 100,  12,  10, 0, 0, 0, 0, 0 },
+        { 58, 15, 0.6f, 30, 320, 40, 28, 80, 45,  35, 70, 18, 25,  35, 100,  12,  10, 0, 0, 0, 0, 0, 100 },
 
         // ── DREAM (pos 30-35): ambient, ethereal, deep soundscapes ──────
         // 30: Cloud Chamber — vast spatial wash, barely-there modulation, floating ambience
-        {  5, 35, 0.15f, 55, 750, 50, 30, 45, 55,  90, 45, 75, 65,   0, 135,   0,  22, 0, 0, 0, 0, 0 },
+        {  5, 35, 0.15f, 55, 750, 50, 30, 45, 55,  90, 45, 75, 65,   0, 135,   0,  22, 0, 0, 0, 0, 0, 100 },
         // 31: Frozen Lake — crystalline chorus, long shimmer reverb, glassy reflections
-        {  0, 55, 2.0f, 60, 400, 35, 45, 25, 50,  88, 25, 70, 85,   0, 125,   0,  18, 0, 0, 0, 0, 0 },
+        {  0, 55, 2.0f, 60, 400, 35, 45, 25, 50,  88, 25, 70, 85,   0, 125,   0,  18, 0, 0, 0, 0, 0, 100 },
         // 32: Ash & Ember — warm low-end drive, dark tape delay, glowing decay
-        { 48, 22, 0.5f, 25, 550, 55, 42, 90, 60,  55, 80, 15, 20,  30,  95,  12,  10, 0, 0, 0, 0, 0 },
+        { 48, 22, 0.5f, 25, 550, 55, 42, 90, 60,  55, 80, 15, 20,  30,  95,  12,  10, 0, 0, 0, 0, 0, 100 },
         // 33: Stargate Portal — rotating modulation, long feedback, cosmic return
-        { 25, 60, 0.9f, 65, 650, 60, 50, 30, 65,  70, 20, 60, 80,  15, 140,   5,  30, 0, 0, 0, 0, 0 },
+        { 25, 60, 0.9f, 65, 650, 60, 50, 30, 65,  70, 20, 60, 80,  15, 140,   5,  30, 0, 0, 0, 0, 0, 100 },
         // 34: Underwater Cathedral — massive low reverb, slow pitch drift, submerged depth
-        { 15, 40, 0.08f, 70, 900, 65, 35, 85, 40,  95, 50, 80, 40,   5, 130,   0,  15, 0, 0, 0, 0, 0 },
+        { 15, 40, 0.08f, 70, 900, 65, 35, 85, 40,  95, 50, 80, 40,   5, 130,   0,  15, 0, 0, 0, 0, 0, 100 },
         // 35: Solar Flare — bright piercing drive, fast chorus, explosive decay
-        { 65, 70, 5.5f, 45, 180, 25, 22, 20, 50,  30, 40, 10, 75,  60, 110,  25,  35, 0, 0, 0, 0, 0 },
+        { 65, 70, 5.5f, 45, 180, 25, 22, 20, 50,  30, 40, 10, 75,  60, 110,  25,  35, 0, 0, 0, 0, 0, 100 },
     };
     
     const auto& p = presets[index];
@@ -158,6 +158,7 @@ void CorvusFXAudioProcessor::loadPreset(int index)
     set("delay_bypass", p.delayByp);
     set("reverb_bypass", p.reverbByp);
     set("master_bypass", p.masterByp);
+    set("output_trim", p.oTrim);
 }
 
 void CorvusFXAudioProcessor::randomizePreset()
@@ -242,6 +243,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::crea
     params.push_back(pctParam("master_mid_drive", "Master Mid Drive", 0));
     params.push_back(pctParam("master_side_drive", "Master Side Drive", 0));
     params.push_back(std::make_unique<juce::AudioParameterBool>("master_bypass", "Master Bypass", false));
+    params.push_back(pctParam("output_trim", "Output Trim", 100));
     params.push_back(std::make_unique<juce::AudioParameterInt>("preset", "Preset", 0, 42, 2));
     return { params.begin(), params.end() };
 }
@@ -329,12 +331,13 @@ void CorvusFXAudioProcessor::clearAllMidiMappings()
 
 // Preset A/B Compare
 // Snapshot/restore all 23 non-preset parameters from normalized 0-1 values.
-static constexpr const char* abParamIds[23] = {
+static constexpr const char* abParamIds[24] = {
     "overall","fatness","chorus_depth","chorus_rate","chorus_mix",
     "delay_time","delay_feedback","delay_mix","delay_damping","delay_mod",
     "reverb_size","reverb_damping","reverb_mix","reverb_mod",
     "master_drive","master_width","master_mid_drive","master_side_drive",
-    "distortion_bypass","chorus_bypass","delay_bypass","reverb_bypass","master_bypass"
+    "distortion_bypass","chorus_bypass","delay_bypass","reverb_bypass","master_bypass",
+    "output_trim"
 };
 
 void CorvusFXAudioProcessor::saveSlotA()
@@ -411,6 +414,7 @@ void CorvusFXAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     smoothMasterWidth.reset(sampleRate, smoothTime);
     smoothMasterMidDrive.reset(sampleRate, smoothTime);
     smoothMasterSideDrive.reset(sampleRate, smoothTime);
+    smoothOutputTrim.reset(sampleRate, smoothTime);
 
     // Set initial target values from current parameter state
     smoothOverall.setTargetValue(apvts.getRawParameterValue("overall")->load() / 100.0f);
@@ -434,6 +438,8 @@ void CorvusFXAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     smoothMasterWidth.setTargetValue(apvts.getRawParameterValue("master_width")->load() / 100.0f);
     smoothMasterMidDrive.setTargetValue(apvts.getRawParameterValue("master_mid_drive")->load() / 100.0f);
     smoothMasterSideDrive.setTargetValue(apvts.getRawParameterValue("master_side_drive")->load() / 100.0f);
+    smoothOutputTrim.setTargetValue(apvts.getRawParameterValue("output_trim")->load() / 100.0f);
+    smoothOutputTrim.setTargetValue(apvts.getRawParameterValue("output_trim")->load() / 100.0f);
 
     // Bypass crossfade gain init (click-free): 1.0 active, 0.0 dry pass-through.
     const float bDist  = apvts.getRawParameterValue("distortion_bypass")->load() > 0.5f ? 0.0f : 1.0f;
@@ -626,6 +632,7 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         const float sMasterWidth  = smoothMasterWidth.getNextValue(); // Per-sample Master Width smoothing
         const float sMasterMidDrive  = smoothMasterMidDrive.getNextValue(); // Per-sample Master Mid Drive smoothing
         const float sMasterSideDrive = smoothMasterSideDrive.getNextValue(); // Per-sample Master Side Drive smoothing
+        const float sOutputTrim = smoothOutputTrim.getNextValue(); // Per-sample Output Trim smoothing
 
         // ── Input level meter (read dry signal before DSP) ──
         {
@@ -716,7 +723,11 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             smpR = juce::jlimit(-1.5f, 1.5f, smpR);
         }
 
-        // 7. OVERALL WET/DRY — per-sample linear crossfade with smoothing
+        // 8. OUTPUT TRIM — per-sample final gain adjustment (0-200%)
+        smpL *= sOutputTrim;
+        if (!isMono) smpR *= sOutputTrim;
+
+        // 9. OVERALL WET/DRY — per-sample linear crossfade with smoothing
         if (sOverall < 0.999f)
         {
             smpL = dryBuffer.getReadPointer(0)[s] * (1.0f - sOverall) + smpL * sOverall;

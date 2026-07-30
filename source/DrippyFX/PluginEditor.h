@@ -791,6 +791,7 @@ private:
     AnimatedKnob masterWidthKnob; juce::Label masterWidthLabel;
     AnimatedKnob masterMidDriveKnob; juce::Label masterMidDriveLabel;
     AnimatedKnob masterSideDriveKnob; juce::Label masterSideDriveLabel;
+    AnimatedKnob outputTrimKnob; juce::Label outputTrimLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> overallAtt, fatnessAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> distortionBypassAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> chorusBypassAtt;
@@ -804,6 +805,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterWidthAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterMidDriveAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterSideDriveAtt;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputTrimAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> presetAtt;
     LevelMeter levelMeter;
     // Activates hover tooltips for all knobs/buttons (JUCE renders no

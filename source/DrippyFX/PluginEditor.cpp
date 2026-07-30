@@ -185,6 +185,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     setupKnob(masterWidthKnob, masterWidthLabel, "WIDTH", "master_width", "Stereo width — 0% = mono, 100% = original stereo, >100% = widened");
     setupKnob(masterMidDriveKnob, masterMidDriveLabel, "MID DRIVE", "master_mid_drive", "Mid channel saturation — push-pull even harmonics on center content");
     setupKnob(masterSideDriveKnob, masterSideDriveLabel, "SIDE DRIVE", "master_side_drive", "Side channel saturation — push-pull even harmonics on stereo width");
+    setupKnob(outputTrimKnob, outputTrimLabel, "TRIM", "output_trim", "Output level trim — 0% = silent, 100% = unity gain, 200% = +6dB boost");
 
     // Attachments
     overallAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "overall", overallKnob);
@@ -210,6 +211,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     masterWidthAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "master_width", masterWidthKnob);
     masterMidDriveAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "master_mid_drive", masterMidDriveKnob);
     masterSideDriveAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "master_side_drive", masterSideDriveKnob);
+    outputTrimAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "output_trim", outputTrimKnob);
     presetAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(audioProcessor.apvts, "preset", presetSelector);
 
     // Preset A/B Compare buttons
@@ -400,6 +402,13 @@ void CorvusFXAudioProcessorEditor::resized()
     auto msSideArea = msStart.removeFromLeft(msSize);
     masterSideDriveKnob.setBounds(msSideArea.removeFromTop(msSize));
     masterSideDriveLabel.setBounds(msSideArea);
+
+    // ── Output Trim knob (below Width/Mid/Side, centered)
+    auto trimRow = area.removeFromTop(sc(80));
+    int trimSize = sc(70);
+    auto trimArea = trimRow.withSizeKeepingCentre(trimSize, trimSize + sc(25));
+    outputTrimKnob.setBounds(trimArea.removeFromTop(trimSize));
+    outputTrimLabel.setBounds(trimArea);
 
     area.removeFromTop(sc(10));
 
