@@ -1,6 +1,6 @@
 # PRIORITIES.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-30 (morning pass)
+> **Last updated:** 2026-07-30 (afternoon pass)
 
 ## Active Priorities
 
@@ -36,5 +36,6 @@
 - ✅ Planning docs creation — 2026-07-26
 - ✅ Per-module output clamping (Chorus/Delay) — 2026-07-26
 - ✅ Equal-power reverb wet/dry crossfade — 2026-07-26 (`82a6235`)
-|- ✅ Cache msToSamples in ChorusBlockCoeffs (eliminates redundant double promotion in hot loop) — 2026-07-29 (`a79922c`)
-|- ✅ Set NEEDS_MIDI_INPUT TRUE in CMakeLists.txt for MIDI Learn VST3 compatibility — 2026-07-30 (`d61ca20`)
+- ✅ Cache msToSamples in ChorusBlockCoeffs (eliminates redundant double promotion in hot loop) — 2026-07-29 (`a79922c`)
+- ✅ Set NEEDS_MIDI_INPUT TRUE in CMakeLists.txt for MIDI Learn VST3 compatibility — 2026-07-30 (`d61ca20`)
+- ✅ Add output_trim parameter for final gain staging (0-200%, smooth, UI knob) — 2026-07-30 (`bcce791`)

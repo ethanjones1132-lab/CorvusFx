@@ -1,6 +1,6 @@
 # ROADMAP.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-30 (morning pass)
+> **Last updated:** 2026-07-30 (afternoon pass)
 
 ## Phase 1: Foundation ✅ (2026-06-24 through 2026-07-09)
 
@@ -29,7 +29,7 @@
 - Delay ms-to-samples conversion bugfix
 - All 36 presets reachable via DAW host
 
-## Phase 4: UI Completeness ✅ (2026-07-26 through 2026-07-28)
+## Phase 4: UI Completeness ✅ (2026-07-26 through 2026-07-30)
 
 - ✅ Knob right-click → MIDI learn — 2026-07-27 (`a5c09ae`)
 - ✅ Preset A/B compare (snapshot/restore 23 parameters) — 2026-07-27 (`d4f7e81`)
@@ -37,6 +37,7 @@
 - ✅ Compile warnings reduced 37→0 (JUCE 8 FontOptions migration, float→int casts, unicode separators) — 2026-07-27 (`6fa7349`)
 - ✅ Undo/redo support (Ctrl+Z/Y keyboard shortcuts, UndoManager) — 2026-07-28 (`69f4bc1`)
 - ✅ **Randomize preset button** (RND button, 23-param randomization) — 2026-07-28 (`0ceb202`)
+- ✅ **Output trim control** (per-sample smoothed, 0-200%, UI TRIM knob, MIDI learnable) — 2026-07-30 (`bcce791`)
 - ⬜ Dark/light theme toggle (future stretch goal)
 
 ## Phase 5: CPU Optimization 🔶 (In progress)
@@ -58,5 +59,5 @@
 | Presets reachable via DAW | 36/36 | 36/36 ✅ |
 | Compile warnings | 0 | 0 ✅ |
 | Per-sample transcendental calls | 0 | 0 ✅ |
-| Knobs with MIDI learn | 18/18 | 18/18 ✅ |
+| Knobs with MIDI learn | 19/19 | 19/19 ✅ |
 | Block-level sr-only hoist (exp + arithmetic) | 16/16 | 16/16 ✅ |
