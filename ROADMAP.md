@@ -1,6 +1,6 @@
 # ROADMAP.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-29 (evening pass)
+> **Last updated:** 2026-07-30 (morning pass)
 
 ## Phase 1: Foundation ✅ (2026-06-24 through 2026-07-09)
 
@@ -44,8 +44,9 @@
 - ✅ Fix delay wow/flutter LFO rate bug (frozen LFO since 2026-07-08 API cleanup) — 2026-07-29 (`4333761`)
 - ✅ Hoist 6 sr-only std::exp()/block from beginBlock() to prepare() — 2026-07-29 (`6f94d28`)
 - ✅ Hoist 7 sr-only block constants from EnhancedDelay to prepare() — 2026-07-29 (`b8ebf9a`)
-|- ✅ Cache msToSamples in ChorusBlockCoeffs (eliminates redundant double promotion in hot loop) — 2026-07-29 (`a79922c`)
-|- Profile-guided optimization (PGO) build
+- ✅ Cache msToSamples in ChorusBlockCoeffs (eliminates redundant double promotion in hot loop) — 2026-07-29 (`a79922c`)
+- ✅ Set NEEDS_MIDI_INPUT TRUE in CMakeLists.txt for MIDI Learn VST3 compatibility — 2026-07-30 (`d61ca20`)
+- Profile-guided optimization (PGO) build
 - SIMD for remaining hot inner loops (if profiling shows need)
 - Antiderivative antialiasing as alternative to oversampling
 
