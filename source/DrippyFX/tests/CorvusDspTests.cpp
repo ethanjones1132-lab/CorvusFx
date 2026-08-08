@@ -499,6 +499,131 @@ public:
             }
         }
         expect(peak > 1.0e-4f);
+
+        auto setPhysicalValue = [](CorvusInstrumentProcessor& target,
+                                   const juce::String& parameterId, float value)
+        {
+            auto* parameter = target.apvts.getParameter(parameterId);
+            parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+        };
+        auto configureDeterministicVoice = [&](CorvusInstrumentProcessor& target,
+                                               float fxAmount, float flight)
+        {
+            setPhysicalValue(target, "osc_wave", 0.0f);
+            setPhysicalValue(target, "attack", 0.0f);
+            setPhysicalValue(target, "decay", 0.0f);
+            setPhysicalValue(target, "sustain", 1.0f);
+            setPhysicalValue(target, "release", 1.0f);
+            setPhysicalValue(target, "fx_amount", fxAmount);
+            setPhysicalValue(target, "flight", flight);
+            setPhysicalValue(target, "output", 0.0f);
+        };
+
+        beginTest("zero FX amount exactly matches the dry synth engine");
+        CorvusInstrumentProcessor dryProcessor;
+        configureDeterministicVoice(dryProcessor, 0.0f, 1.0f);
+        dryProcessor.prepareToPlay(48000.0, 512);
+        juce::AudioBuffer<float> dryProcessorOutput(2, 512);
+        juce::MidiBuffer dryProcessorMidi;
+        dryProcessorMidi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+        dryProcessor.processBlock(dryProcessorOutput, dryProcessorMidi);
+
+        CorvusSynthEngine dryEngine;
+        dryEngine.prepare(48000.0, 512);
+        VoiceParameters dryParameters;
+        dryParameters.attackSeconds = 0.0f;
+        dryParameters.decaySeconds = 0.0f;
+        dryParameters.sustainLevel = 1.0f;
+        dryParameters.releaseSeconds = 1.0f;
+        dryParameters.wave = FactoryWave::Sine;
+        juce::AudioBuffer<float> directDryOutput(2, 512);
+        juce::MidiBuffer directDryMidi;
+        directDryMidi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+        dryEngine.render(directDryOutput, directDryMidi, dryParameters);
+        for (auto channel = 0; channel < 2; ++channel)
+            for (auto sample = 0; sample < 512; ++sample)
+                expectWithinAbsoluteError(dryProcessorOutput.getSample(channel, sample),
+                                          directDryOutput.getSample(channel, sample),
+                                          1.0e-6f);
+
+        beginTest("full FX and Flight materially change output within the safety clamp");
+        CorvusInstrumentProcessor wetProcessor;
+        configureDeterministicVoice(wetProcessor, 1.0f, 1.0f);
+        wetProcessor.prepareToPlay(48000.0, 512);
+        juce::AudioBuffer<float> wetOutput(2, 512);
+        juce::MidiBuffer wetMidi;
+        wetMidi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+        wetProcessor.processBlock(wetOutput, wetMidi);
+
+        auto differenceEnergy = 0.0;
+        for (auto channel = 0; channel < 2; ++channel)
+        {
+            for (auto sample = 0; sample < 512; ++sample)
+            {
+                const auto wet = wetOutput.getSample(channel, sample);
+                const auto dry = directDryOutput.getSample(channel, sample);
+                expect(std::isfinite(wet));
+                expect(std::abs(wet) <= 1.0f);
+                const auto difference = static_cast<double>(wet - dry);
+                differenceEnergy += difference * difference;
+            }
+        }
+        expect(differenceEnergy > 1.0e-3,
+               "full Corvus effects must differ materially from the dry synth");
+
+        beginTest("Flight mapping is monotonic and clamped");
+        auto previousSettings = wetProcessor.settingsForFlight(0.0f);
+        for (auto step = 1; step <= 256; ++step)
+        {
+            const auto settings = wetProcessor.settingsForFlight(
+                static_cast<float>(step) / 256.0f);
+            expect(settings.distortionAmount >= previousSettings.distortionAmount);
+            expect(settings.chorusDepth >= previousSettings.chorusDepth);
+            expect(settings.chorusMix >= previousSettings.chorusMix);
+            expect(settings.delayMix >= previousSettings.delayMix);
+            expect(settings.delayModulation >= previousSettings.delayModulation);
+            expect(settings.reverbSize >= previousSettings.reverbSize);
+            expect(settings.reverbMix >= previousSettings.reverbMix);
+            expect(settings.reverbModulation >= previousSettings.reverbModulation);
+            expect(settings.masterWidth >= previousSettings.masterWidth);
+            expect(settings.masterMidDrive >= previousSettings.masterMidDrive);
+            expect(settings.masterSideDrive >= previousSettings.masterSideDrive);
+            previousSettings = settings;
+        }
+
+        beginTest("Flight sweep remains finite, bounded, and de-clicked");
+        CorvusInstrumentProcessor sweepProcessor;
+        configureDeterministicVoice(sweepProcessor, 1.0f, 0.0f);
+        setPhysicalValue(sweepProcessor, "output", -6.0f);
+        sweepProcessor.prepareToPlay(48000.0, 128);
+        juce::AudioBuffer<float> sweepBuffer(2, 128);
+        std::array<float, 2> previousLastSample {};
+        auto hasPreviousBlock = false;
+        for (auto step = 0; step <= 256; ++step)
+        {
+            setPhysicalValue(sweepProcessor, "flight",
+                             static_cast<float>(step) / 256.0f);
+            juce::MidiBuffer sweepMidi;
+            if (step == 0)
+                sweepMidi.addEvent(juce::MidiMessage::noteOn(1, 60, 0.8f), 0);
+            sweepProcessor.processBlock(sweepBuffer, sweepMidi);
+            for (auto channel = 0; channel < 2; ++channel)
+            {
+                if (hasPreviousBlock)
+                    expect(std::abs(sweepBuffer.getSample(channel, 0)
+                                    - previousLastSample[static_cast<std::size_t>(channel)])
+                           < 0.75f);
+                for (auto sample = 0; sample < sweepBuffer.getNumSamples(); ++sample)
+                {
+                    const auto value = sweepBuffer.getSample(channel, sample);
+                    expect(std::isfinite(value));
+                    expect(std::abs(value) <= 1.0f);
+                }
+                previousLastSample[static_cast<std::size_t>(channel)]
+                    = sweepBuffer.getSample(channel, sweepBuffer.getNumSamples() - 1);
+            }
+            hasPreviousBlock = true;
+        }
     }
 };
 

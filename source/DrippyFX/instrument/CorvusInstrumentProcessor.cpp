@@ -1,5 +1,6 @@
 #include "CorvusInstrumentProcessor.h"
 #include "CorvusInstrumentEditor.h"
+#include "../dsp/CorvusEffects.h"
 
 #include <array>
 #include <cmath>
@@ -12,16 +13,41 @@ constexpr auto stateRoot = "CorvusInstrumentState";
 constexpr auto stateSchemaVersion = 1;
 }
 
+struct CorvusInstrumentProcessor::EffectsCore
+{
+    ProfessionalDistortion distortion;
+    EnhancedChorus chorus;
+    EnhancedDelay delay;
+    UpgradedReverb reverb;
+    MasterOutputStage master;
+};
+
 CorvusInstrumentProcessor::CorvusInstrumentProcessor()
     : juce::AudioProcessor(BusesProperties()
           .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts(*this, &undoManager, stateRoot, createParameterLayout())
+      apvts(*this, &undoManager, stateRoot, createParameterLayout()),
+      effects(std::make_unique<EffectsCore>())
 {
 }
+
+CorvusInstrumentProcessor::~CorvusInstrumentProcessor() = default;
 
 void CorvusInstrumentProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     synthEngine.prepare(sampleRate, samplesPerBlock);
+    effects->distortion.prepare(sampleRate);
+    effects->chorus.prepare(sampleRate);
+    effects->delay.prepare(sampleRate);
+    effects->reverb.prepare(sampleRate);
+    effects->master.prepare(sampleRate);
+    dryBuffer.setSize(2, samplesPerBlock, false, false, true);
+
+    fxAmount.reset(sampleRate, 0.03);
+    fxAmount.setCurrentAndTargetValue(
+        apvts.getRawParameterValue("fx_amount")->load());
+    flightAmount.reset(sampleRate, 0.05);
+    flightAmount.setCurrentAndTargetValue(
+        apvts.getRawParameterValue("flight")->load());
     outputGain.reset(sampleRate, 0.02);
     const auto outputDb = apvts.getRawParameterValue("output")->load();
     const auto gain = juce::Decibels::decibelsToGain(outputDb);
@@ -37,6 +63,30 @@ bool CorvusInstrumentProcessor::isBusesLayoutSupported(const BusesLayout& layout
 {
     return layouts.getMainInputChannelSet().isDisabled()
         && layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
+}
+
+InstrumentEffectsSettings
+CorvusInstrumentProcessor::settingsForFlight(float flight) const noexcept
+{
+    const auto amount = juce::jlimit(0.0f, 1.0f, flight);
+    InstrumentEffectsSettings settings;
+    settings.distortionAmount = juce::jlimit(0.0f, 0.70f, 0.08f + amount * 0.42f);
+    settings.chorusDepth = juce::jlimit(0.0f, 1.0f, 0.12f + amount * 0.48f);
+    settings.chorusMix = juce::jlimit(0.0f, 1.0f, 0.10f + amount * 0.38f);
+    settings.chorusRate = juce::jlimit(0.1f, 10.0f, 0.25f + amount * 1.10f);
+    settings.delayTimeMs = juce::jlimit(1.0f, 900.0f, 90.0f + amount * 410.0f);
+    settings.delayFeedback = juce::jlimit(0.0f, 0.75f, 0.12f + amount * 0.36f);
+    settings.delayMix = juce::jlimit(0.0f, 0.65f, 0.06f + amount * 0.30f);
+    settings.delayDamping = juce::jlimit(0.0f, 1.0f, 0.30f + amount * 0.25f);
+    settings.delayModulation = juce::jlimit(0.0f, 1.0f, 0.04f + amount * 0.38f);
+    settings.reverbSize = juce::jlimit(0.0f, 1.0f, 0.30f + amount * 0.62f);
+    settings.reverbDamping = juce::jlimit(0.0f, 1.0f, 0.28f + amount * 0.30f);
+    settings.reverbMix = juce::jlimit(0.0f, 0.80f, 0.10f + amount * 0.58f);
+    settings.reverbModulation = juce::jlimit(0.0f, 1.0f, 0.05f + amount * 0.70f);
+    settings.masterMidDrive = juce::jlimit(0.0f, 1.8f, 0.18f + amount * 0.92f);
+    settings.masterSideDrive = juce::jlimit(0.0f, 1.8f, 0.12f + amount * 0.78f);
+    settings.masterWidth = juce::jlimit(0.5f, 2.0f, 1.0f + amount * 0.50f);
+    return settings;
 }
 
 VoiceParameters CorvusInstrumentProcessor::currentVoiceParameters() const
@@ -65,6 +115,69 @@ void CorvusInstrumentProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     synthEngine.render(buffer, midi, currentVoiceParameters());
     for (auto channel = 2; channel < buffer.getNumChannels(); ++channel)
         buffer.clear(channel, 0, buffer.getNumSamples());
+
+    if (dryBuffer.getNumSamples() < buffer.getNumSamples())
+        dryBuffer.setSize(2, buffer.getNumSamples(), false, false, true);
+    for (auto channel = 0; channel < 2; ++channel)
+        dryBuffer.copyFrom(channel, 0, buffer, channel, 0, buffer.getNumSamples());
+
+    fxAmount.setTargetValue(apvts.getRawParameterValue("fx_amount")->load());
+    flightAmount.setTargetValue(apvts.getRawParameterValue("flight")->load());
+    const auto settings = settingsForFlight(flightAmount.getCurrentValue());
+    flightAmount.skip(buffer.getNumSamples());
+
+    effects->distortion.beginBlock(settings.distortionAmount);
+    effects->chorus.beginBlock(
+        settings.chorusDepth, settings.chorusMix, settings.chorusRate);
+    effects->delay.beginBlock(settings.delayDamping);
+    effects->reverb.beginBlock(
+        settings.reverbSize, settings.reverbDamping, settings.reverbMix,
+        settings.reverbModulation, 1.0f, 5.0f + settings.reverbSize * 40.0f);
+    effects->master.beginBlock();
+
+    for (auto sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        auto processedLeft = dryBuffer.getSample(0, sample);
+        auto processedRight = dryBuffer.getSample(1, sample);
+        float nextLeft = 0.0f;
+        float nextRight = 0.0f;
+
+        effects->distortion.process(
+            processedLeft, processedRight, nextLeft, nextRight);
+        processedLeft = nextLeft;
+        processedRight = nextRight;
+
+        processedLeft = effects->chorus.process(
+            processedLeft, 0, settings.chorusRate, settings.chorusDepth,
+            settings.chorusDepth * 0.25f);
+        processedRight = effects->chorus.process(
+            processedRight, 1, settings.chorusRate, settings.chorusDepth,
+            settings.chorusDepth * 0.25f);
+        effects->chorus.advanceWritePos();
+
+        effects->delay.processSample(
+            processedLeft, processedRight, nextLeft, nextRight,
+            settings.delayTimeMs, settings.delayFeedback, settings.delayMix,
+            0.35f, settings.delayModulation);
+        processedLeft = nextLeft;
+        processedRight = nextRight;
+
+        effects->reverb.processSample(
+            processedLeft, processedRight, nextLeft, nextRight);
+        processedLeft = nextLeft;
+        processedRight = nextRight;
+
+        effects->master.process(
+            processedLeft, processedRight, settings.masterMidDrive,
+            settings.masterSideDrive, settings.masterWidth);
+
+        const auto wet = fxAmount.getNextValue();
+        const auto dry = 1.0f - wet;
+        buffer.setSample(0, sample,
+                         dryBuffer.getSample(0, sample) * dry + processedLeft * wet);
+        buffer.setSample(1, sample,
+                         dryBuffer.getSample(1, sample) * dry + processedRight * wet);
+    }
 
     outputGain.setTargetValue(juce::Decibels::decibelsToGain(
         apvts.getRawParameterValue("output")->load()));
