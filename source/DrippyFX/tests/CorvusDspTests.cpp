@@ -1,6 +1,7 @@
 #include <JuceHeader.h>
 
 #include "dsp/CorvusEffects.h"
+#include "instrument/WavetableOscillator.h"
 
 #include <array>
 #include <cmath>
@@ -8,6 +9,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <vector>
 
 namespace
 {
@@ -119,7 +121,126 @@ public:
     }
 };
 
+class CorvusWavetableOscillatorTest final : public juce::UnitTest
+{
+public:
+    CorvusWavetableOscillatorTest()
+        : juce::UnitTest("Corvus wavetable oscillator")
+    {
+    }
+
+    void runTest() override
+    {
+        constexpr auto sampleRate = 48000.0;
+
+        beginTest("A4 frequency is accurate");
+        WavetableOscillator sine;
+        sine.prepare(sampleRate);
+        sine.setWave(FactoryWave::Sine);
+        sine.setFrequency(440.0f);
+        sine.reset();
+
+        auto crossings = 0;
+        auto previous = sine.process();
+        for (auto sample = 1; sample < static_cast<int>(sampleRate); ++sample)
+        {
+            const auto current = sine.process();
+            if (previous <= 0.0f && current > 0.0f)
+                ++crossings;
+            previous = current;
+        }
+        expectWithinAbsoluteError(static_cast<float>(crossings), 440.0f, 1.0f);
+
+        beginTest("factory waves remain finite and bounded");
+        for (const auto wave : { FactoryWave::Sine, FactoryWave::Triangle,
+                                 FactoryWave::Saw, FactoryWave::Square })
+        {
+            WavetableOscillator oscillator;
+            oscillator.prepare(sampleRate);
+            oscillator.setWave(wave);
+            oscillator.setFrequency(997.0f);
+            oscillator.reset(0.123f);
+            for (auto sample = 0; sample < 8192; ++sample)
+            {
+                const auto value = oscillator.process();
+                expect(std::isfinite(value));
+                expect(value >= -1.01f && value <= 1.01f);
+            }
+        }
+
+        beginTest("reset phase is deterministic");
+        WavetableOscillator first;
+        WavetableOscillator second;
+        for (auto* oscillator : { &first, &second })
+        {
+            oscillator->prepare(sampleRate);
+            oscillator->setWave(FactoryWave::Saw);
+            oscillator->setFrequency(731.0f);
+            oscillator->reset(0.375f);
+        }
+        for (auto sample = 0; sample < 4096; ++sample)
+            expectWithinAbsoluteError(first.process(), second.process(), 1.0e-7f);
+
+        beginTest("invalid frequency fails to silence");
+        first.setFrequency(-1.0f);
+        expectEquals(first.process(), 0.0f);
+        first.setFrequency(24001.0f);
+        expectEquals(first.process(), 0.0f);
+
+        beginTest("high saw suppresses out-of-band aliases");
+        constexpr auto fftOrder = 12;
+        constexpr auto fftSize = 1 << fftOrder;
+        constexpr auto fundamentalBin = 389;
+        constexpr auto frequency = static_cast<float>(fundamentalBin * sampleRate / fftSize);
+
+        WavetableOscillator bandLimited;
+        bandLimited.prepare(sampleRate);
+        bandLimited.setWave(FactoryWave::Saw);
+        bandLimited.setFrequency(frequency);
+        bandLimited.reset();
+
+        std::array<float, fftSize * 2> bandLimitedSpectrum {};
+        std::array<float, fftSize * 2> naiveSpectrum {};
+        auto naivePhase = 0.0f;
+        const auto phaseIncrement = frequency / static_cast<float>(sampleRate);
+        for (auto sample = 0; sample < fftSize; ++sample)
+        {
+            bandLimitedSpectrum[static_cast<std::size_t>(sample)] = bandLimited.process();
+            naiveSpectrum[static_cast<std::size_t>(sample)] = naivePhase * 2.0f - 1.0f;
+            naivePhase += phaseIncrement;
+            naivePhase -= std::floor(naivePhase);
+        }
+
+        juce::dsp::FFT fft(fftOrder);
+        fft.performFrequencyOnlyForwardTransform(bandLimitedSpectrum.data(), true);
+        fft.performFrequencyOnlyForwardTransform(naiveSpectrum.data(), true);
+
+        auto outOfBandEnergy = [=](const auto& spectrum)
+        {
+            auto energy = 0.0;
+            for (auto bin = 1; bin < fftSize / 2; ++bin)
+            {
+                auto expectedHarmonic = false;
+                for (auto harmonic = 1; harmonic * fundamentalBin < fftSize / 2; ++harmonic)
+                    expectedHarmonic = expectedHarmonic || bin == harmonic * fundamentalBin;
+                if (!expectedHarmonic)
+                {
+                    const auto magnitude = static_cast<double>(spectrum[static_cast<std::size_t>(bin)]);
+                    energy += magnitude * magnitude;
+                }
+            }
+            return energy;
+        };
+
+        const auto bandLimitedAliasEnergy = outOfBandEnergy(bandLimitedSpectrum);
+        const auto naiveAliasEnergy = outOfBandEnergy(naiveSpectrum);
+        expect(bandLimitedAliasEnergy < naiveAliasEnergy * 0.20,
+               "band-limited alias energy must be less than 20% of the naive saw");
+    }
+};
+
 CorvusEffectsBaselineTest corvusEffectsBaselineTest;
+CorvusWavetableOscillatorTest corvusWavetableOscillatorTest;
 } // namespace
 
 int main()

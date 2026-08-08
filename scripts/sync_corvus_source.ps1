@@ -12,6 +12,7 @@ $relativePaths = @(
     'CMakeLists.txt',
     'PluginProcessor.h',
     'dsp\CorvusEffects.h',
+    'instrument\WavetableOscillator.h',
     'tests\CorvusDspTests.cpp'
 )
 
