@@ -33,6 +33,8 @@ juce_add_plugin(DrippyFX
     VST3_CATEGORIES "Fx" "Dynamics" "Modulation" "Reverb" "Delay"
 )
 
+juce_generate_juce_header(DrippyFX)
+
 # Source files
 target_sources(DrippyFX
     PRIVATE
@@ -66,4 +68,45 @@ if(MSVC)
     target_compile_options(DrippyFX PRIVATE /W4 /fp:fast /arch:AVX2)
 else()
     target_compile_options(DrippyFX PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# Deterministic DSP regression harness. This is a separate console target so
+# the existing FX plug-in identity and build products remain untouched.
+juce_add_console_app(CorvusDSPTests
+    PRODUCT_NAME "Corvus DSP Tests"
+)
+
+juce_generate_juce_header(CorvusDSPTests)
+
+target_sources(CorvusDSPTests
+    PRIVATE
+        tests/CorvusDspTests.cpp
+)
+
+target_include_directories(CorvusDSPTests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_compile_definitions(CorvusDSPTests
+    PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0
+        JUCE_DISPLAY_SPLASH_SCREEN=0
+        JUCE_REPORT_APP_USAGE=0
+)
+
+target_link_libraries(CorvusDSPTests
+    PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
+if(MSVC)
+    target_compile_options(CorvusDSPTests PRIVATE /W4 /fp:fast /arch:AVX2)
+else()
+    target_compile_options(CorvusDSPTests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
