@@ -1,5 +1,6 @@
 #include "CorvusInstrumentProcessor.h"
 #include "CorvusInstrumentEditor.h"
+#include "CorvusInstrumentPresets.h"
 #include "../dsp/CorvusEffects.h"
 
 #include <array>
@@ -28,9 +29,50 @@ CorvusInstrumentProcessor::CorvusInstrumentProcessor()
       apvts(*this, &undoManager, stateRoot, createParameterLayout()),
       effects(std::make_unique<EffectsCore>())
 {
+    setCurrentProgram(0);
 }
 
 CorvusInstrumentProcessor::~CorvusInstrumentProcessor() = default;
+
+int CorvusInstrumentProcessor::getNumPrograms()
+{
+    return static_cast<int>(corvusInstrumentPresets.size());
+}
+
+int CorvusInstrumentProcessor::getCurrentProgram()
+{
+    return currentProgram;
+}
+
+void CorvusInstrumentProcessor::setCurrentProgram(int index)
+{
+    if (index < 0 || index >= getNumPrograms())
+        return;
+
+    const auto& preset = corvusInstrumentPresets[static_cast<std::size_t>(index)];
+    auto setPhysicalValue = [this](const juce::String& parameterId, float value)
+    {
+        if (auto* parameter = apvts.getParameter(parameterId))
+            parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+    };
+
+    setPhysicalValue("osc_wave", static_cast<float>(preset.wave));
+    setPhysicalValue("attack", preset.attack);
+    setPhysicalValue("decay", preset.decay);
+    setPhysicalValue("sustain", preset.sustain);
+    setPhysicalValue("release", preset.release);
+    setPhysicalValue("fx_amount", preset.fxAmount);
+    setPhysicalValue("flight", preset.flight);
+    setPhysicalValue("output", preset.outputDb);
+    currentProgram = index;
+}
+
+const juce::String CorvusInstrumentProcessor::getProgramName(int index)
+{
+    if (index < 0 || index >= getNumPrograms())
+        return {};
+    return corvusInstrumentPresets[static_cast<std::size_t>(index)].name;
+}
 
 void CorvusInstrumentProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
@@ -203,6 +245,7 @@ void CorvusInstrumentProcessor::getStateInformation(juce::MemoryBlock& destinati
 {
     auto state = apvts.copyState();
     state.setProperty("schemaVersion", stateSchemaVersion, nullptr);
+    state.setProperty("currentProgram", currentProgram, nullptr);
     juce::MemoryOutputStream stream(destination, false);
     state.writeToStream(stream);
 }
@@ -220,7 +263,12 @@ void CorvusInstrumentProcessor::setStateInformation(const void* data, int sizeIn
             != stateSchemaVersion)
         return;
 
+    const auto restoredProgram = static_cast<int>(candidate.getProperty("currentProgram", 0));
+    if (restoredProgram < 0 || restoredProgram >= getNumPrograms())
+        return;
+
     apvts.replaceState(candidate);
+    currentProgram = restoredProgram;
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout

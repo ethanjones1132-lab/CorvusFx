@@ -14,6 +14,7 @@ $relativePaths = @(
     'dsp\CorvusEffects.h',
     'instrument\CorvusInstrumentEditor.cpp',
     'instrument\CorvusInstrumentEditor.h',
+    'instrument\CorvusInstrumentPresets.h',
     'instrument\CorvusInstrumentProcessor.cpp',
     'instrument\CorvusInstrumentProcessor.h',
     'instrument\CorvusSynthEngine.h',

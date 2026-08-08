@@ -624,6 +624,118 @@ public:
             }
             hasPreviousBlock = true;
         }
+
+        beginTest("five signature programs expose stable host names");
+        CorvusInstrumentProcessor presetProcessor;
+        const std::array<juce::String, 5> expectedProgramNames {
+            "Dawn Choir", "Raven Glass", "Ashen Sky",
+            "Northern Signal", "Cathedral Drift"
+        };
+        expectEquals(presetProcessor.getNumPrograms(),
+                     static_cast<int>(expectedProgramNames.size()));
+        for (std::size_t index = 0; index < expectedProgramNames.size(); ++index)
+        {
+            presetProcessor.setCurrentProgram(static_cast<int>(index));
+            expectEquals(presetProcessor.getCurrentProgram(), static_cast<int>(index));
+            expectEquals(presetProcessor.getProgramName(static_cast<int>(index)),
+                         expectedProgramNames[index]);
+        }
+
+        beginTest("program recall survives versioned state round trip");
+        presetProcessor.setCurrentProgram(3);
+        std::array<float, parameterIds.size()> recalledValues {};
+        for (std::size_t index = 0; index < parameterIds.size(); ++index)
+            recalledValues[index]
+                = presetProcessor.apvts.getParameter(parameterIds[index])->getValue();
+        juce::MemoryBlock recalledState;
+        presetProcessor.getStateInformation(recalledState);
+        presetProcessor.setCurrentProgram(0);
+        presetProcessor.setStateInformation(
+            recalledState.getData(), static_cast<int>(recalledState.getSize()));
+        expectEquals(presetProcessor.getCurrentProgram(), 3);
+        for (std::size_t index = 0; index < parameterIds.size(); ++index)
+            expectWithinAbsoluteError(
+                presetProcessor.apvts.getParameter(parameterIds[index])->getValue(),
+                recalledValues[index], 1.0e-6f);
+
+        auto renderProgram = [&](int program, bool forceDry)
+        {
+            CorvusInstrumentProcessor renderedProcessor;
+            renderedProcessor.setCurrentProgram(program);
+            if (forceDry)
+                setPhysicalValue(renderedProcessor, "fx_amount", 0.0f);
+            renderedProcessor.prepareToPlay(48000.0, 512);
+            std::vector<float> fixture(8192, 0.0f);
+            juce::AudioBuffer<float> blockBuffer(2, 512);
+            for (auto block = 0; block < 16; ++block)
+            {
+                juce::MidiBuffer chordMidi;
+                if (block == 0)
+                {
+                    chordMidi.addEvent(juce::MidiMessage::noteOn(1, 57, 0.75f), 0);
+                    chordMidi.addEvent(juce::MidiMessage::noteOn(1, 60, 0.68f), 0);
+                    chordMidi.addEvent(juce::MidiMessage::noteOn(1, 64, 0.62f), 0);
+                }
+                renderedProcessor.processBlock(blockBuffer, chordMidi);
+                for (auto sample = 0; sample < blockBuffer.getNumSamples(); ++sample)
+                    fixture[static_cast<std::size_t>(block * 512 + sample)]
+                        = blockBuffer.getSample(0, sample);
+            }
+            return fixture;
+        };
+
+        beginTest("every signature patch is finite, non-silent, and effects-native");
+        std::array<std::vector<float>, 5> wetFixtures;
+        for (auto program = 0; program < 5; ++program)
+        {
+            wetFixtures[static_cast<std::size_t>(program)]
+                = renderProgram(program, false);
+            const auto dryFixture = renderProgram(program, true);
+            auto wetEnergy = 0.0;
+            auto programDifferenceEnergy = 0.0;
+            auto programPeak = 0.0f;
+            for (std::size_t sample = 0; sample < dryFixture.size(); ++sample)
+            {
+                const auto wet = wetFixtures[static_cast<std::size_t>(program)][sample];
+                expect(std::isfinite(wet));
+                programPeak = std::max(programPeak, std::abs(wet));
+                wetEnergy += static_cast<double>(wet) * static_cast<double>(wet);
+                const auto difference = static_cast<double>(wet - dryFixture[sample]);
+                programDifferenceEnergy += difference * difference;
+            }
+            expect(programPeak <= 1.0f);
+            expect(wetEnergy > 1.0e-4);
+            expect(programDifferenceEnergy > 1.0e-3);
+            const auto programRms = std::sqrt(wetEnergy / dryFixture.size());
+            expect(programRms >= 0.07 && programRms <= 0.13,
+                   "signature patch RMS must stay inside the measured level window");
+            std::cout << "Corvus patch metric: "
+                      << expectedProgramNames[static_cast<std::size_t>(program)]
+                      << " peak=" << programPeak
+                      << " rms=" << programRms << '\n';
+        }
+
+        beginTest("signature patches render distinct deterministic fixtures");
+        const auto dawnChoirAgain = renderProgram(0, false);
+        for (std::size_t sample = 0; sample < dawnChoirAgain.size(); ++sample)
+            expectWithinAbsoluteError(dawnChoirAgain[sample], wetFixtures[0][sample],
+                                      1.0e-7f);
+        for (std::size_t firstProgram = 0; firstProgram < wetFixtures.size(); ++firstProgram)
+        {
+            for (std::size_t secondProgram = firstProgram + 1;
+                 secondProgram < wetFixtures.size(); ++secondProgram)
+            {
+                auto pairDifferenceEnergy = 0.0;
+                for (std::size_t sample = 0; sample < wetFixtures[firstProgram].size(); ++sample)
+                {
+                    const auto difference = static_cast<double>(
+                        wetFixtures[firstProgram][sample]
+                        - wetFixtures[secondProgram][sample]);
+                    pairDifferenceEnergy += difference * difference;
+                }
+                expect(pairDifferenceEnergy > 1.0e-3);
+            }
+        }
     }
 };
 
