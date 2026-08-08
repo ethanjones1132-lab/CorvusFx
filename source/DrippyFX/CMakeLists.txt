@@ -17,6 +17,11 @@ endif()
 
 add_subdirectory(${JUCE_PATH} JUCE)
 
+option(CORVUS_COPY_PLUGIN_AFTER_BUILD
+    "Copy built VST3 bundles to the system plug-in directory"
+    OFF
+)
+
 # Plugin configuration
 juce_add_plugin(DrippyFX
     COMPANY_NAME "DrippyFX"
@@ -25,7 +30,7 @@ juce_add_plugin(DrippyFX
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    COPY_PLUGIN_AFTER_BUILD TRUE
+    COPY_PLUGIN_AFTER_BUILD ${CORVUS_COPY_PLUGIN_AFTER_BUILD}
     PLUGIN_MANUFACTURER_CODE Drip
     PLUGIN_CODE Dfx1
     FORMATS VST3 AU Standalone
@@ -70,6 +75,55 @@ else()
     target_compile_options(DrippyFX PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+juce_add_plugin(CorvusInstrument
+    COMPANY_NAME "Corvus Audio"
+    BUNDLE_ID "com.corvusaudio.CorvusInstrument"
+    IS_SYNTH TRUE
+    NEEDS_MIDI_INPUT TRUE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    COPY_PLUGIN_AFTER_BUILD ${CORVUS_COPY_PLUGIN_AFTER_BUILD}
+    PLUGIN_MANUFACTURER_CODE Crvs
+    PLUGIN_CODE Cvi1
+    FORMATS VST3 Standalone
+    PRODUCT_NAME "Corvus Instrument"
+    VST3_CATEGORIES "Instrument" "Synth"
+)
+
+juce_generate_juce_header(CorvusInstrument)
+
+target_sources(CorvusInstrument
+    PRIVATE
+        instrument/CorvusInstrumentEditor.cpp
+        instrument/CorvusInstrumentProcessor.cpp
+)
+
+target_compile_definitions(CorvusInstrument
+    PUBLIC
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0
+        JUCE_DISPLAY_SPLASH_SCREEN=0
+        JUCE_REPORT_APP_USAGE=0
+)
+
+target_link_libraries(CorvusInstrument
+    PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags
+)
+
+if(MSVC)
+    target_compile_options(CorvusInstrument PRIVATE /W4 /fp:fast /arch:AVX2)
+else()
+    target_compile_options(CorvusInstrument PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 # Deterministic DSP regression harness. This is a separate console target so
 # the existing FX plug-in identity and build products remain untouched.
 juce_add_console_app(CorvusDSPTests
@@ -80,6 +134,8 @@ juce_generate_juce_header(CorvusDSPTests)
 
 target_sources(CorvusDSPTests
     PRIVATE
+        instrument/CorvusInstrumentEditor.cpp
+        instrument/CorvusInstrumentProcessor.cpp
         tests/CorvusDspTests.cpp
 )
 

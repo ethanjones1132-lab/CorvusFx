@@ -2,6 +2,7 @@
 
 #include "dsp/CorvusEffects.h"
 #include "instrument/CorvusSynthEngine.h"
+#include "instrument/CorvusInstrumentProcessor.h"
 #include "instrument/CorvusVoice.h"
 #include "instrument/WavetableOscillator.h"
 
@@ -408,9 +409,103 @@ public:
     }
 };
 
+class CorvusInstrumentProcessorTest final : public juce::UnitTest
+{
+public:
+    CorvusInstrumentProcessorTest()
+        : juce::UnitTest("Corvus instrument processor")
+    {
+    }
+
+    void runTest() override
+    {
+        CorvusInstrumentProcessor processor;
+
+        beginTest("instrument identity and buses are distinct");
+        expectEquals(processor.getName(), juce::String("Corvus Instrument"));
+        expectEquals(processor.getTotalNumInputChannels(), 0);
+        expectEquals(processor.getTotalNumOutputChannels(), 2);
+        expect(processor.acceptsMidi());
+        expect(!processor.producesMidi());
+        expect(!processor.isMidiEffect());
+
+        beginTest("vertical-slice parameter contract is complete");
+        const std::array<juce::String, 8> parameterIds {
+            "osc_wave", "attack", "decay", "sustain", "release",
+            "fx_amount", "flight", "output"
+        };
+        for (const auto& parameterId : parameterIds)
+            expect(processor.apvts.getParameter(parameterId) != nullptr,
+                   "missing parameter: " + parameterId);
+
+        beginTest("state round trip restores every parameter");
+        std::array<float, parameterIds.size()> expectedValues {};
+        for (std::size_t index = 0; index < parameterIds.size(); ++index)
+        {
+            auto* parameter = processor.apvts.getParameter(parameterIds[index]);
+            const auto value = static_cast<float>(index + 1) / 10.0f;
+            parameter->setValueNotifyingHost(value);
+            expectedValues[index] = parameter->getValue();
+        }
+
+        juce::MemoryBlock state;
+        processor.getStateInformation(state);
+        const auto stateTree = juce::ValueTree::readFromData(state.getData(), state.getSize());
+        expect(stateTree.hasType("CorvusInstrumentState"));
+        expectEquals(static_cast<int>(stateTree.getProperty("schemaVersion", 0)), 1);
+
+        for (const auto& parameterId : parameterIds)
+            processor.apvts.getParameter(parameterId)->setValueNotifyingHost(0.0f);
+        processor.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+        for (std::size_t index = 0; index < parameterIds.size(); ++index)
+            expectWithinAbsoluteError(
+                processor.apvts.getParameter(parameterIds[index])->getValue(),
+                expectedValues[index], 1.0e-6f);
+
+        beginTest("invalid state leaves current parameters unchanged");
+        auto* flight = processor.apvts.getParameter("flight");
+        const auto flightBeforeInvalidState = flight->getValue();
+        juce::ValueTree wrongRoot("NotCorvusInstrumentState");
+        wrongRoot.setProperty("schemaVersion", 1, nullptr);
+        juce::MemoryOutputStream wrongRootData;
+        wrongRoot.writeToStream(wrongRootData);
+        processor.setStateInformation(wrongRootData.getData(),
+                                      static_cast<int>(wrongRootData.getDataSize()));
+        expectWithinAbsoluteError(flight->getValue(), flightBeforeInvalidState, 1.0e-7f);
+
+        auto unsupportedState = stateTree.createCopy();
+        unsupportedState.setProperty("schemaVersion", 99, nullptr);
+        juce::MemoryOutputStream unsupportedData;
+        unsupportedState.writeToStream(unsupportedData);
+        processor.setStateInformation(unsupportedData.getData(),
+                                      static_cast<int>(unsupportedData.getDataSize()));
+        expectWithinAbsoluteError(flight->getValue(), flightBeforeInvalidState, 1.0e-7f);
+
+        beginTest("MIDI renders finite stereo output without an input bus");
+        processor.prepareToPlay(48000.0, 512);
+        juce::AudioBuffer<float> output(2, 512);
+        output.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+        processor.processBlock(output, midi);
+        auto peak = 0.0f;
+        for (auto channel = 0; channel < output.getNumChannels(); ++channel)
+        {
+            for (auto sample = 0; sample < output.getNumSamples(); ++sample)
+            {
+                const auto value = output.getSample(channel, sample);
+                expect(std::isfinite(value));
+                peak = std::max(peak, std::abs(value));
+            }
+        }
+        expect(peak > 1.0e-4f);
+    }
+};
+
 CorvusEffectsBaselineTest corvusEffectsBaselineTest;
 CorvusWavetableOscillatorTest corvusWavetableOscillatorTest;
 CorvusVoiceAndEngineTest corvusVoiceAndEngineTest;
+CorvusInstrumentProcessorTest corvusInstrumentProcessorTest;
 } // namespace
 
 int main()
