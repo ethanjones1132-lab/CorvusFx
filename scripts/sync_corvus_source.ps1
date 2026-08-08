@@ -10,6 +10,8 @@ $ErrorActionPreference = 'Stop'
 
 $relativePaths = @(
     'CMakeLists.txt',
+    'PluginProcessor.h',
+    'dsp\CorvusEffects.h',
     'tests\CorvusDspTests.cpp'
 )
 
