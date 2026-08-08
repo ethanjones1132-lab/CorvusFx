@@ -1,6 +1,8 @@
 #include <JuceHeader.h>
 
 #include "dsp/CorvusEffects.h"
+#include "instrument/CorvusSynthEngine.h"
+#include "instrument/CorvusVoice.h"
 #include "instrument/WavetableOscillator.h"
 
 #include <array>
@@ -239,8 +241,176 @@ public:
     }
 };
 
+class CorvusVoiceAndEngineTest final : public juce::UnitTest
+{
+public:
+    CorvusVoiceAndEngineTest()
+        : juce::UnitTest("Corvus voice and engine")
+    {
+    }
+
+    void runTest() override
+    {
+        constexpr auto sampleRate = 48000.0;
+        VoiceParameters voiceParameters;
+        voiceParameters.attackSeconds = 0.0f;
+        voiceParameters.decaySeconds = 0.0f;
+        voiceParameters.sustainLevel = 1.0f;
+        voiceParameters.releaseSeconds = 0.01f;
+        voiceParameters.wave = FactoryWave::Sine;
+
+        beginTest("voice renders A4 and releases to silence");
+        CorvusVoice voice;
+        voice.prepare(sampleRate);
+        voice.startNote(69, 1.0f, voiceParameters, 1);
+        std::vector<float> left(static_cast<std::size_t>(sampleRate), 0.0f);
+        std::vector<float> right(static_cast<std::size_t>(sampleRate), 0.0f);
+        voice.render(left.data(), right.data(), 0, static_cast<int>(left.size()));
+
+        auto crossings = 0;
+        for (std::size_t sample = 1; sample < left.size(); ++sample)
+        {
+            if (left[sample - 1] <= 0.0f && left[sample] > 0.0f)
+                ++crossings;
+            expect(std::isfinite(left[sample]));
+            expectWithinAbsoluteError(left[sample], right[sample], 1.0e-7f);
+        }
+        expectWithinAbsoluteError(static_cast<float>(crossings), 440.0f, 1.0f);
+
+        voice.stopNote(true);
+        std::array<float, 2048> releaseLeft {};
+        std::array<float, 2048> releaseRight {};
+        voice.render(releaseLeft.data(), releaseRight.data(), 0,
+                     static_cast<int>(releaseLeft.size()));
+        expect(!voice.isActive());
+        expectWithinAbsoluteError(releaseLeft.back(), 0.0f, 1.0e-7f);
+
+        beginTest("velocity scales voice amplitude");
+        CorvusVoice quietVoice;
+        CorvusVoice loudVoice;
+        quietVoice.prepare(sampleRate);
+        loudVoice.prepare(sampleRate);
+        quietVoice.startNote(69, 0.25f, voiceParameters, 1);
+        loudVoice.startNote(69, 1.0f, voiceParameters, 1);
+        std::array<float, 512> quietLeft {};
+        std::array<float, 512> quietRight {};
+        std::array<float, 512> loudLeft {};
+        std::array<float, 512> loudRight {};
+        quietVoice.render(quietLeft.data(), quietRight.data(), 0, 512);
+        loudVoice.render(loudLeft.data(), loudRight.data(), 0, 512);
+        const auto quietPeak = *std::max_element(
+            quietLeft.begin(), quietLeft.end(),
+            [](float firstValue, float secondValue)
+            {
+                return std::abs(firstValue) < std::abs(secondValue);
+            });
+        const auto loudPeak = *std::max_element(
+            loudLeft.begin(), loudLeft.end(),
+            [](float firstValue, float secondValue)
+            {
+                return std::abs(firstValue) < std::abs(secondValue);
+            });
+        expectWithinAbsoluteError(std::abs(quietPeak / loudPeak), 0.25f, 0.02f);
+
+        beginTest("pitch wheel bends all active voices by two semitones");
+        CorvusSynthEngine bendEngine;
+        bendEngine.prepare(sampleRate, static_cast<int>(sampleRate));
+        juce::AudioBuffer<float> bendBuffer(2, static_cast<int>(sampleRate));
+        juce::MidiBuffer bendMidi;
+        bendMidi.addEvent(juce::MidiMessage::noteOn(1, 69, 1.0f), 0);
+        bendMidi.addEvent(juce::MidiMessage::pitchWheel(1, 16383), 0);
+        bendEngine.render(bendBuffer, bendMidi, voiceParameters);
+        auto bentCrossings = 0;
+        for (auto sample = 1; sample < bendBuffer.getNumSamples(); ++sample)
+            if (bendBuffer.getSample(0, sample - 1) <= 0.0f
+                && bendBuffer.getSample(0, sample) > 0.0f)
+                ++bentCrossings;
+        expectWithinAbsoluteError(static_cast<float>(bentCrossings), 494.0f, 1.0f);
+
+        beginTest("sustain defers release and panic is immediate");
+        CorvusSynthEngine engine;
+        engine.prepare(sampleRate, 512);
+        juce::AudioBuffer<float> buffer(2, 512);
+        juce::MidiBuffer sustainedMidi;
+        sustainedMidi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+        sustainedMidi.addEvent(juce::MidiMessage::controllerEvent(1, 64, 127), 64);
+        sustainedMidi.addEvent(juce::MidiMessage::noteOff(1, 60), 128);
+        engine.render(buffer, sustainedMidi, voiceParameters);
+        expect(engine.isNoteActive(60));
+        for (auto channel = 0; channel < buffer.getNumChannels(); ++channel)
+            for (auto sample = 0; sample < buffer.getNumSamples(); ++sample)
+                expect(std::isfinite(buffer.getSample(channel, sample)));
+
+        juce::MidiBuffer releasePedal;
+        releasePedal.addEvent(juce::MidiMessage::controllerEvent(1, 64, 0), 0);
+        engine.render(buffer, releasePedal, voiceParameters);
+        juce::MidiBuffer noMidi;
+        for (auto block = 0; block < 4; ++block)
+            engine.render(buffer, noMidi, voiceParameters);
+        expect(!engine.isNoteActive(60));
+
+        juce::MidiBuffer oneNote;
+        oneNote.addEvent(juce::MidiMessage::noteOn(1, 72, 1.0f), 0);
+        engine.render(buffer, oneNote, voiceParameters);
+        expect(engine.activeVoiceCount() == 1);
+        engine.panic();
+        expect(engine.activeVoiceCount() == 0);
+
+        beginTest("all notes off and all sound off leave no stuck notes");
+        juce::MidiBuffer controllerMidi;
+        controllerMidi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+        controllerMidi.addEvent(juce::MidiMessage::noteOn(1, 64, 1.0f), 1);
+        controllerMidi.addEvent(juce::MidiMessage::controllerEvent(1, 123, 0), 64);
+        engine.render(buffer, controllerMidi, voiceParameters);
+        for (auto block = 0; block < 4; ++block)
+            engine.render(buffer, noMidi, voiceParameters);
+        expect(engine.activeVoiceCount() == 0);
+
+        controllerMidi.clear();
+        controllerMidi.addEvent(juce::MidiMessage::noteOn(1, 67, 1.0f), 0);
+        controllerMidi.addEvent(juce::MidiMessage::controllerEvent(1, 120, 0), 32);
+        engine.render(buffer, controllerMidi, voiceParameters);
+        expect(engine.activeVoiceCount() == 0);
+
+        beginTest("seventeenth note steals the oldest released voice first");
+        VoiceParameters longRelease = voiceParameters;
+        longRelease.releaseSeconds = 10.0f;
+        CorvusSynthEngine releasedStealEngine;
+        releasedStealEngine.prepare(sampleRate, 64);
+        juce::AudioBuffer<float> smallBuffer(2, 64);
+        juce::MidiBuffer sixteenNotes;
+        for (auto index = 0; index < 16; ++index)
+            sixteenNotes.addEvent(juce::MidiMessage::noteOn(1, 20 + index, 0.8f), 0);
+        releasedStealEngine.render(smallBuffer, sixteenNotes, longRelease);
+        expect(releasedStealEngine.activeVoiceCount() == 16);
+
+        juce::MidiBuffer releaseOne;
+        releaseOne.addEvent(juce::MidiMessage::noteOff(1, 25), 0);
+        releasedStealEngine.render(smallBuffer, releaseOne, longRelease);
+        expect(releasedStealEngine.isNoteActive(25));
+
+        juce::MidiBuffer seventeenthNote;
+        seventeenthNote.addEvent(juce::MidiMessage::noteOn(1, 80, 0.8f), 0);
+        releasedStealEngine.render(smallBuffer, seventeenthNote, longRelease);
+        expect(!releasedStealEngine.isNoteActive(25));
+        expect(releasedStealEngine.isNoteActive(20));
+        expect(releasedStealEngine.isNoteActive(80));
+
+        beginTest("without a released voice the oldest active voice is stolen");
+        CorvusSynthEngine oldestStealEngine;
+        oldestStealEngine.prepare(sampleRate, 64);
+        oldestStealEngine.render(smallBuffer, sixteenNotes, longRelease);
+        oldestStealEngine.render(smallBuffer, seventeenthNote, longRelease);
+        expect(!oldestStealEngine.isNoteActive(20));
+        expect(oldestStealEngine.isNoteActive(21));
+        expect(oldestStealEngine.isNoteActive(80));
+        expect(oldestStealEngine.activeVoiceCount() == 16);
+    }
+};
+
 CorvusEffectsBaselineTest corvusEffectsBaselineTest;
 CorvusWavetableOscillatorTest corvusWavetableOscillatorTest;
+CorvusVoiceAndEngineTest corvusVoiceAndEngineTest;
 } // namespace
 
 int main()
