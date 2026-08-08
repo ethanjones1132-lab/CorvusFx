@@ -17,6 +17,7 @@ Build.CppClean.log
 
 # ── Fleet / tool state ───────────────────────────────────────────
 .hermes/
+.worktrees/
 
 # ── IDE / editor files ──────────────────────────────────────────
 .vs/
