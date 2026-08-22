@@ -1,6 +1,7 @@
 # ROADMAP.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-07-30 (afternoon pass)
+> **Last updated:** 2026-08-22 (Vantage product-builder — finish/update planning docs)
+> **Canonical location:** repo root. `docs/ROADMAP.md` is a historical archive (stale after ~2026-07-11).
 
 ## Phase 1: Foundation ✅ (2026-06-24 through 2026-07-09)
 
@@ -38,18 +39,38 @@
 - ✅ Undo/redo support (Ctrl+Z/Y keyboard shortcuts, UndoManager) — 2026-07-28 (`69f4bc1`)
 - ✅ **Randomize preset button** (RND button, 23-param randomization) — 2026-07-28 (`0ceb202`)
 - ✅ **Output trim control** (per-sample smoothed, 0-200%, UI TRIM knob, MIDI learnable) — 2026-07-30 (`bcce791`)
-- ⬜ Dark/light theme toggle (future stretch goal)
+- ⬜ Dark/light theme toggle — authorized in Vantage; waiting on product-development child permit
 
-## Phase 5: CPU Optimization 🔶 (In progress)
+## Phase 5: CPU Optimization 🔶 (Mostly complete; residual backlog)
 
 - ✅ Fix delay wow/flutter LFO rate bug (frozen LFO since 2026-07-08 API cleanup) — 2026-07-29 (`4333761`)
 - ✅ Hoist 6 sr-only std::exp()/block from beginBlock() to prepare() — 2026-07-29 (`6f94d28`)
 - ✅ Hoist 7 sr-only block constants from EnhancedDelay to prepare() — 2026-07-29 (`b8ebf9a`)
 - ✅ Cache msToSamples in ChorusBlockCoeffs (eliminates redundant double promotion in hot loop) — 2026-07-29 (`a79922c`)
 - ✅ Set NEEDS_MIDI_INPUT TRUE in CMakeLists.txt for MIDI Learn VST3 compatibility — 2026-07-30 (`d61ca20`)
-- Profile-guided optimization (PGO) build
-- SIMD for remaining hot inner loops (if profiling shows need)
-- Antiderivative antialiasing as alternative to oversampling
+- ⬜ Profile-guided optimization (PGO) build
+- ⬜ SIMD for remaining hot inner loops (if profiling shows need)
+- ⬜ Antiderivative antialiasing as alternative to oversampling
+
+## Phase 6: Corvus Instrument (next commercial product line) 🔶 Planned
+
+**Status:** Design approved 2026-08-08; vertical-slice plan written; **implementation not started**.
+
+| Track | Target | Status |
+|-------|--------|--------|
+| Shared DSP extraction | `source/DrippyFX/dsp/CorvusEffects.h` behavior-preserving within `1.0e-6f` fixture tolerance | ⬜ Open (Task 1–2 in plan) |
+| FX regression lock | Deterministic JUCE unit fixture + fingerprint for existing Corvus FX | ⬜ Open |
+| Instrument target | Separate VST3/Standalone synth; unique plugin codes; MIDI polyphony | ⬜ Open |
+| First voice engine | 16-voice, band-limited oscillator, amp envelope, global Corvus FX chain | ⬜ Open |
+| Signature patches | Five atmospheric factory patches for the vertical slice | ⬜ Open |
+| Explicit out of scope (slice) | Wavetable import, granular, sampling, sequencer, arpeggiator, custom UI, unlimited modulation | — |
+
+**Authoritative docs:**
+
+- Design: `docs/superpowers/specs/2026-08-08-corvus-instrument-design.md`
+- Plan: `docs/superpowers/plans/2026-08-08-corvus-instrument-vertical-slice.md`
+
+**Hard constraints (from plan):** edit git SoT under `source/DrippyFX` first; explicit sync to Downloads build tree; never replace Corvus FX host identity with the instrument; effects stay global after voice mix.
 
 ## Success Metrics
 
@@ -61,3 +82,5 @@
 | Per-sample transcendental calls | 0 | 0 ✅ |
 | Knobs with MIDI learn | 19/19 | 19/19 ✅ |
 | Block-level sr-only hoist (exp + arithmetic) | 16/16 | 16/16 ✅ |
+| Root planning docs current vs product reality | refreshed 2026-08-22 | current ✅ |
+| Instrument vertical slice tasks closed | 0 / plan open | slice shipped ⬜ |

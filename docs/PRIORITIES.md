@@ -1,5 +1,7 @@
 # Corvus VST (DrippyFX) — Priority Roadmap
 
+> **ARCHIVE / NOT SoT (banner added 2026-08-22).** Canonical ranked backlog lives at repo-root `PRIORITIES.md`. This long-form file stopped tracking product reality after 2026-07-26 (instrument plan, theme authorization, and later milestones are only on the root copy).
+
 Last updated: 2026-07-26 (overnight pass — comprehensive README.md overhaul: 18→36 presets, 14→24 parameters, updated technical docs)
 Working copy: `C:\\\\\\\\Projects\\\\\\\\Corvus VST`
 Source root: `C:\\\\\\\\Projects\\\\\\\\Corvus VST\\\\\\\\source\\\\\\\\DrippyFX\\\\\\\\` (git SoT; sync to Downloads tree for MSBuild)

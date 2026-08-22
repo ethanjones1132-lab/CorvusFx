@@ -1,5 +1,7 @@
 # Corvus VST (DrippyFX) — Roadmap
 
+> **ARCHIVE / NOT SoT (banner added 2026-08-22).** Canonical phased plan lives at repo-root `ROADMAP.md` (includes Phase 6 Corvus Instrument). This file stopped tracking product reality after ~2026-07-11.
+
 **Project:** Corvus VST / DrippyFX — JUCE 8.0.12 VST3 audio plugin suite  
 **Source:** `C:\\Users\\ethan\\Downloads\\DrippyFX_v1.0.0_Complete\\DrippyFX\\`  
 **Repo (binaries):** `C:\\Projects\\Corvus VST`  
