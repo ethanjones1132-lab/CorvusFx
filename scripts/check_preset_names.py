@@ -53,20 +53,42 @@ def extract_editor_items(edit_text: str):
     return pairs
 
 
-def extract_load_preset_comment_names(proc_text: str):
-    """Extract `// <n>: <Name>` designation comments from the loadPreset body."""
-    start = proc_text.find("void CorvusFXAudioProcessor::loadPreset(int index)")
+def extract_presets_table_region(proc_text: str) -> str:
+    """Return ONLY the `static const P presets[36]` table region (brace-matched).
+
+    Anchoring on the table instead of the whole loadPreset body means a
+    second `// N: Name`-shaped comment block appearing in a later body can
+    never contribute phantom rows.
+    """
+    start_marker = "static const P presets[36] = {"
+    start = proc_text.find(start_marker)
     if start == -1:
+        return ""
+    depth = 0
+    for i in range(start, len(proc_text)):
+        ch = proc_text[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return proc_text[start:i + 1]
+    return ""
+
+
+def extract_load_preset_comment_names(proc_text: str):
+    """Extract `// <n>: <Name>` designation comments from the presets table region."""
+    body = extract_presets_table_region(proc_text)
+    if not body:
         return []
-    body = proc_text[start:]
-    end = body.find("\nvoid ")
-    if end != -1:
-        body = body[:end]
     out = []
-    # name = everything up to an em-dash/hyphen separator after `// N: `
-    for m in re.finditer(r"//\s*(\d+):\s*([^-—]+)", body):
+    # name = everything up to the ` — ` em-dash description separator (spaces
+    # included so a hyphenated preset name like "Low-Fi" survives intact);
+    # a row with no em-dash description takes the whole comment text.
+    for m in re.finditer(r"^\s*//\s*(\d+):\s*(.*)$", body, flags=re.M):
         idx = int(m.group(1))
-        name = m.group(2).strip()
+        text = m.group(2).strip()
+        name = text.split(" — ")[0].strip()
         name = re.sub(r"[,.;:!\s]+$", "", name)
         out.append((idx, name))
     return out
