@@ -806,11 +806,18 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
     {
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
 
-        // Restore MIDI Learn mappings
-        if (auto* mapsXml = xml->getChildByName("midiMaps"))
+        // Clear MIDI Learn mappings unconditionally: a saved state from an
+        // older build (without a "midiMaps" child) must not silently keep the
+        // previous session's CC mappings armed.
         {
             const juce::ScopedLock lock(midiMapLock);
             midiMap.clear();
+        }
+
+        // Restore MIDI Learn mappings (only when the state carries them)
+        if (auto* mapsXml = xml->getChildByName("midiMaps"))
+        {
+            const juce::ScopedLock lock(midiMapLock);
             for (auto* mapXml : mapsXml->getChildWithTagNameIterator("map"))
             {
                 int cc = mapXml->getIntAttribute("cc");
