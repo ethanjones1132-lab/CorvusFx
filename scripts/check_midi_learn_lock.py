@@ -32,10 +32,13 @@ def strip_comments(src):
     src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
     return src
 
-def extract_fn(name, src=None):
+def extract_fn(name, src=None, pattern=None):
     src = src if src is not None else text
-    m = re.search(rf"bool\s+(?:\w+::)?{name.strip()}\s*\(", src) if name.startswith("hasMidi") \
-        else re.search(rf"void\s+(?:\w+::)?{name.strip()}\s*\(", src)
+    if pattern is not None:
+        m = re.search(pattern % re.escape(name) if "%s" in pattern else pattern, src)
+    else:
+        m = re.search(rf"bool\s+(?:\w+::)?{name.strip()}\s*\(", src) if name.startswith("hasMidi") \
+            else re.search(rf"void\s+(?:\w+::)?{name.strip()}\s*\(", src)
     if not m:
         fail(f"{name} definition missing")
     i = src.find("{", m.end())
@@ -103,6 +106,33 @@ if "for (const auto& [cc, pid] : midiMap)" not in hasm_code:
 print("midi-learn-lock: hasMidiMapping reads midiMap under midiMapLock")
 
 
+# (d) getMidiMappings (header inline) must NOT expose a reference to the live
+#     lock-guarded midiMap — it must return a snapshot copy taken under
+#     midiMapLock, so a future caller (e.g. a mapping-list UI) can never
+#     iterate the live map unsynchronized (same torn-map hazard
+#     hasMidiMapping had before iter-060).
+hdr_def = re.search(
+    r"std::map<int,\s*juce::String>\s+getMidiMappings\s*\(\s*\)\s*const", text)
+if not hdr_def:
+    fail("getMidiMappings no longer returns a std::map<int, juce::String> by "
+         "value — a reference return would leak the unsynchronized live map "
+         "(torn-map hazard on any future caller)")
+hdef, gline = extract_fn(
+    "getMidiMappings", strip_comments(text),
+    pattern=r"std::map<int,\s*juce::String>\s+getMidiMappings\s*\(\s*\)\s*const")
+if "midiMapLock" not in hdef:
+    fail(f"getMidiMappings (PluginProcessor.h:{gline}) builds its snapshot "
+         "without midiMapLock — the copy itself races the audio-thread insert")
+if "return midiMap" not in hdef:
+    fail("getMidiMappings no longer returns the midiMap snapshot")
+# and the old live-ref shape must be gone (comment-stripped, so a stale
+# commented-out reference return cannot fake the pin)
+if re.search(r"const\s+std::map<int,\s*juce::String>\s*&\s*getMidiMappings",
+             strip_comments(text)):
+    fail("getMidiMappings still exposes a live reference form of midiMap")
+print("midi-learn-lock: getMidiMappings returns a midiMapLock-guarded snapshot")
+
+
 # Negative self-probe (sibling style): mutate a temp copy, require rejection,
 # and guard against a no-op mutation so the probe cannot pass vacuously.
 def run_text(src_text):
@@ -140,6 +170,56 @@ for label, mutate in probes:
         fail(f"no-op probe ({label}): mutation did not change the source — "
              "the negative check is vacuous")
     verdict = run_text(mutated)
+    if verdict is None:
+        fail(f"negative probe '{label}' was NOT rejected — checker is vacuous")
+    print(f"midi-learn-lock: negative probe '{label}' rejected")
+
+# Negative self-probes for the getMidiMappings pin (header text): same
+# mutate-copy / require-rejection / no-op-guard discipline.
+GETMAPPINGS_BODY = (
+    "    std::map<int, juce::String> getMidiMappings() const\n"
+    "    {\n"
+    "        juce::CriticalSection& mapLock =\n"
+    "            const_cast<juce::CriticalSection&>(midiMapLock);\n"
+    "        const juce::ScopedLock lock(mapLock);\n"
+    "        return midiMap;\n"
+    "    }"
+)
+LIVE_REF_SIG = "const std::map<int, juce::String>& getMidiMappings() const { return midiMap; }"
+
+hdr_probes = [
+    ("lock stripped from getMidiMappings",
+     lambda s: s.replace(GETMAPPINGS_BODY,
+                         "    std::map<int, juce::String> getMidiMappings() const\n"
+                         "    {\n"
+                         "        return midiMap;\n"
+                         "    }")),
+    ("live-reference return restored on getMidiMappings",
+     lambda s: s.replace(GETMAPPINGS_BODY, LIVE_REF_SIG)),
+]
+
+for label, mutate in hdr_probes:
+    mutated_hdr = mutate(text)
+    if mutated_hdr == text:
+        fail(f"no-op probe ({label}): mutation did not change the header — "
+             "the negative check is vacuous")
+    stripped = strip_comments(mutated_hdr)
+    verdict = None
+    if not re.search(r"std::map<int,\s*juce::String>\s+getMidiMappings\s*\(\s*\)\s*const",
+                     stripped):
+        verdict = "by-value signature lost"
+    else:
+        try:
+            b, _ = extract_fn(
+                "getMidiMappings", stripped,
+                pattern=r"std::map<int,\s*juce::String>\s+getMidiMappings\s*\(\s*\)\s*const")
+        except SystemExit:
+            verdict = "getMidiMappings body missing"
+        else:
+            if "midiMapLock" not in b:
+                verdict = "unlocked getMidiMappings accepted"
+            if re.search(r"const\s+std::map<int,\s*juce::String>\s*&\s*getMidiMappings", stripped):
+                verdict = "live-reference return accepted"
     if verdict is None:
         fail(f"negative probe '{label}' was NOT rejected — checker is vacuous")
     print(f"midi-learn-lock: negative probe '{label}' rejected")

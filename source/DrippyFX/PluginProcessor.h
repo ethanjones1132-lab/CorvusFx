@@ -1629,7 +1629,17 @@ public:
     bool hasMidiMapping(const juce::String& paramID) const;
     void clearMidiMapping(const juce::String& paramID);
     void clearAllMidiMappings();
-    const std::map<int, juce::String>& getMidiMappings() const { return midiMap; }
+    // Returns a snapshot copy taken under midiMapLock. Never return a
+    // reference to the live map: it is mutated on the audio thread (learn
+    // capture) and the message thread (clear/restore) under midiMapLock, so
+    // any caller iterating it unsynchronized would race the insert/erase.
+    std::map<int, juce::String> getMidiMappings() const
+    {
+        juce::CriticalSection& mapLock =
+            const_cast<juce::CriticalSection&>(midiMapLock);
+        const juce::ScopedLock lock(mapLock);
+        return midiMap;
+    }
 
 
 private:
