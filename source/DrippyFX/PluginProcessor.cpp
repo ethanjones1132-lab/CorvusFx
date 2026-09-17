@@ -545,10 +545,12 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                     float normValue = msg.getControllerValue() / 127.0f;
                     if (midiLearnActive)
                     {
-                        // Capture this CC for the target parameter
+                        // Capture this CC for the target parameter, then skip
+                        // ONLY this CC's own mapping step: later CCs in the
+                        // same buffer still get their mappings applied.
                         midiMap[cc] = midiLearnParamID;
                         midiLearnActive = false;
-                        break;
+                        continue;
                     }
                     // Apply existing mapping
                     auto it = midiMap.find(cc);
