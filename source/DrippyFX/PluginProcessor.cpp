@@ -532,34 +532,53 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // MIDI Learn: apply CC to parameter mappings from MIDI input
     // When midiLearnActive is true, the next CC message captures that CC
     // for the target parameter (triggered by right-click in the UI).
+    if (!midiMessages.isEmpty())
     {
-        const juce::ScopedLock lock(midiMapLock);
-        if (!midiMessages.isEmpty())
+        // Snapshot the live map under midiMapLock, then release the lock
+        // BEFORE the apply path: setValueNotifyingHost must never run while
+        // this audio thread holds a lock the message thread needs for
+        // clearMidiMapping / clearAllMidiMappings / setStateInformation,
+        // and host notification latency must not sit inside the critical
+        // section. The snapshot is a handful of <int, String> entries.
+        std::map<int, juce::String> mapSnapshot;
+        int capturedCc = -1;
         {
-            for (const auto& metadata : midiMessages)
+            const juce::ScopedLock lock(midiMapLock);
+            if (midiLearnActive)
             {
-                auto msg = metadata.getMessage();
-                if (msg.isController())
+                // Capture the FIRST CC in the buffer for the target parameter;
+                // the flag clears so later CCs go through the apply path as
+                // normal. The full buffer keeps getting scanned (no loop
+                // exit), mirroring the skip-only-this-CC semantics.
+                for (const auto& metadata : midiMessages)
                 {
-                    int cc = msg.getControllerNumber();
-                    float normValue = msg.getControllerValue() / 127.0f;
-                    if (midiLearnActive)
+                    auto msg = metadata.getMessage();
+                    if (msg.isController() && capturedCc == -1)
                     {
-                        // Capture this CC for the target parameter, then skip
-                        // ONLY this CC's own mapping step: later CCs in the
-                        // same buffer still get their mappings applied.
-                        midiMap[cc] = midiLearnParamID;
+                        capturedCc = msg.getControllerNumber();
+                        midiMap[capturedCc] = midiLearnParamID;
                         midiLearnActive = false;
-                        continue;
-                    }
-                    // Apply existing mapping
-                    auto it = midiMap.find(cc);
-                    if (it != midiMap.end())
-                    {
-                        auto* p = apvts.getParameter(it->second);
-                        if (p) p->setValueNotifyingHost(normValue);
                     }
                 }
+            }
+            mapSnapshot = midiMap;
+        }
+        // Lock released — apply mappings from the snapshot. The captured CC
+        // skips its own mapping step (skip-only-this-CC semantics).
+        for (const auto& metadata : midiMessages)
+        {
+            auto msg = metadata.getMessage();
+            if (!msg.isController())
+                continue;
+            int cc = msg.getControllerNumber();
+            if (cc == capturedCc)
+                continue;
+            float normValue = msg.getControllerValue() / 127.0f;
+            auto it = mapSnapshot.find(cc);
+            if (it != mapSnapshot.end())
+            {
+                auto* p = apvts.getParameter(it->second);
+                if (p) p->setValueNotifyingHost(normValue);
             }
         }
     }

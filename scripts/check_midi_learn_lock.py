@@ -68,14 +68,17 @@ if "midiLearnActive = false" not in stop:
          "an armed listen could never be cancelled")
 print("midi-learn-lock: stopMidiLearn still clears midiLearnActive")
 
-# audio-thread capture branch must remain under midiMapLock and read both fields
+# audio-thread capture branch must remain under midiMapLock and record the
+# armed param ID into midiMap (either `midiMap[cc] = ...` legacy single-CC
+# shape or `midiMap[capturedCc] = ...` snapshot-lock-scope shape)
 cpp = (SRC / "PluginProcessor.cpp").read_text()
-cap = cpp.find("midiMap[cc] = midiLearnParamID")
-if cap == -1:
-    fail("audio-thread learn-capture branch (midiMap[cc] = midiLearnParamID) missing from PluginProcessor.cpp")
+mcap = re.search(r"midiMap\s*\[\s*(?:cc|capturedCc)\s*\]\s*=\s*midiLearnParamID", cpp)
+if not mcap:
+    fail("audio-thread learn-capture branch (midiMap[...] = midiLearnParamID) missing from PluginProcessor.cpp")
+cap = mcap.start()
 lock_site = cpp.rfind("midiMapLock", 0, cap)
 if lock_site == -1:
     fail("capture branch no longer runs inside a midiMapLock scope")
-if "midiLearnActive" not in cpp[cap - 400:cap]:
+if "midiLearnActive" not in cpp[max(0, cap - 3000):cap]:
     fail("capture branch no longer checks midiLearnActive — armed learn would fire on every CC")
 print("midi-learn-lock: audio-thread capture still reads both fields under midiMapLock")

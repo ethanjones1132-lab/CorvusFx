@@ -46,23 +46,27 @@ def find_capture_branch(text):
                 return m.start(), text[start:i + 1]
     return m.start(), None
 
-# ---------------------------------------------------------------- 1. no bare break in the capture branch
+# ---------------------------------------------------------------- 1. no bare break exiting the CC loop in the capture branch
+# (in the snapshot-lock-scope design the capture loop scans the whole
+# buffer without exiting; any bare break here would stop that scan)
 cap_start, cap_body = find_capture_branch(no_comments)
 if cap_body is None:
     failures.append("could not locate the midiLearnActive capture branch")
 else:
     if re.search(r"(?<!\w)break\s*;", cap_body):
         failures.append(
-            "capture branch contains a bare `break;` — it exits the CC loop "
-            "and swallows every later CC in the same audio buffer; use "
-            "`continue;` to skip only this CC's own mapping step"
+            "capture branch contains a bare `break;` — the capture loop must "
+            "scan the full buffer without exiting it"
         )
-    # ---------------------------------------------------------------- 3. continue present
-    if not re.search(r"(?<!\w)continue\s*;", cap_body):
+    # ---------------------------------------------------------------- 3. the captured CC still skips its own apply step
+    # Either `continue` inside the capture branch (legacy shape) or a
+    # `cc == capturedCc` guard in the apply loop (snapshot shape).
+    if not re.search(r"(?<!\w)continue\s*;", cap_body) and \
+       not re.search(r"cc\s*==\s*capturedCc", no_comments[cap_start:]):
         failures.append(
-            "capture branch does not `continue;` — without it the captured CC "
-            "falls through to the apply path, breaking the no-jump guarantee "
-            "and the skip-only-this-CC semantics"
+            "the captured CC no longer skips its own mapping step — need a "
+            "`continue` inside the capture branch or a `cc == capturedCc` "
+            "guard in the apply loop (skip-only-this-CC semantics)"
         )
 
 # 2. no jump inside the capture branch (iter-019 pin)
@@ -74,7 +78,7 @@ if cap_body is not None and "setValueNotifyingHost" in cap_body:
 
 # sanity: the capture branch still records the mapping
 if cap_body is not None and "midiMap[" not in cap_body:
-    failures.append("capture branch no longer writes midiMap[cc]")
+    failures.append("capture branch no longer writes midiMap[...]")
 
 # sanity: the loop still applies mappings for non-captured CCs
 apply_region = no_comments[cap_start:] if cap_start is not None else no_comments
@@ -88,5 +92,5 @@ if failures:
     sys.exit(1)
 
 print("OK: midi-learn capture skips only its own CC (no bare break, "
-      "no jump, continue present, other CCs still applied)")
+      "no jump, skip-captured-CC guard present, other CCs still applied)")
 sys.exit(0)
