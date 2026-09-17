@@ -111,8 +111,15 @@ struct Oversampling2x
         0.418265f,  0.088024f, 0.000000f, -0.006289f
     };
 
-    float stateL[FILTER_TAPS] = {};
-    float stateR[FILTER_TAPS] = {};
+    // Up- and down-conversion keep SEPARATE FIR history buffers.
+    // The downsample tail (odd-phase DSP output) must never feed back into
+    // the next call's upsampler as base-rate filter history — sharing one
+    // buffer parks dsp2 into the up-conversion state and smears the
+    // oversampled spectrum.
+    float upStateL[FILTER_TAPS] = {};
+    float upStateR[FILTER_TAPS] = {};
+    float downStateL[FILTER_TAPS] = {};
+    float downStateR[FILTER_TAPS] = {};
     int idx = 0;
     double sampleRate = 44100.0;
 
@@ -139,8 +146,10 @@ struct Oversampling2x
 
     void reset()
     {
-        std::memset(stateL, 0, sizeof(stateL));
-        std::memset(stateR, 0, sizeof(stateR));
+        std::memset(upStateL, 0, sizeof(upStateL));
+        std::memset(upStateR, 0, sizeof(upStateR));
+        std::memset(downStateL, 0, sizeof(downStateL));
+        std::memset(downStateR, 0, sizeof(downStateR));
         idx = 0;
     }
 
@@ -212,14 +221,14 @@ struct Oversampling2x
     void processSample(float inL, float inR, float& outL, float& outR, ProcessFn&& dsp)
     {
         // ── UP SAMPLE 2x: even phase ──
-        stateL[idx] = inL;
-        stateR[idx] = inR;
-        float upL_even = firSSE(stateL, idx);
-        float upR_even = firSSE(stateR, idx);
+        upStateL[idx] = inL;
+        upStateR[idx] = inR;
+        float upL_even = firSSE(upStateL, idx);
+        float upR_even = firSSE(upStateR, idx);
 
         // ── UP SAMPLE 2x: odd phase (half-band, only even taps) ──
-        float upL_odd = firHalfBandSSE(stateL, idx) * 2.0f;
-        float upR_odd = firHalfBandSSE(stateR, idx) * 2.0f;
+        float upL_odd = firHalfBandSSE(upStateL, idx) * 2.0f;
+        float upR_odd = firHalfBandSSE(upStateR, idx) * 2.0f;
 
         idx = (idx + 1) % FILTER_TAPS;
 
@@ -229,14 +238,14 @@ struct Oversampling2x
         dsp(upL_odd,  upR_odd,  dspL2, dspR2);
 
         // ── DOWN SAMPLE 2x: even phase ──
-        stateL[idx] = dspL1;
-        stateR[idx] = dspR1;
-        float downL_even = firSSE(stateL, idx);
-        float downR_even = firSSE(stateR, idx);
+        downStateL[idx] = dspL1;
+        downStateR[idx] = dspR1;
+        float downL_even = firSSE(downStateL, idx);
+        float downR_even = firSSE(downStateR, idx);
 
         // ── DOWN SAMPLE 2x: odd phase (half-band) ──
-        stateL[idx] = dspL2;
-        stateR[idx] = dspR2;
+        downStateL[idx] = dspL2;
+        downStateR[idx] = dspR2;
 
         idx = (idx + 1) % FILTER_TAPS;
 
@@ -251,9 +260,9 @@ struct Oversampling2x
     void processSampleMono(float in, float& out, ProcessFn&& dsp)
     {
         // ── UP SAMPLE 2x ──
-        stateL[idx] = in;  // reuse L state for mono
-        float up_even = firSSE(stateL, idx);
-        float up_odd = firHalfBandSSE(stateL, idx) * 2.0f;
+        upStateL[idx] = in;  // mono reuses the L (channel-0) state
+        float up_even = firSSE(upStateL, idx);
+        float up_odd = firHalfBandSSE(upStateL, idx) * 2.0f;
 
         idx = (idx + 1) % FILTER_TAPS;
 
@@ -263,10 +272,12 @@ struct Oversampling2x
         dsp(up_odd,  dsp2);
 
         // ── DOWN SAMPLE 2x ──
-        stateL[idx] = dsp1;
-        float down_even = firSSE(stateL, idx);
+        // Separate down-conversion state: the parked odd-phase DSP output
+        // must never become up-conversion filter history for the next call.
+        downStateL[idx] = dsp1;
+        float down_even = firSSE(downStateL, idx);
 
-        stateL[idx] = dsp2;
+        downStateL[idx] = dsp2;
 
         idx = (idx + 1) % FILTER_TAPS;
 
