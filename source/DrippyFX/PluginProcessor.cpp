@@ -824,7 +824,7 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
             {
                 int cc = mapXml->getIntAttribute("cc");
                 juce::String paramID = mapXml->getStringAttribute("param");
-                if (paramID.isNotEmpty())
+                if (paramID.isNotEmpty() && apvts.getParameter(paramID) != nullptr)
                     midiMap[cc] = paramID;
             }
         }

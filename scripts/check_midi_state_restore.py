@@ -12,11 +12,12 @@ Exit 0 = ok, 1 = violation with line-cited diagnostics.
 import re
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "source" / "DrippyFX"
 
-def fail(msg):
+def fail(msg) -> NoReturn:
     print(f"MIDI-STATE-RESTORE FAIL: {msg}")
     sys.exit(1)
 
@@ -61,3 +62,26 @@ print("midi-state-restore: the unconditional clear is under midiMapLock")
 if 'getIntAttribute("cc")' not in body or 'getStringAttribute("param")' not in body:
     fail("restore loop no longer reads cc/param attributes from <map> entries")
 print("midi-state-restore: repopulation still reads cc/param from saved <map> entries")
+
+# (c) the restore loop must filter param IDs that no longer exist in the APVTS
+#     — zombie mappings fire setValueNotifyingHost on nothing every CC message.
+restore_loop_m = re.search(r"for\s*\(\s*auto\*\s*mapXml\s*:\s*mapsXml->getChildWithTagNameIterator\(\"map\"\)\)", body)
+if not restore_loop_m:
+    fail("setStateInformation restore loop (getChildWithTagNameIterator(\"map\")) missing")
+loop_start = restore_loop_m.end()
+# find loop end by brace matching from the next '{'
+lb = body.find("{", loop_start)
+d = 0; k = lb
+while k < len(body):
+    if body[k] == "{": d += 1
+    elif body[k] == "}":
+        d -= 1
+        if d == 0: break
+    k += 1
+loop = body[lb:k + 1]
+# strip comments so commented-out code can't fake a pass
+code = re.sub(r"//[^\n]*", "", loop)
+if "apvts.getParameter" not in code or ("!= nullptr" not in code and "nullptr" not in code):
+    fail("restore loop does not filter param IDs against apvts.getParameter(...) != nullptr — "
+         "a renamed/removed parameter ID would restore a dead CC mapping")
+print("midi-state-restore: restore loop drops param IDs that no longer exist in the APVTS")
