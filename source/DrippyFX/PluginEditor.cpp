@@ -267,6 +267,9 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
 
 CorvusFXAudioProcessorEditor::~CorvusFXAudioProcessorEditor()
 {
+    // An armed MIDI-Learn is editor-lifetime UI state: kill it when the
+    // editor closes so a stray CC can't hijack a knob in a later session.
+    audioProcessor.stopMidiLearn();
     setLookAndFeel(nullptr);
 }
 

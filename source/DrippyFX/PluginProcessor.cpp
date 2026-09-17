@@ -548,8 +548,6 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                         // Capture this CC for the target parameter
                         midiMap[cc] = midiLearnParamID;
                         midiLearnActive = false;
-                        auto* p = apvts.getParameter(midiLearnParamID);
-                        if (p) p->setValueNotifyingHost(normValue);
                         break;
                     }
                     // Apply existing mapping
