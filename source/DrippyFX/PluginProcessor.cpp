@@ -820,6 +820,12 @@ void CorvusFXAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
 
+    // createXml() returns nullptr on a corrupt/cyclic copyState tree; skip
+    // serialization rather than dereferencing a null root element (mirrors
+    // the setStateInformation guard).
+    if (! xml)
+        return;
+
     // Save the A/B-compare snapshots with the state (abSlots child below).
     // Without this the two float[24] snapshots and the active slot live only
     // in memory, so reloading a project silently loses both saved snapshots.
