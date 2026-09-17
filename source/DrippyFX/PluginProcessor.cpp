@@ -379,6 +379,14 @@ void CorvusFXAudioProcessor::loadSlotA()
         auto* p = apvts.getParameter(abParamIds[i]);
         if (p) p->setValueNotifyingHost(snapshotA[i]);
     }
+    // A/B preset choice INTENTIONALLY STALE: loadSlotA restores the 24
+    // knob-level snapshot values only. Writing the "preset" id too would
+    // fire parameterChanged -> loadPreset, whose set() writes stomp every
+    // non-preset parameter (the post-preset tweaks this snapshot captured)
+    // back to the factory recipe, so the snapshot the user just restored is
+    // destroyed before it is audible. A/B compare is a knob-level restore,
+    // not a program change; the preset ComboBox may honestly follow the
+    // last-touched preset instead.
     abSlotIsA = true;
 }
 
@@ -390,6 +398,14 @@ void CorvusFXAudioProcessor::loadSlotB()
         auto* p = apvts.getParameter(abParamIds[i]);
         if (p) p->setValueNotifyingHost(snapshotB[i]);
     }
+    // A/B preset choice INTENTIONALLY STALE: loadSlotB restores the 24
+    // knob-level snapshot values only. Writing the "preset" id too would
+    // fire parameterChanged -> loadPreset, whose set() writes stomp every
+    // non-preset parameter (the post-preset tweaks this snapshot captured)
+    // back to the factory recipe, so the snapshot the user just restored is
+    // destroyed. A/B compare is a knob-level restore, not a program change;
+    // the preset ComboBox may honestly follow the last-touched preset
+    // instead.
     abSlotIsA = false;
 }
 
