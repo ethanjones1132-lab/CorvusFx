@@ -308,6 +308,13 @@ void CorvusFXAudioProcessor::changeProgramName(int, const juce::String&) {}
 // MIDI Learn: map management
 bool CorvusFXAudioProcessor::hasMidiMapping(const juce::String& paramID) const
 {
+    // The map is mutated on the audio thread (learn capture) and on the
+    // message thread (clear/restore) under midiMapLock; this reader runs on
+    // the message thread (knob context menu) and must take the same lock so
+    // an audio-thread insert during the iteration cannot tear the map.
+    juce::CriticalSection& mapLock =
+        const_cast<juce::CriticalSection&>(midiMapLock);
+    const juce::ScopedLock lock(mapLock);
     for (const auto& [cc, pid] : midiMap)
         if (pid == paramID) return true;
     return false;

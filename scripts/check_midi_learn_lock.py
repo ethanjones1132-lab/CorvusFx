@@ -12,6 +12,7 @@ Exit 0 = ok, 1 = violation with line-cited diagnostics.
 """
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,22 +32,24 @@ def strip_comments(src):
     src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
     return src
 
-def extract_fn(name):
-    m = re.search(rf"void\s+{name}\s*\(", text)
+def extract_fn(name, src=None):
+    src = src if src is not None else text
+    m = re.search(rf"bool\s+(?:\w+::)?{name.strip()}\s*\(", src) if name.startswith("hasMidi") \
+        else re.search(rf"void\s+(?:\w+::)?{name.strip()}\s*\(", src)
     if not m:
-        fail(f"{name} definition missing from PluginProcessor.h")
-    i = text.find("{", m.end())
+        fail(f"{name} definition missing")
+    i = src.find("{", m.end())
     if i == -1:
         fail(f"{name} has no {{ body")
     depth = 0; j = i
-    while j < len(text):
-        if text[j] == "{": depth += 1
-        elif text[j] == "}":
+    while j < len(src):
+        if src[j] == "{": depth += 1
+        elif src[j] == "}":
             depth -= 1
             if depth == 0: break
         j += 1
-    line = text[:m.start()].count("\n") + 1
-    return text[i:j + 1], line
+    line = src[:m.start()].count("\n") + 1
+    return src[i:j + 1], line
 
 # (a) startMidiLearn acquires midiMapLock (comments stripped so a code
 #     comment mentioning the lock cannot fake a pass)
@@ -82,3 +85,63 @@ if lock_site == -1:
 if "midiLearnActive" not in cpp[max(0, cap - 3000):cap]:
     fail("capture branch no longer checks midiLearnActive — armed learn would fire on every CC")
 print("midi-learn-lock: audio-thread capture still reads both fields under midiMapLock")
+
+# (c) hasMidiMapping (def in PluginProcessor.cpp) acquires midiMapLock before
+#     iterating the map: the map is mutated on the audio thread (learn capture)
+#     and message thread (clear/restore) under the lock; the editor's knob
+#     context menu (PluginEditor.cpp) calls this reader on the message thread,
+#     so an unlocked iteration races a concurrent std::map insert (UB).
+hasm, hline = extract_fn("hasMidiMapping", cpp)
+hasm_code = strip_comments(hasm)
+if "midiMapLock" not in hasm_code:
+    fail(f"hasMidiMapping (PluginProcessor.cpp:{hline}) iterates midiMap without "
+         "midiMapLock — audio-thread learn capture can insert mid-iteration and "
+         "tear the map while the knob context menu reads it")
+if "for (const auto& [cc, pid] : midiMap)" not in hasm_code:
+    fail("hasMidiMapping no longer scans the midiMap entries — the "
+         "Forget-MIDI-Mapping menu visibility check is broken")
+print("midi-learn-lock: hasMidiMapping reads midiMap under midiMapLock")
+
+
+# Negative self-probe (sibling style): mutate a temp copy, require rejection,
+# and guard against a no-op mutation so the probe cannot pass vacuously.
+def run_text(src_text):
+    """Run the hasMidiMapping assertions against a mutated source text.
+    Returns None on pass (all assertions hold) or a diagnostic string."""
+    try:
+        h, _ = extract_fn("hasMidiMapping", src_text)
+    except SystemExit:
+        return "hasMidiMapping missing"
+    h_code = strip_comments(h)
+    if "midiMapLock" not in h_code:
+        return "unlocked hasMidiMapping accepted"
+    if "for (const auto& [cc, pid] : midiMap)" not in h_code:
+        return "scan loop missing"
+    return None
+
+
+LOCK_BLOCK = (
+    "    juce::CriticalSection& mapLock =\n"
+    "        const_cast<juce::CriticalSection&>(midiMapLock);\n"
+    "    const juce::ScopedLock lock(mapLock);\n"
+)
+SCAN_LOOP = "for (const auto& [cc, pid] : midiMap)"
+
+probes = [
+    ("lock stripped from hasMidiMapping",
+     lambda s: s.replace(LOCK_BLOCK, "")),
+    ("scan loop stripped from hasMidiMapping",
+     lambda s: s.replace(SCAN_LOOP, "for (const auto& [cc, pid] : midiMapCopy)")),
+]
+
+for label, mutate in probes:
+    mutated = mutate(cpp)
+    if mutated == cpp:
+        fail(f"no-op probe ({label}): mutation did not change the source — "
+             "the negative check is vacuous")
+    verdict = run_text(mutated)
+    if verdict is None:
+        fail(f"negative probe '{label}' was NOT rejected — checker is vacuous")
+    print(f"midi-learn-lock: negative probe '{label}' rejected")
+print("midi-learn-lock: OK")
+
