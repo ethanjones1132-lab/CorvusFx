@@ -1701,6 +1701,11 @@ private:
     std::array<float, NUM_AB_PARAMS> snapshotA = {};
     std::array<float, NUM_AB_PARAMS> snapshotB = {};
     bool abSlotIsA = true;
+    // abSnapshotsPersisted: set true by setStateInformation when the host
+    // state carried an "abSlots" child, so the editor constructor can skip
+    // the blind reseed that would otherwise overwrite the restored
+    // snapshots with identical live values.
+    bool abSnapshotsPersisted = false;
     // MIDI Learn State (accessed across audio/message threads)
     std::atomic<bool> midiLearnActive{false};
     juce::String midiLearnParamID;

@@ -819,6 +819,10 @@ void CorvusFXAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
 
+    // Save the A/B-compare snapshots with the state (abSlots child below).
+    // Without this the two float[24] snapshots and the active slot live only
+    // in memory, so reloading a project silently loses both saved snapshots.
+
     // Save MIDI Learn mappings as a child element
     auto* mapsXml = xml->createNewChildElement("midiMaps");
     if (mapsXml)
@@ -832,6 +836,19 @@ void CorvusFXAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
         }
     }
 
+    // abSlots child: snapshotA/snapshotB as base64 binary floats,
+    // active slot as an int attribute.
+    if (auto* abXml = xml->createNewChildElement("abSlots"))
+    {
+        abXml->setAttribute("slot", abSlotIsA ? 1 : 0);
+        abXml->createNewChildElement("snapshotA")->setText(
+            juce::Base64::toBase64(snapshotA.data(),
+                static_cast<size_t>(NUM_AB_PARAMS) * sizeof(float)));
+        abXml->createNewChildElement("snapshotB")->setText(
+            juce::Base64::toBase64(snapshotB.data(),
+                static_cast<size_t>(NUM_AB_PARAMS) * sizeof(float)));
+    }
+
     copyXmlToBinary(*xml, destData);
 }
 
@@ -841,6 +858,38 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
     if (xml && xml->hasTagName(apvts.state.getType()))
     {
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
+
+        // Restore A/B-compare snapshots only when the state carries them.
+        // Older states (no "abSlots" child) leave abSnapshotsPersisted
+        // false so the editor constructor reseed keeps its legacy role:
+        // initialising both slots with the recall's parameter values.
+        // Restored slots reopen a saved A/B compare instead of leaving both
+        // slots in a state where a mere editor reopen destroys them.
+        abSnapshotsPersisted = false;
+        if (auto* abXml = xml->getChildByName("abSlots"))
+        {
+            juce::MemoryBlock aMB;
+            bool restoredA = false;
+            bool restoredB = false;
+            if (auto* aXml = abXml->getChildByName("snapshotA"))
+            {
+                aMB.loadFromBase64(aXml->getAllText());
+                restoredA = aMB.getSize() == static_cast<size_t>(NUM_AB_PARAMS) * sizeof(float);
+            }
+            juce::MemoryBlock bMB;
+            if (auto* bXml = abXml->getChildByName("snapshotB"))
+            {
+                bMB.loadFromBase64(bXml->getAllText());
+                restoredB = bMB.getSize() == static_cast<size_t>(NUM_AB_PARAMS) * sizeof(float);
+            }
+            if (restoredA && restoredB)
+            {
+                std::memcpy(snapshotA.data(), aMB.getData(), aMB.getSize());
+                std::memcpy(snapshotB.data(), bMB.getData(), bMB.getSize());
+                abSlotIsA = abXml->getIntAttribute("slot", 0) != 0;
+                abSnapshotsPersisted = true;
+            }
+        }
 
         // Clear MIDI Learn mappings unconditionally: a saved state from an
         // older build (without a "midiMaps" child) must not silently keep the

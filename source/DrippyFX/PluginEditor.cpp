@@ -262,10 +262,17 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     randomizeButton.onClick = [this] { audioProcessor.randomizePreset(); };
     addAndMakeVisible(randomizeButton);
 
-    // Default: A is active -- snapshot both slots with initial state
-    btnSlotA.setToggleState(true, juce::dontSendNotification);
-    audioProcessor.saveSlotA();
-    audioProcessor.saveSlotB();
+    // Default: A is active -- snapshot both slots with the restored init
+    // state, but ONLY when the processor didn't have saved snapshots
+    // restored by setStateInformation: state with an "abSlots" child
+    // already carries a saved A/B compare, and the blind reseed would
+    // overwrite both slots with the current (identical) live values.
+    if (!audioProcessor.abSnapshotsPersisted)
+    {
+        btnSlotA.setToggleState(true, juce::dontSendNotification);
+        audioProcessor.saveSlotA();
+        audioProcessor.saveSlotB();
+    }
 
     // Level meter
     addAndMakeVisible(levelMeter);
