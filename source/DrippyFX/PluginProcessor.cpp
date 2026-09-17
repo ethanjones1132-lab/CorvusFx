@@ -452,7 +452,6 @@ void CorvusFXAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     smoothMasterMidDrive.setTargetValue(apvts.getRawParameterValue("master_mid_drive")->load() / 100.0f);
     smoothMasterSideDrive.setTargetValue(apvts.getRawParameterValue("master_side_drive")->load() / 100.0f);
     smoothOutputTrim.setTargetValue(apvts.getRawParameterValue("output_trim")->load() / 100.0f);
-    smoothOutputTrim.setTargetValue(apvts.getRawParameterValue("output_trim")->load() / 100.0f);
 
     // Bypass crossfade gain init (click-free): 1.0 active, 0.0 dry pass-through.
     const float bDist  = apvts.getRawParameterValue("distortion_bypass")->load() > 0.5f ? 0.0f : 1.0f;
