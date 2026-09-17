@@ -79,6 +79,36 @@ else:
     if not re.search(r"\bidx\s*=\s*0\s*;", rb):
         errors.append("reset() no longer clears `idx` — the circular FIR index must restart at 0")
 
+    # ── 3. reset() ORDER: the four memsets must precede the `idx = 0` store ──
+    # A reorder that stores idx=0 before clearing the buffers leaves one filter
+    # pass consuming a stale tail through a wrapped index (click after
+    # re-prepare). Assert memset ordering by byte offset inside the reset body.
+    first_memset = rb.find("std::memset(")
+    if first_memset == -1:
+        errors.append("reset() contains no std::memset call sites at all — FIR history must be zeroed via memset before idx is cleared")
+    else:
+        memset_calls = [m.start() for m in re.finditer(r"std::memset\s*\(", rb)]
+        idx_store = re.search(r"\bidx\s*=\s*0\s*;", rb)
+        if idx_store is None:
+            errors.append("could not locate the `idx = 0` store in reset() for the ordering assertion")
+        else:
+            idx_off = idx_store.start()
+            if len(memset_calls) < 4:
+                errors.append(f"reset() contains only {len(memset_calls)} std::memset call(s); expected 4 (all FIR history buffers) before `idx = 0`")
+            for n, off in enumerate(memset_calls[:4]):
+                if off > idx_off:
+                    errors.append(f"reset() ordering violated: memset #{n + 1} occurs AFTER the `idx = 0` store — clearing idx before zeroing "
+                                  "the FIR history leaves one filter pass reading a stale tail through a wrapped index")
+                    break
+    # the memsets must be contiguous (each covers a distinct known buffer, in the
+    # canonical up-L, up-R, down-L, down-R order or at least covering each exactly once)
+    if first_memset != -1:
+        memset_region = rb[: len(rb)]
+        for buf in ("upStateL", "upStateR", "downStateL", "downStateR"):
+            cnt = len(re.findall(r"std::memset\s*\(\s*" + buf + r"\b", memset_region))
+            if cnt != 1:
+                errors.append(f"reset() targets buffer `{buf}` with {cnt} std::memset calls; expected exactly 1")
+
 if errors:
     print("FAIL: Oversampling2x SSE staging / reset invariants violated:")
     for e in errors:
