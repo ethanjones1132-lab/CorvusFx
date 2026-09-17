@@ -561,8 +561,17 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                     auto msg = metadata.getMessage();
                     if (msg.isController() && capturedCc == -1)
                     {
-                        capturedCc = msg.getControllerNumber();
-                        midiMap[capturedCc] = midiLearnParamID;
+                        const int cc = msg.getControllerNumber();
+                        // Refuse to steal: if this CC is already mapped to a
+                        // DIFFERENT parameter, leave the mapping (and the
+                        // learn armed) untouched so the user can move a knob
+                        // on an unused CC — an overwrite here silently
+                        // re-maps the first knob with no UI affordance.
+                        auto existing = midiMap.find(cc);
+                        if (existing != midiMap.end() && existing->second != midiLearnParamID)
+                            continue;
+                        capturedCc = cc;
+                        midiMap[cc] = midiLearnParamID;
                         midiLearnActive = false;
                     }
                 }
