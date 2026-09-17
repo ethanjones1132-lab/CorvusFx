@@ -18,6 +18,7 @@ public:
             if (onRightClick) onRightClick(e);
             return;
         }
+        if (onGestureStart) onGestureStart();  // begin undo transaction before first knob move
         juce::Slider::mouseDown(e);  prs = true;
     }
     void mouseUp(const juce::MouseEvent& e) override { juce::Slider::mouseUp(e);    prs = false; }
@@ -25,6 +26,7 @@ public:
     float getGlowAmount() const { return glow; }
     juce::String linkedParamID;
     std::function<void(const juce::MouseEvent&)> onRightClick;
+    std::function<void()> onGestureStart;
 
 private:
     bool hov = false, prs = false; float glow = 0.0f;

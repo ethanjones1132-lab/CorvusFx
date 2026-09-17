@@ -102,6 +102,9 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
         l.setColour(juce::Label::textColourId, juce::Colour(0xff999aaa));
         addAndMakeVisible(l);
         k.linkedParamID = paramID;
+        k.onGestureStart = [this]() {
+            audioProcessor.undoManager.beginNewTransaction();
+        };
         k.onRightClick = [this, &k](const juce::MouseEvent&) {
             auto& proc = audioProcessor;
             juce::PopupMenu menu;

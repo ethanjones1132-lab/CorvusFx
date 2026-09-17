@@ -54,6 +54,7 @@ void CorvusFXAudioProcessor::loadPreset(int index)
     // via setCurrentProgram's presetToId[] lookup.
     // Combo order: CLEAN [0-5], WARM [6-11], CREATIVE [12-17], EXTREME [18-23], SIGNATURE [24-29], DREAM [30-35]
     if (index < 0 || index >= 36) return;
+    undoManager.beginNewTransaction("Load Preset");
     
     //                    fat  cD   cR    cM   dT   dFb  dM   dDmp dMod rS   rDmp rM   rMod  mDrv mWid mMid mSide dByp cByp dByp rByp mByp
     struct P { float fat, cD, cR, cM, dT, dFb, dM, dDmp, dMod, rS, rDmp, rM, rMod, mDrv, mWid, mMid, mSide, distByp, chorusByp, delayByp, reverbByp, masterByp, oTrim; };
@@ -167,6 +168,7 @@ void CorvusFXAudioProcessor::randomizePreset()
     // Skips the preset parameter (factory preset index stays unchanged).
     // Bypass buttons have ~15% chance of being active; continuous params get full-range random.
     juce::Random rng;
+    undoManager.beginNewTransaction("Randomize");
     auto& params = getParameters();
     for (auto* param : params)
     {
@@ -342,6 +344,7 @@ static constexpr const char* abParamIds[24] = {
 
 void CorvusFXAudioProcessor::saveSlotA()
 {
+    undoManager.beginNewTransaction("A/B Compare");
     for (int i = 0; i < NUM_AB_PARAMS; ++i)
     {
         auto* p = apvts.getParameter(abParamIds[i]);
@@ -352,6 +355,7 @@ void CorvusFXAudioProcessor::saveSlotA()
 
 void CorvusFXAudioProcessor::saveSlotB()
 {
+    undoManager.beginNewTransaction("A/B Compare");
     for (int i = 0; i < NUM_AB_PARAMS; ++i)
     {
         auto* p = apvts.getParameter(abParamIds[i]);
@@ -362,6 +366,7 @@ void CorvusFXAudioProcessor::saveSlotB()
 
 void CorvusFXAudioProcessor::loadSlotA()
 {
+    undoManager.beginNewTransaction("A/B Compare");
     for (int i = 0; i < NUM_AB_PARAMS; ++i)
     {
         auto* p = apvts.getParameter(abParamIds[i]);
@@ -372,6 +377,7 @@ void CorvusFXAudioProcessor::loadSlotA()
 
 void CorvusFXAudioProcessor::loadSlotB()
 {
+    undoManager.beginNewTransaction("A/B Compare");
     for (int i = 0; i < NUM_AB_PARAMS; ++i)
     {
         auto* p = apvts.getParameter(abParamIds[i]);
