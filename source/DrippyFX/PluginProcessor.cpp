@@ -34,7 +34,7 @@ void CorvusFXAudioProcessor::parameterChanged(const juce::String& parameterID, f
         // The combo has 42 items (IDs 1-42) with 6 disabled separators (IDs 1,8,15,22,29,36).
         // We convert the item ID to a preset index via a lookup table.
         static const int idToPreset[43] = {
-            0,  -1, 0, 1, 2, 3, 4, 5,   // IDs 0-7  (0=unused, 1=separator, 2-7=CLEAN presets 0-5)
+            -1, -1, 0, 1, 2, 3, 4, 5,   // IDs 0-7  (0=unused, 1=separator, 2-7=CLEAN presets 0-5)
             -1, 6, 7, 8, 9,10,11,       // IDs 8-14 (8=separator, 9-14=WARM presets 6-11)
             -1,12,13,14,15,16,17,        // IDs 15-21 (15=separator, 16-21=CREATIVE presets 12-17)
             -1,18,19,20,21,22,23,        // IDs 22-28 (22=separator, 23-28=EXTREME presets 18-23)
