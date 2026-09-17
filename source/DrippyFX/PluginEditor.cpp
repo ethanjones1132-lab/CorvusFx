@@ -262,6 +262,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
 
     // Level meter
     addAndMakeVisible(levelMeter);
+    startTimerHz(30); // drives timerCallback -> meters read + decay order
 }
 
 CorvusFXAudioProcessorEditor::~CorvusFXAudioProcessorEditor()
@@ -271,8 +272,11 @@ CorvusFXAudioProcessorEditor::~CorvusFXAudioProcessorEditor()
 
 void CorvusFXAudioProcessorEditor::timerCallback()
 {
-    // Update level meter from processor (audio thread -> message thread via atomics)
+    // Update level meter from processor (audio thread -> message thread via atomics).
+    // Decay the processor-side atomics FIRST so the copies below are the
+    // authoritative displayed values (a stale peak can't resurrect after silence).
     auto& meters = audioProcessor.levelMeters;
+    meters.decayPeaks(0.96f);
     levelMeter.setInputPeakL(meters.inPeakL.load(std::memory_order_relaxed));
     levelMeter.setInputPeakR(meters.inPeakR.load(std::memory_order_relaxed));
     levelMeter.setInputRmsL(meters.inRmsL.load(std::memory_order_relaxed));

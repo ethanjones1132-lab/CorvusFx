@@ -109,10 +109,10 @@ public:
 // LEVEL METER — Vertical stereo peak/RMS bars with dB scale
 // Smooth exponential decay for professional metering feel
 // ═══════════════════════════════════════════════════════════════
-class LevelMeter : public juce::Component, public juce::Timer
+class LevelMeter : public juce::Component
 {
 public:
-    LevelMeter() { startTimerHz(30); }
+    LevelMeter() { setInterceptsMouseClicks(false, false); }
 
     void setInputPeakL(float v)  { inPeakL  = juce::jlimit(0.0f, 1.0f, v); repaint(); }
     void setInputPeakR(float v)  { inPeakR  = juce::jlimit(0.0f, 1.0f, v); repaint(); }
@@ -231,21 +231,10 @@ public:
         // Peak hold decay - handled externally by timer callback
     }
 
-    void decayPeaks(float factor = 0.96f)
-    {
-        inPeakL  *= factor;
-        inPeakR  *= factor;
-        outPeakL *= factor;
-        outPeakR *= factor;
-        repaint();
-    }
+        // Peak hold decay lives on the processor's LevelMeters, applied by the
+        // editor's timer before copying there — one timer, no local decay.
 
-    void timerCallback() override
-    {
-        decayPeaks(0.96f);
-    }
-
-private:
+    private:
     float inPeakL = 0.0f, inPeakR = 0.0f;
     float inRmsL = 0.0f, inRmsR = 0.0f;
     float outPeakL = 0.0f, outPeakR = 0.0f;

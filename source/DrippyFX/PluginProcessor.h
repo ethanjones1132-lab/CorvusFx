@@ -1671,6 +1671,23 @@ public:
         std::atomic<float> inRmsL   { 0.0f }, inRmsR   { 0.0f };
         std::atomic<float> outPeakL { 0.0f }, outPeakR { 0.0f };
         std::atomic<float> outRmsL  { 0.0f }, outRmsR  { 0.0f };
+
+        // Display-side peak decay, run on the message thread from the editor
+        // timer (relaxed load/store is fine for approximate meter display).
+        // Processor-side so decayed values are authoritative and a refresh
+        // never resurrects a stale bar from a non-decaying atomic.
+        void decayPeaks(float factor = 0.96f)
+        {
+            auto mul = [&](std::atomic<float>& a)
+            {
+                a.store(a.load(std::memory_order_relaxed) * factor,
+                        std::memory_order_relaxed);
+            };
+            mul(inPeakL);  mul(inPeakR);
+            mul(inRmsL);   mul(inRmsR);
+            mul(outPeakL); mul(outPeakR);
+            mul(outRmsL);  mul(outRmsR);
+        }
     } levelMeters;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CorvusFXAudioProcessor)
