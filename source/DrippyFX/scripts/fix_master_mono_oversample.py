@@ -1,3 +1,4 @@
+# ALREADY APPLIED — DO NOT RERUN. One-shot Windows migration fix; kept as a record.
 """Switch MasterOutputStage mid/side oversampling from stereo processSample to mono processSampleMono.
 Each call currently passes the same mono value for both L and R, running pushPullSaturate twice
 per sample. processSampleMono runs the FIR filter once (vs 2x for stereo) and calls DSP once.

@@ -1,3 +1,4 @@
+# ALREADY APPLIED — DO NOT RERUN. One-shot Windows migration fix; kept as a record.
 """Update ROADMAP.md — Phase 3 per-module bypass entry to mark UI done."""
 import sys
 

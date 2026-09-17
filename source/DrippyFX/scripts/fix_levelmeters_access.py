@@ -1,3 +1,4 @@
+# ALREADY APPLIED — DO NOT RERUN. One-shot Windows migration fix; kept as a record.
 """Make levelMeters public by inserting public: before the struct.
 The struct currently sits under private: section. Need to inject public: before it.
 """

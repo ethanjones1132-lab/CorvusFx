@@ -57,3 +57,4 @@ Windows paths when editing here; full VST3 builds happen on Windows only.
 - MSBuild incremental misses header changes — verify MD5, force rebuild if needed
 - Preset array, idToPreset, presetToId, presetFromId must all grow together on expansion (machine-checked by `scripts/check_preset_tables.py`)
 - `patch` tool corrupts C++ on Windows — use binary-mode Python scripts for multi-line edits over there; on this Mac the built-in patch tool works fine
+- HISTORICAL: the 5 one-shot Windows migration scripts under `source/DrippyFX/scripts/` (fix_destructor.py, fix_juce8_params.py, fix_levelmeters_access.py, fix_master_mono_oversample.py, update_roadmap.py) target Windows CRLF paths and their effects are ALREADY APPLIED in this tree — kept in-tree as a record of the migration, all carrying an "ALREADY APPLIED — DO NOT RERUN" header (machine-checked by `scripts/check_win_migration_scripts_flagged.py`). Never rerun them.

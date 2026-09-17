@@ -1,3 +1,4 @@
+# ALREADY APPLIED — DO NOT RERUN. One-shot Windows migration fix; kept as a record.
 """Fix AudioParameterFloat constructors for JUCE 8 API.
 
 JUCE 8 uses a 5-arg constructor: (id, name, range, def, attributes)
