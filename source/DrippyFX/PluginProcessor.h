@@ -1143,6 +1143,9 @@ struct UpgradedReverb
     float modCos = 1.0f;  // cos(modPhase * twoPi)
     int modTick = 0;      // master LFO renormalization tick counter
     double sampleRate = 44100.0;
+    // Last roomSize applied to earlyL/earlyR tap delays; mute-on-change guard
+    // in beginBlock() resets the tap buffers only when this actually moves.
+    float lastRoomSize = 0.0f;
 
     // Block-level coefficient cache — avoids recomputing feedback/damp per sample
     // and hoists comb modulation calculations out of the hot loop.
@@ -1208,6 +1211,18 @@ struct UpgradedReverb
                 // ── Early reflections scale with room size ──
                 // Small rooms: tight, bright, loud early reflections
                 // Large rooms: wide, diffuse, quiet early reflections
+                // Retarget every block, but mute the tap buffers only when the
+                // room actually changes — otherwise the new (larger) tap delays
+                // would read history written by the old room's taps and smear
+                // the early field with a blend of both rooms for several
+                // hundred ms. Muting on an unchanged size would silence the
+                // early energy every audio block.
+                if (std::fabs(roomSize - lastRoomSize) > 1e-4f)
+                {
+                    earlyL.mute();
+                    earlyR.mute();
+                    lastRoomSize = roomSize;
+                }
                 earlyL.setRoomSize(roomSize);
                 earlyR.setRoomSize(roomSize);
 
