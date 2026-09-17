@@ -568,7 +568,14 @@ struct EnhancedChorus
         }
         // Precompute drift phase recurrence constants
         // Drift uses two sine frequencies: 2.32x and 5.71x the base driftDelta
-        float dDelta = chorusBlockCoeffs.driftDelta;
+        // BUGFIX (rate-conversion): driftDelta = 0.07/sr is a CYCLES-per-sample
+        // fraction, but the sin/cos recurrence advances in RADIANS. The delta
+        // must be scaled by twoPi or the drift runs 2π× too slow (~0.026 Hz
+        // instead of the designed 2.32×0.07 ≈ 0.162 Hz). Same 2π-conversion
+        // class as the delay wow/flutter rate bug fixed 2026-07-29 (`4333761`);
+        // the reverb master LFO in UpgradedReverb::beginBlock() does this
+        // correctly (modPhaseIncrement * twoPi).
+        float dDelta = chorusBlockCoeffs.driftDelta * juce::MathConstants<float>::twoPi;
         for (int i = 0; i < NUM_VOICES; ++i)
         {
             // Frequency multipliers for the two drift components
