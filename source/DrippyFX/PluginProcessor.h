@@ -1616,7 +1616,15 @@ public:
     bool isSlotA() const { return abSlotIsA; }
 
     // MIDI Learn
-    void startMidiLearn(const juce::String& paramID) { midiLearnParamID = paramID; midiLearnActive = true; }
+    void startMidiLearn(const juce::String& paramID)
+    {
+        // Armed-learn state is read by the audio thread under midiMapLock;
+        // write under the same lock so the capture branch can never see a
+        // torn juce::String parameter ID.
+        const juce::ScopedLock lock(midiMapLock);
+        midiLearnParamID = paramID;
+        midiLearnActive = true;
+    }
     void stopMidiLearn() { midiLearnActive = false; }
     bool hasMidiMapping(const juce::String& paramID) const;
     void clearMidiMapping(const juce::String& paramID);
