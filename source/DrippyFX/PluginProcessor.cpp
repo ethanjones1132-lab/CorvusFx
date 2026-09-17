@@ -522,6 +522,7 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     smoothMasterWidth.setTargetValue(apvts.getRawParameterValue("master_width")->load() / 100.0f);
     smoothMasterMidDrive.setTargetValue(apvts.getRawParameterValue("master_mid_drive")->load() / 100.0f);
     smoothMasterSideDrive.setTargetValue(apvts.getRawParameterValue("master_side_drive")->load() / 100.0f);
+    smoothOutputTrim.setTargetValue(apvts.getRawParameterValue("output_trim")->load() / 100.0f);
     const bool distortionBypass = apvts.getRawParameterValue("distortion_bypass")->load() > 0.5f;
     const bool chorusBypass = apvts.getRawParameterValue("chorus_bypass")->load() > 0.5f;
     const bool delayBypass = apvts.getRawParameterValue("delay_bypass")->load() > 0.5f;
