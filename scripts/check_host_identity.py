@@ -79,8 +79,20 @@ text = SRC.read_text(encoding="utf-8", errors="replace")
 check(text, "PluginProcessor.cpp")
 
 cm = CMAKE.read_text(encoding="utf-8", errors="replace")
-if not re.search(r"NEEDS_MIDI_INPUT\s+TRUE", cm):
-    err("[CMakeLists.txt] NEEDS_MIDI_INPUT TRUE missing (breaks VST3 MIDI input)")
+
+
+def check_cmake(cmake_text: str, source_name: str) -> None:
+    if not re.search(r"NEEDS_MIDI_INPUT\s+TRUE", cmake_text):
+        err(f"[{source_name}] NEEDS_MIDI_INPUT TRUE missing (breaks VST3 MIDI input)")
+    if not re.search(r"PLUGIN_MANUFACTURER_CODE\s+Drip\b", cmake_text):
+        err(f"[{source_name}] PLUGIN_MANUFACTURER_CODE 'Drip' missing/changed "
+            f"(FX binary identity must survive the Instrument target addition)")
+    if not re.search(r"PLUGIN_CODE\s+Dfx1\b", cmake_text):
+        err(f"[{source_name}] PLUGIN_CODE 'Dfx1' missing/changed "
+            f"(FX binary identity must survive the Instrument target addition)")
+
+
+check_cmake(cm, "CMakeLists.txt")
 
 # --- negative checks: mutate a temp copy and demand rejection ---
 with tempfile.TemporaryDirectory() as td:
@@ -97,6 +109,29 @@ with tempfile.TemporaryDirectory() as td:
         errors[:] = saved
         if not any("acceptsMidi" in e for e in probe_errors):
             err("negative check failed: mutated acceptsMidi()=false was not rejected")
+
+# --- negative CMake probes (identity-invariance contract, Plan Task 5) ---
+def _cmake_probe(mutated: str, desc: str, expect_substr: str) -> None:
+    probe: list[str] = []
+    saved = errors[:]
+    errors.clear()
+    check_cmake(mutated, "mutated-cmake")
+    probe = errors[:]
+    errors[:] = saved
+    if not any(expect_substr in e for e in probe):
+        err(f"negative check failed: {desc} was not rejected")
+
+
+cm_dfx1 = cm.replace("PLUGIN_CODE Dfx1", "PLUGIN_CODE Cvi1")
+cm_drip = cm.replace("PLUGIN_MANUFACTURER_CODE Drip", "PLUGIN_MANUFACTURER_CODE Crvs")
+if cm_dfx1 == cm:
+    err("negative check could not apply mutation (PLUGIN_CODE Dfx1 literal absent)")
+else:
+    _cmake_probe(cm_dfx1, "Dfx1->Cvi1 swap", "PLUGIN_CODE")
+if cm_drip == cm:
+    err("negative check could not apply mutation (PLUGIN_MANUFACTURER_CODE Drip literal absent)")
+else:
+    _cmake_probe(cm_drip, "Drip->Crvs swap", "PLUGIN_MANUFACTURER_CODE")
 
 if errors:
     print("FAIL: host identity invariants violated:")
