@@ -85,3 +85,55 @@ if "apvts.getParameter" not in code or ("!= nullptr" not in code and "nullptr" n
     fail("restore loop does not filter param IDs against apvts.getParameter(...) != nullptr — "
          "a renamed/removed parameter ID would restore a dead CC mapping")
 print("midi-state-restore: restore loop drops param IDs that no longer exist in the APVTS")
+
+# --- Part (d): SAVE side — getStateInformation must hold midiMapLock over the
+#     whole save loop, not just around attribute writes. Strip the lock (e.g. a
+#     "simplify save" refactor) and the XmlElement writes can interleave with a
+#     mid-copy audio-thread capture insert.
+m2 = re.search(r"void\s+CorvusFXAudioProcessor::getStateInformation\s*\(", text)
+if not m2:
+    fail("getStateInformation definition missing from PluginProcessor.cpp")
+g_start = text.find("{", m2.end())
+depth = 0; i = g_start; j = g_start
+while j < len(text):
+    if text[j] == "{": depth += 1
+    elif text[j] == "}":
+        depth -= 1
+        if depth == 0: break
+    j += 1
+save_body = re.sub(r"//[^\n]*", "", text[g_start:j + 1])
+
+child_at = save_body.find('createNewChildElement("midiMaps")')
+if child_at == -1:
+    fail("getStateInformation no longer creates the midiMaps child — mappings are not saved")
+lock_at = save_body.find("ScopedLock", child_at)
+range_at = save_body.find("for (const auto& [cc, paramID] : midiMap)", child_at)
+if range_at == -1:
+    fail("getStateInformation save loop (for (const auto& [cc, paramID] : midiMap)) missing")
+if lock_at == -1 or lock_at > range_at:
+    fail(f"getStateInformation acquires the midiMapLock (offset {lock_at}) at/after the "
+         f"save loop start (offset {range_at}) — the map iteration is unsynchronized against "
+         "audio-thread capture inserts during save")
+# the setAttribute writes must also come after the lock acquisition
+first_attr = save_body.find('setAttribute("cc"', range_at)
+if first_attr != -1 and lock_at > first_attr:
+    fail("getStateInformation writes map attributes before acquiring midiMapLock")
+print("midi-state-restore: save-side midiMap iteration/attribute writes are under midiMapLock")
+
+# --- self-probe (negative): stripping the ScopedLock from the save body must
+#     be rejected; a no-op mutation must still pass.
+_probe = save_body.replace("const juce::ScopedLock lock(midiMapLock);", "/*probe*/")
+_noop = save_body.replace("Save MIDI Learn mappings", "Save MIDI Learn mappingsX_probe")
+def _ok(t):
+    try:
+        c2 = t.find('createNewChildElement("midiMaps")')
+        l2 = t.find("ScopedLock", c2)
+        r2 = t.find("for (const auto& [cc, paramID] : midiMap)", c2)
+        return not (l2 == -1 or l2 > r2)
+    except Exception:
+        return False
+if not _ok(_noop):
+    fail("internal: no-op mutation changed the save-body probe outcome (checker self-guard)")
+if _ok(_probe):
+    fail("internal: probe tolerance too loose — a ScopedLock-stripped save body still passes")
+print("midi-state-restore: save-side lock probe self-checks pass")
