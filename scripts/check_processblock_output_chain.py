@@ -102,6 +102,23 @@ def offset_of(anchor):
     return k
 
 
+# (seed) MONO-MIRROR seed + ±2.0f INPUT HEADROOM clamp — pinned BEFORE any DSP:
+#   L seed clamps chData[0][s] to ±2.0f; R seed reads chData[1][s] ONLY through
+#   the `isMono ? smpL :` ternary (mono bus chProc==1 leaves chData[1] a nullptr
+#   write-pointer — reading it unguarded is a deref hazard) and also clamps ±2.0f.
+#   Widening the headroom (unbounded input reaching padeSoftClip/distortion with
+#   inf/NaN) or dropping the mono-mirror compiles clean behind an otherwise-green
+#   gate, so both seed lines are pinned here, before the limiter anchor.
+seedL_off = offset_of("float smpL = juce::jlimit(-2.0f, 2.0f, chData[0][s]);")
+seedR_off = offset_of(
+    "float smpR = juce::jlimit(-2.0f, 2.0f, isMono ? smpL : chData[1][s]);")
+if seedR_off < seedL_off:
+    fail("mono-mirror R seed precedes the L seed — seed lines drifted")
+if body.count("jlimit(-2.0f, 2.0f") != 2:
+    fail(f"input headroom jlimit(-2.0f, 2.0f) appears only at unexpected count "
+         f"({body.count('jlimit(-2.0f, 2.0f')}) — both seed lines must keep the "
+         "±2.0f headroom clamp")
+
 # (a) SAFETY LIMITER shape — both channels, soft clip + jlimit
 limL_off = offset_of("smpL = padeSoftClip(smpL);")
 klim = body.find("if (!isMono)", limL_off)
@@ -195,6 +212,10 @@ def _verify(cpp_text):
         if anchor not in b:
             raise _Rejected(f"missing anchor: {anchor!r}")
 
+    need("smpL = juce::jlimit(-2.0f, 2.0f, chData[0][s]);")
+    need("smpR = juce::jlimit(-2.0f, 2.0f, isMono ? smpL : chData[1][s]);")
+    if b.count("jlimit(-2.0f, 2.0f") != 2:
+        raise _Rejected("input headroom ±2.0f clamp missing from a seed line")
     need("smpL = padeSoftClip(smpL);")
     need("smpR = padeSoftClip(smpR);")
     if b.count("jlimit(-1.5f, 1.5f") < 2:
@@ -226,6 +247,16 @@ def _verify(cpp_text):
 
 TRADE_ANCHOR = "smpL = padeSoftClip(smpL);"
 probes = [
+    ("drop the mono-mirror ternary (unguarded chData[1] read)",
+     lambda s: s.replace(
+         "float smpR = juce::jlimit(-2.0f, 2.0f, isMono ? smpL : chData[1][s]);",
+         "float smpR = juce::jlimit(-2.0f, 2.0f, chData[1][s]);")),
+    ("widen the input headroom clamp 2.0f -> 10.0f",
+     lambda s: s.replace(
+         "float smpL = juce::jlimit(-2.0f, 2.0f, chData[0][s]);\n"
+         "        float smpR = juce::jlimit(-2.0f, 2.0f, isMono ? smpL : chData[1][s]);",
+         "float smpL = juce::jlimit(-10.0f, 10.0f, chData[0][s]);\n"
+         "        float smpR = juce::jlimit(-10.0f, 10.0f, isMono ? smpL : chData[1][s]);")),
     ("swap OUTPUT TRIM before the safety limiter",
      lambda s: s.replace(
          "// 6. SAFETY LIMITER - Pade [3/2] rational approximant (eliminates last per-sample transcendental)\n        smpL = padeSoftClip(smpL);\n        smpL = juce::jlimit(-1.5f, 1.5f, smpL);\n",
