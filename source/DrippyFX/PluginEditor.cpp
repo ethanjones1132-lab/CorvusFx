@@ -108,6 +108,13 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
         k.onRightClick = [this, &k](const juce::MouseEvent&) {
             auto& proc = audioProcessor;
             juce::PopupMenu menu;
+            // Armed-learn affordance: offer cancellation while a learn is
+            // pending (otherwise the next CC silently consumes the armed
+            // state with no escape hatch except capturing or editor close).
+            if (proc.isMidiLearnActive())
+                menu.addItem("Cancel MIDI Learn", [&proc]() {
+                    proc.stopMidiLearn();
+                });
             menu.addItem("MIDI Learn", [&proc, &k]() {
                 proc.startMidiLearn(k.linkedParamID);
             });

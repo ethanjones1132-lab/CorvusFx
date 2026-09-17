@@ -1625,6 +1625,7 @@ public:
         midiLearnParamID = paramID;
         midiLearnActive = true;
     }
+    bool isMidiLearnActive() const { return midiLearnActive.load(); }
     void stopMidiLearn() { midiLearnActive = false; }
     bool hasMidiMapping(const juce::String& paramID) const;
     void clearMidiMapping(const juce::String& paramID);
