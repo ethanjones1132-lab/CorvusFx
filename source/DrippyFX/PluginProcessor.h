@@ -1049,11 +1049,9 @@ struct UpgradedReverb
         float buf[MAX_SIZE] = {};
         int size = 1, pos = 0;
         float fb = 0.5f;
-        float modOffset = 0.0f;  // Sub-sample modulation offset for organic diffusion
 
         void setSize(int s) { size = juce::jlimit(1, MAX_SIZE - 1, s); }
         void setFeedback(float f) { fb = f; }
-        void setModOffset(float m) { modOffset = m; }
         void mute() { std::memset(buf, 0, sizeof(buf)); pos = 0; }
 
         // modOffset: sub-sample read offset for allpass modulation.
@@ -1169,6 +1167,11 @@ struct UpgradedReverb
         // Precomputed once per block in beginBlock().
         float combCosDelta[NUM_COMBS] = {};  // cos(twoPi * i * 0.1234567f) per comb
         float combSinDelta[NUM_COMBS] = {};  // sin(twoPi * i * 0.1234567f) per comb
+        // Allpass LFO phase offsets: sin/cos of twoPi * i * 0.29177f, precomputed
+        // once per block so each allpass derives a moving modulation offset from
+        // the master LFO (modSin/modCos) — same recurrence pattern as the combs.
+        float apCosDelta[NUM_AP] = {};  // cos(twoPi * i * 0.29177f) per allpass
+        float apSinDelta[NUM_AP] = {};  // sin(twoPi * i * 0.29177f) per allpass
 
         // Master modulation LFO phase recurrence — replaces 2 std::sin()+std::cos()/sample
         // with 4 multiplies. The master LFO phase advances per sample at rate 0.37 Hz.
@@ -1235,6 +1238,19 @@ struct UpgradedReverb
             float di = juce::MathConstants<float>::twoPi * static_cast<float>(i) * 0.1234567f;
             blockCoeffs.combSinDelta[i] = std::sin(di);
             blockCoeffs.combCosDelta[i] = std::cos(di);
+        }
+
+        // ── Precompute allpass LFO phase offsets ──
+        // Same recurrence pattern as the combs: each allpass derives its
+        // modulation offset from the master LFO (modSin/modCos) with a fixed
+        // per-allpass phase offset, so the diffusion network actually moves.
+        // Offsets use a different stride (0.29177) than the combs so the
+        // allpass modulation decorrelates from the comb modulation.
+        for (int i = 0; i < NUM_AP; ++i)
+        {
+            float di = juce::MathConstants<float>::twoPi * static_cast<float>(i) * 0.29177f;
+            blockCoeffs.apSinDelta[i] = std::sin(di);
+            blockCoeffs.apCosDelta[i] = std::cos(di);
         }
 
         // ── Apply coefficients to comb filters once per block ──
@@ -1352,9 +1368,12 @@ struct UpgradedReverb
         }
         for (int i = 0; i < NUM_AP; ++i)
         {
-            // Allpass modulation: applies sub-sample read offset for organic diffusion
-            // Each allpass gets a different phase offset to decorrelate left/right
-            float apMod = modDepth * (0.5f + static_cast<float>(i) * 0.12f);  // scaled per allpass
+            // Allpass modulation follows the master LFO like the combs:
+            // sin(φ + Δi) = sin(φ)cos(Δi) + cos(φ)sin(Δi) with per-allpass
+            // phase offsets (apSinDelta/apCosDelta precomputed in beginBlock),
+            // so the diffusion network actually moves with the advertised
+            // "organic" tail instead of sitting at a static constant offset.
+            float apMod = (modSin * blockCoeffs.apCosDelta[i] + modCos * blockCoeffs.apSinDelta[i]) * modDepth;
             lateL = apL[i].process(lateL, apMod);
             lateR = apR[i].process(lateR, -apMod);  // inverted for stereo decorrelation
         }
