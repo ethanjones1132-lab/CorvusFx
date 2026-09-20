@@ -21,7 +21,11 @@ Built with [JUCE 8](https://juce.com) for Windows (x64). Free and open-source.
 
 Corvus FX is a **5-module cascade VST3 plugin** that chains **Distortion → Chorus → Delay → Reverb → Master Output** in a single, efficient processing pass. Each module has independent controls and a **click-free bypass button**, with **36 factory presets** organized into six categories — from subtle bus glue to massive ambient textures.
 
+Beyond the signal chain, the plugin ships a full performance workflow: **MIDI Learn** for hardware control of every knob, **Preset A/B Compare** for quick auditioning, a **Randomize** button for instant inspiration, and **Undo/Redo** throughout. All **25 parameters** are smoothed and automation-safe.
+
 Whether you're a producer looking for analog-style warmth, a sound designer chasing otherworldly modulation, or a mixing engineer wanting a cohesive channel strip, Corvus FX delivers transparent, musical processing with **zero compromise on audio quality**.
+
+> 🆕 **Corvus Instrument** — a companion synth that reuses the Corvus DSP core — is in active development. See [Corvus Instrument](#corvus-instrument-companion-synth).
 
 ---
 
@@ -34,7 +38,7 @@ Whether you're a producer looking for analog-style warmth, a sound designer chas
 
      The plugin features a dark space-themed interface with animated nebula
      background, glass rotary knobs with purple glow effects, and a clean
-     2×2 module layout.
+     2×2 module layout with preset, A/B and Randomize controls.
 -->
 
 > 🎨 **Screenshot coming soon.** The plugin features a dark space-themed UI with animated nebula background, glass knobs with specular highlights and purple glow effects, organized in a clean 2×2 module grid layout.
@@ -61,6 +65,8 @@ Input → [Distortion] → [Chorus] → [Delay] → [Reverb] → [Master Output]
 ```
 
 Each module can be independently bypassed via a color-coded toggle button with a 30ms click-free crossfade. The entire chain runs in a **single per-sample pass** with block-level coefficient caching for minimal CPU overhead.
+
+The same cascade is exposed as the shared `source/DrippyFX/dsp/CorvusEffects.h` core, which the companion **Corvus Instrument** reuses after its voice mix.
 
 ---
 
@@ -108,22 +114,24 @@ The Drive knob smoothly morphs from transparent tape-style warmth (clean, musica
 | **Damping** | Low-pass damping per comb filter for natural high-frequency rolloff |
 | **Modulation** | Modulates comb filter delay times for a richer, less metallic tail |
 | **Pre-delay** | 5–45 ms pre-delay scales with room size |
+| **Wet/Dry** | Equal-power crossfade — constant perceived loudness across the mix range |
 
 ### 🎚️ Master Output — Analog Finish
 | Feature | Detail |
 |---------|--------|
-| **Mid/Side processing** | Independent L/R → M/S conversion with width control (0–200%) |
+| **Mid/Side processing** | Independent L/R → M/S conversion with width control |
 | **Saturation** | Push-pull asymmetrical saturation — **2x oversampled** — generates even harmonics (2nd/4th) for analog warmth; independent Mid and Side drive controls |
-| **Width control** | 0% (mono) → 100% (original stereo) → >100% (widened) |
+| **Width control** | Scales the side signal via M/S (0% narrow → 100% wide, default 100%) |
 | **DC blocker** | Prevents DC offset accumulation from asymmetric saturation |
 | **Safety limiter** | Soft-knee safety clamp with Padé [3/2] tanh approximant |
+| **Output Trim** | Final gain staging after limiting (0–100%, default 100%) |
 | **Wet/Dry** | Global overall mix (can also be automated per-track) |
 
 ---
 
-## Controls (24 Parameters)
+## Controls (25 Parameters)
 
-### Continuous Controls (18)
+### Continuous Controls (19)
 
 | Control | Range | Default | Function |
 |---------|-------|---------|----------|
@@ -133,18 +141,19 @@ The Drive knob smoothly morphs from transparent tape-style warmth (clean, musica
 | **Chorus Rate** | 0.1–10 Hz | 2 Hz | LFO speed — 6 decorrelated voices never align |
 | **Chorus Mix** | 0–100% | 50% | Wet/dry balance |
 | **Delay Time** | 0–2000 ms | 250 ms | Echo timing with tape-style interpolation |
-| **Delay Feedback** | 0–95% | 30% | Repeat count (exponential mapping for musical response) |
+| **Delay Feedback** | 0–100% | 30% | Repeat count (exponential mapping to internal feedback) |
 | **Delay Mix** | 0–100% | 0% | Wet/dry balance |
 | **Delay Damping** | 0–100% | 40% | High-frequency rolloff per repeat (darker = more tape-like) |
 | **Delay Mod** | 0–100% | 30% | Wow/flutter intensity for vintage tape character |
 | **Reverb Size** | 0–100% | 50% | Room size — controls both decay time and diffusion character |
 | **Reverb Damping** | 0–100% | 50% | High-frequency decay (higher = shorter, darker tail) |
-| **Reverb Mix** | 0–100% | 0% | Wet/dry balance |
+| **Reverb Mix** | 0–100% | 0% | Wet/dry balance (equal-power crossfade) |
 | **Reverb Mod** | 0–100% | 30% | Modulation depth for organic tail movement |
 | **Master Drive** | 0–100% | 0% | Master output push-pull saturation (even harmonics) |
-| **Master Width** | 0–200% | 100% | Stereo width — 0% = mono, >100% = widened |
+| **Master Width** | 0–100% | 100% | Stereo width via M/S side-signal scaling |
 | **Master Mid Drive** | 0–100% | 0% | Mid channel saturation — affects center image |
 | **Master Side Drive** | 0–100% | 0% | Side channel saturation — affects stereo width |
+| **Output Trim** | 0–100% | 100% | Final output gain after the safety limiter |
 
 ### Bypass Buttons (5)
 
@@ -161,6 +170,15 @@ The Drive knob smoothly morphs from transparent tape-style warmth (clean, musica
 | Control | Range | Description |
 |---------|-------|-------------|
 | **Preset** | 0–35 | Factory preset selection (36 presets in 6 categories) |
+
+### Performance & Workflow Controls
+
+| Control | How | Function |
+|---------|-----|----------|
+| **MIDI Learn** | Right-click any knob | Map the next incoming MIDI CC to that knob. The context menu also offers **Forget MIDI Mapping** (per knob) and **Clear All MIDI Maps**. Mappings are saved with the plugin state. |
+| **Preset A/B Compare** | `A` / `B` / `SAVE` buttons | `A` and `B` load snapshots; `SAVE` stores the current knob positions into the active slot. Snapshots cover all 24 non-preset parameters. |
+| **Randomize** | `RND` button | Randomizes every continuous parameter; bypass buttons engage ~15% of the time. The preset index is left untouched. |
+| **Undo / Redo** | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Undo/redo all parameter edits via a JUCE `UndoManager` wired to the parameter tree (`Cmd` on macOS). |
 
 All continuous parameters feature **20ms LinearSmoothedValue** interpolation for click-free automation and knob movement. All bypass switches use a **30ms LinearSmoothedValue wet/dry ramp** for truly click-free enable/disable.
 
@@ -259,13 +277,13 @@ The raw parameter value is read once per block (atomic load), then interpolated 
 
 ### Block-Level Coefficient Caching
 
-Expensive math (`std::exp`, `std::pow`, `std::sin`) is hoisted from per-sample loops to per-block `beginBlock()` calls:
+Expensive math (`std::exp`, `std::pow`, `std::sin`) is hoisted out of per-sample loops. Some coefficients depend only on sample rate and are computed once in `prepare()`; the rest are cached per block in `beginBlock()`:
 
 | Module | Operations hoisted | Per-sample savings |
 |--------|-------------------|-------------------|
 | Distortion | 4× `std::exp` | 4 exp/sample → 1/block |
-| Chorus | 5× redundant per-voice math | Per-voice LFO calc → 1/block |
-| Delay | 2× `std::exp` (LP/HP) | 2 exp/sample → 1/block |
+| Chorus | 5× redundant per-voice math; `msToSamples` cached | Per-voice LFO calc → 1/block |
+| Delay | 2× `std::exp` (LP/HP) + sr-only constants | 2 exp/sample → 1/block |
 | Reverb | 8× setFeedback/setDamp + mod | 10+ ops/sample → 1/block |
 | Master | 3× `std::exp` | 3 exp/sample → 1/block |
 
@@ -273,7 +291,7 @@ Expensive math (`std::exp`, `std::pow`, `std::sin`) is hoisted from per-sample l
 
 The entire plugin uses **zero per-sample transcendental function calls** — every `std::sin`, `std::cos`, `std::sqrt`, `std::tanh`, and `std::fmod` is either:
 
-- **Pre-computed** in `beginBlock()` as cached coefficients (e.g., filter coefficients)
+- **Pre-computed** in `prepare()`/`beginBlock()` as cached coefficients (e.g., filter coefficients)
 - **Phase-recurrent** — incremental rotation with 256-sample magnitude renormalization replaces `std::sin`/`std::cos` calls (6-voice chorus, delay wow/flutter, reverb comb modulation)
 - **Approximated** — the safety limiter uses a Padé [3/2] rational approximant (`z*(15+z²)/(15+6z²)`) instead of `std::tanh`, accurate to 0.04%
 
@@ -292,6 +310,34 @@ The same `hermiteInterp()` utility is shared across all three modules.
 ### LFO Phase Recurrence Drift Correction
 
 Incremental-rotation LFO recurrence (sin/cos via single multiply-add) slowly loses unit-vector length under float32, breathing the modulation depth by ~2.5%/minute. All LFOs in Chorus, Delay, and Reverb include periodic magnitude renormalization (every 256 samples), reducing drift to ~0.0003%/minute.
+
+### Equal-Power Reverb Mix & Output Clamping
+
+The Reverb wet/dry control uses an **equal-power crossfade** so perceived loudness stays constant across the full mix range. Chorus and Delay additionally apply **per-module output clamping** as defense-in-depth against transient overshoot before the master limiter.
+
+### Shared DSP Core
+
+The effects DSP (distortion, chorus, delay, reverb, master output, oversampling, interpolation, smoothing, and safety utilities) lives in a single shared header, `source/DrippyFX/dsp/CorvusEffects.h`. Corvus FX and the companion Corvus Instrument both build against it, and a deterministic regression harness locks the shared effects baseline against drift.
+
+---
+
+## Corvus Instrument (Companion Synth)
+
+> 🚧 **In development — Phase 2 "playable vertical slice".** Shipped as a separate plugin target, not part of the Corvus FX effect.
+
+**Corvus Instrument** is a new JUCE instrument target (`IS_SYNTH TRUE`, MIDI note input, stereo output with no required audio input) with its own plugin identifier (`Crvs` / `Cvi1`), state format, presets, and editor. It routes polyphonic voices through the **shared Corvus effects chain** after the voice mix, so patches arrive mix-ready rather than dry.
+
+**Implemented in the current vertical slice:**
+
+- **Band-limited wavetable oscillator** with factory waves (Sine, Triangle, Saw, Square).
+- **16-voice polyphonic engine** with deterministic oldest-released voice stealing, note-on/off, sustain pedal, all-notes-off/panic, velocity, and pitch bend.
+- **Amplitude ADSR** envelope with click-free voice start/release.
+- **Global Corvus effects chain** (Distortion → Chorus → Delay → Reverb → Master) after the voice mix.
+- **Flight** performance macro, **FX Amount**, and output level controls.
+- **5 signature patches:** Dawn Choir, Raven Glass, Ashen Sky, Northern Signal, Cathedral Drift.
+- **Deterministic DSP test suite** (`CorvusDSPTests`) covering the effects baseline fingerprint, oscillator frequency/band-limiting/determinism, and voice/engine note lifecycle.
+
+The full design (second oscillator, sub/noise, filter, modulation matrix, additional macros, and ~24 beta presets) is documented in [`docs/superpowers/specs/2026-08-08-corvus-instrument-design.md`](docs/superpowers/specs/2026-08-08-corvus-instrument-design.md).
 
 ---
 
@@ -318,7 +364,7 @@ Incremental-rotation LFO recurrence (sin/cos via single multiply-add) slowly los
 | **Mk1** | `drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3` |
 | **Mk2** | `DrippyMk2/NewProject.vst3/Contents/x86_64-win/DrippyMk2.vst3` |
 
-Mk1 is the current mainline. Mk2 is an experimental alternative build.
+Mk1 is the current mainline. Mk2 is an experimental alternative build. The companion instrument builds as `CorvusInstrument.vst3` / Standalone from the same CMake project.
 
 ---
 
@@ -337,6 +383,8 @@ MSBuild.exe "path/to/NewProject_VST3.vcxproj" -p:Configuration=Release -p:Platfo
 
 ### CMake Build (Alternative)
 
+The CMake project defines three targets: **`DrippyFX`** (VST3/AU/Standalone), **`CorvusInstrument`** (VST3/Standalone), and **`CorvusDSPTests`** (console regression harness).
+
 ```bash
 set JUCE_PATH=C:\path\to\JUCE
 cd path\to\source
@@ -345,6 +393,14 @@ cmake --build build --config Release
 ```
 
 Source code is located in the `source/DrippyFX/` directory of this repo, alongside deployed binaries under `drippy/` and `DrippyMk2/`.
+
+| Path | Contents |
+|------|----------|
+| `source/DrippyFX/PluginProcessor.*` | Corvus FX audio processor — parameter layout, `processBlock`, presets, MIDI Learn, A/B, state |
+| `source/DrippyFX/PluginEditor.*` | Corvus FX editor — knobs, layout, tooltips, undo/redo shortcuts |
+| `source/DrippyFX/dsp/CorvusEffects.h` | Shared DSP core (distortion, chorus, delay, reverb, master, oversampling, utilities) |
+| `source/DrippyFX/instrument/` | Corvus Instrument processor, editor, voice engine, oscillator, presets |
+| `source/DrippyFX/tests/CorvusDspTests.cpp` | Deterministic DSP regression tests (`CorvusDSPTests` target) |
 
 ---
 
@@ -356,6 +412,7 @@ Source code is located in the `source/DrippyFX/` directory of this repo, alongsi
 | **Aliasing** (THD+N @ 10dB drive) | Inaudible (< -100dB) | ✅ 2x oversampling on all 4 saturation stages |
 | **Parameter zipper noise** | None audible | ✅ LinearSmoothedValue (20ms) |
 | **Preset recall reliability** | 100% | ✅ Bounds-checked, 4-table host interop |
+| **Compiler warnings** | 0 | ✅ 37 → 0 (`/W4`) |
 | **DAW compatibility** | Reaper, Ableton, FL, Cubase | ✅ Tested |
 
 ---
@@ -364,11 +421,18 @@ Source code is located in the `source/DrippyFX/` directory of this repo, alongsi
 
 | Date | Change |
 |------|--------|
+| 2026-09-20 | **Corvus Instrument vertical slice** — band-limited wavetable oscillator, 16-voice engine, distinct synth target, shared DSP core extraction, 5 signature patches, deterministic DSP test harness |
+| 2026-08-08 | Corvus DSP core extracted to `dsp/CorvusEffects.h`; `CorvusDSPTests` console harness locks a deterministic effects fingerprint |
+| 2026-07-30 | **Output Trim** parameter for final gain staging; `NEEDS_MIDI_INPUT` enabled so MIDI Learn works in VST3 |
+| 2026-07-29 | Delay wow/flutter LFO rate bugfix; sr-only `std::exp()` hoisted from `beginBlock()` to `prepare()`; Chorus `msToSamples` cached in block coefficients; removed unused delay DC state |
+| 2026-07-28 | **Randomize Preset** button; **Undo/Redo** (`UndoManager` wired to APVTS, `Ctrl+Z`/`Ctrl+Shift+Z`/`Ctrl+Y`) |
+| 2026-07-27 | **MIDI Learn** for all knobs (right-click, CC mapping, state persistence); **Preset A/B Compare** with SAVE; all 37 compiler warnings resolved |
+| 2026-07-26 | Equal-power reverb wet/dry crossfade; per-module output clamping for Chorus and Delay; preset combo range widened to expose all 36 presets |
 | 2026-07-25 | Critical delay ms-to-samples conversion fix (was using 1/sr instead of sr*0.001f — all presets produced ~0.02ms delay regardless of knob setting) |
 | 2026-07-25 | Merged meter accumulation into main DSP loop (eliminated 2 buffer iterations) |
 | 2026-07-25 | Per-sample delay_mod smoothing — last parameter using block-level snapshot |
 | 2026-07-22 | DC blocker added to Master Output stage (mid/side channels) |
-| 2026-07-22 | TooltipWindow added — all 24 tooltips now render in DAWs |
+| 2026-07-22 | TooltipWindow added — all tooltips now render in DAWs |
 | 2026-07-20 | Log-scale (dB) level meters — consistent amp-to-Y mapping |
 | 2026-07-20 | LFO phase-recurrence magnitude renormalization — fixes float32 rotation drift |
 | 2026-07-20 | Hoisted per-sample std::sqrt from Chorus hot path — truly completes zero-transcendental milestone |
@@ -401,7 +465,7 @@ Source code is located in the `source/DrippyFX/` directory of this repo, alongsi
 | 2026-07-01 | EnhancedChorus: 2x oversampling for feedback tanh anti-aliasing |
 | 2026-06-30 | ScopedNoDenormals fix (single RAII per block) |
 | 2026-06-29 | Reverb allpass feedback scaling with room size (0.50→0.70) |
-| 2026-06-29 | All 13 parameters: LinearSmoothedValue for zipper-free automation |
+| 2026-06-29 | All audio parameters: LinearSmoothedValue for zipper-free automation |
 | 2026-06-28 | EnhancedDelay: 2x oversampling for tape saturation in feedback loop |
 | 2026-06-27 | ProfessionalDistortion: smooth tape→tube crossfade via Hermite smoothstep |
 | 2026-06-27 | Distortion + Master: 2x oversampling for zero aliasing |
@@ -413,7 +477,7 @@ Source code is located in the `source/DrippyFX/` directory of this repo, alongsi
 | 2026-06-24 | Reverb: reverb_mod knob activated |
 | 2026-06-24 | Presets: fixed setCurrentProgram bounds for all 18 presets |
 
-For the full engineering change log with MD5 hashes and binary verification, see `docs/PRIORITIES.md`.
+For the full engineering change log with binary verification, see `PRIORITIES.md` and `ROADMAP.md`.
 
 ---
 
@@ -449,8 +513,17 @@ A: Corvus (Latin: crow/raven) — intelligent, adaptable birds known for their t
 **Q: How do I bypass individual modules?**
 A: Each module has a color-coded BYPASS button below its controls. The bypass uses a 30ms click-free crossfade for silent switching in any DAW.
 
+**Q: How do I control knobs from a hardware MIDI controller?**
+A: Right-click any knob and choose **MIDI Learn**, then move a control on your hardware. The mapping is saved in the plugin state. Re-open the same menu to **Forget MIDI Mapping** for that knob or **Clear All MIDI Maps**.
+
+**Q: What is Preset A/B Compare?**
+A: Use the **A** and **B** buttons to load two snapshots and **SAVE** to store the current knob positions into the active slot — handy for auditioning tweaks against the original settings.
+
+**Q: Can I undo a change?**
+A: Yes. Press `Ctrl+Z` to undo and `Ctrl+Shift+Z` or `Ctrl+Y` to redo (`Cmd` on macOS).
+
 **Q: How do the Master Width, Mid Drive, and Side Drive controls work?**
-A: The Master Output converts L/R to Mid/Side internally. **Width** scales the side signal (0% = mono, 100% = original, >100% = widened). **Mid Drive** applies saturation to center-panned content; **Side Drive** applies saturation to stereo-width content. This gives you independent control over the center image and stereo field saturation.
+A: The Master Output converts L/R to Mid/Side internally. **Width** scales the side signal (0% narrow → 100% wide). **Mid Drive** applies saturation to center-panned content; **Side Drive** applies saturation to stereo-width content. This gives you independent control over the center image and stereo field saturation.
 
 **Q: Where can I report bugs or request features?**
 A: Open an [issue](https://github.com/ethanjones1132-lab/CorvusFx/issues) or start a [discussion](https://github.com/ethanjones1132-lab/CorvusFx/discussions).
@@ -461,7 +534,7 @@ A: Open an [issue](https://github.com/ethanjones1132-lab/CorvusFx/issues) or sta
 
 Contributions are welcome! Whether it's bug fixes, DSP improvements, new presets, or documentation — every bit helps.
 
-**Source layout:** Edit JUCE code under `source/DrippyFX/`. Shipped Windows binaries live at `drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3`. Any commit that updates the `.vst3` for a code-level fix must include the matching `source/DrippyFX/` diffs (see `docs/AGENTS.md`).
+**Source layout:** Edit JUCE code under `source/DrippyFX/`. Shared DSP lives in `source/DrippyFX/dsp/CorvusEffects.h`; the synth target is under `source/DrippyFX/instrument/`. Shipped Windows binaries live at `drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3`. Any commit that updates the `.vst3` for a code-level fix must include the matching `source/DrippyFX/` diffs (see `AGENTS.md`).
 
 1. Fork the repo
 2. Create a feature branch (`git checkout -b feature/amazing-idea`)
@@ -471,7 +544,7 @@ Contributions are welcome! Whether it's bug fixes, DSP improvements, new presets
 
 For major changes, please open a discussion first to align on approach.
 
-See `docs/AGENTS.md` for the engineering workflow used by autonomous coding agents on this project.
+See `AGENTS.md` for the engineering workflow used by autonomous coding agents on this project.
 
 ---
 
