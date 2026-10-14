@@ -309,7 +309,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     themeToggleButton.setButtonText(themeDark ? "DARK" : "LIGHT");
     themeToggleButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff24244a));
     themeToggleButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb0b0cf));
-    themeToggleButton.setTooltip("Toggle dark/light theme palette");
+    themeToggleButton.setTooltip("Toggle dark/light theme palette (Ctrl+T)");
     themeToggleButton.onClick = [this] { themeDark = !themeDark; toggleTheme(); };
     addAndMakeVisible(themeToggleButton);
 
