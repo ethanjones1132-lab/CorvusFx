@@ -1,4 +1,4 @@
-﻿#include "PluginProcessor.h"
+#include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include <cmath>
 #include <algorithm>
@@ -175,12 +175,33 @@ void CorvusFXAudioProcessor::randomizePreset()
         if (ranged->getParameterID() == "preset")
             continue;
 
+        {
+            const juce::ScopedLock lock(lockedParamsLock);
+            if (lockedParams.count(ranged->getParameterID()) != 0)
+                continue;
+        }
+
         bool isBool = dynamic_cast<juce::AudioParameterBool*>(ranged) != nullptr;
         if (isBool)
             ranged->setValueNotifyingHost(rng.nextFloat() < 0.15f ? 1.0f : 0.0f);
         else
             ranged->setValueNotifyingHost(rng.nextFloat());
     }
+}
+
+void CorvusFXAudioProcessor::setParameterLocked(const juce::String& paramID, bool locked)
+{
+    const juce::ScopedLock lock(lockedParamsLock);
+    if (locked)
+        lockedParams.insert(paramID);
+    else
+        lockedParams.erase(paramID);
+}
+
+bool CorvusFXAudioProcessor::isParameterLocked(const juce::String& paramID) const
+{
+    const juce::ScopedLock lock(lockedParamsLock);
+    return lockedParams.count(paramID) != 0;
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::createParameterLayout()
@@ -792,6 +813,19 @@ void CorvusFXAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
         }
     }
 
+    // Save locked parameters as a child element
+    auto* locksXml = xml->createNewChildElement("paramLocks");
+    if (locksXml)
+    {
+        const juce::ScopedLock lock(lockedParamsLock);
+        for (const auto& id : lockedParams)
+        {
+            auto* lockXml = locksXml->createNewChildElement("lock");
+            if (lockXml)
+                lockXml->setAttribute("id", id);
+        }
+    }
+
     copyXmlToBinary(*xml, destData);
 }
 
@@ -815,7 +849,21 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
                     midiMap[cc] = paramID;
             }
         }
-    }
+
+        // Restore locked parameter list
+        if (auto* restoredLocksXml = xml->getChildByName("paramLocks"))
+        {
+            const juce::ScopedLock lock(lockedParamsLock);
+            lockedParams.clear();
+            for (auto* lockXml : restoredLocksXml->getChildWithTagNameIterator("lock"))
+            {
+                const juce::String id = lockXml->getStringAttribute("id");
+                if (id.isNotEmpty())
+                    lockedParams.insert(id);
+            }
+        }
+}
+
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new CorvusFXAudioProcessor(); }

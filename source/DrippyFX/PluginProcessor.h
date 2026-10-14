@@ -7,6 +7,7 @@
 #include <array>
 #include <atomic>
 #include <map>
+#include <set>
 
 //==============================================================================
 class CorvusFXAudioProcessor : public juce::AudioProcessor,
@@ -42,6 +43,10 @@ public:
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     void loadPreset(int index);
     void randomizePreset();
+
+    // Parameter locking for randomize preservation
+    void setParameterLocked(const juce::String& paramID, bool locked);
+    bool isParameterLocked(const juce::String& paramID) const;
 
     // Preset A/B Compare
     void saveSlotA();
@@ -110,6 +115,9 @@ private:
     // MIDI Learn - maps MIDI CC numbers to parameter IDs
     std::map<int, juce::String> midiMap;
     juce::CriticalSection midiMapLock;
+
+    std::set<juce::String> lockedParams;
+    juce::CriticalSection lockedParamsLock;
 
 
     // Preset A/B Snapshot Storage
