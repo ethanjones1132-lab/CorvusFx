@@ -316,7 +316,6 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
 
     // Level meter
     addAndMakeVisible(levelMeter);
-    levelMeter.setTooltip("Input/output peak and RMS meters with dB scale");
 }
 
 CorvusFXAudioProcessorEditor::~CorvusFXAudioProcessorEditor()
