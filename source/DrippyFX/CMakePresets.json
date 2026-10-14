@@ -8,6 +8,7 @@
       "architecture": "x64",
       "cacheVariables": {
         "JUCE_PATH": "C:/Users/ethan/Downloads/juce-8.0.12-windows/JUCE",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CORVUS_COPY_PLUGIN_AFTER_BUILD": "OFF",
         "CORVUS_ENABLE_PGO": "OFF"
       }
