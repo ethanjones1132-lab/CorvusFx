@@ -9,7 +9,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Add JUCE
 # You need to download JUCE from https://github.com/juce-framework/JUCE
 # and set JUCE_PATH to the JUCE directory
-set(JUCE_PATH "C:/Users/ethan/Downloads/juce-8.0.12-windows/JUCE" CACHE PATH "Path to JUCE framework")
+# Honor an environment JUCE_PATH when no cache value has been supplied, while
+# preserving an explicit cache path and the Windows default as higher
+# precedence than the environment.
+if(NOT DEFINED JUCE_PATH)
+    if(DEFINED ENV{JUCE_PATH} AND NOT "$ENV{JUCE_PATH}" STREQUAL "")
+        set(JUCE_PATH "$ENV{JUCE_PATH}")
+    else()
+        set(JUCE_PATH "C:/Users/ethan/Downloads/juce-8.0.12-windows/JUCE")
+    endif()
+endif()
+set(JUCE_PATH "${JUCE_PATH}" CACHE PATH "Path to JUCE framework")
 
 if(NOT EXISTS "${JUCE_PATH}/modules")
     message(FATAL_ERROR "JUCE not found at ${JUCE_PATH}. Please download JUCE and set JUCE_PATH")
