@@ -28,6 +28,10 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     addAndMakeVisible(animatedBackground);
     animatedBackground.toBack();
     animatedBackground.setDarkTheme(themeDark);
+    distortionSection.setDarkTheme(themeDark);
+    chorusSection.setDarkTheme(themeDark);
+    delaySection.setDarkTheme(themeDark);
+    reverbSection.setDarkTheme(themeDark);
 
     titleLabel.setText("CORVUS FX", juce::dontSendNotification);
     titleLabel.setFont(juce::Font(juce::FontOptions(52.0f, juce::Font::bold)));
@@ -375,6 +379,10 @@ void CorvusFXAudioProcessorEditor::toggleTheme()
 {
     themeToggleButton.setButtonText(themeDark ? "DARK" : "LIGHT");
     animatedBackground.setDarkTheme(themeDark);
+    distortionSection.setDarkTheme(themeDark);
+    chorusSection.setDarkTheme(themeDark);
+    delaySection.setDarkTheme(themeDark);
+    reverbSection.setDarkTheme(themeDark);
     corvusLookAndFeel.setDarkTheme(themeDark);
     if (themeProperties)
     {

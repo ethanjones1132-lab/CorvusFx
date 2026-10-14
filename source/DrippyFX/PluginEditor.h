@@ -767,11 +767,12 @@ class EffectSection : public juce::Component
 {
 public:
     EffectSection(const juce::String& t, const juce::Colour& a) : title(t), accent(a) {}
+    void setDarkTheme(bool isDark) { themeDark = isDark; repaint(); }
     void paint(juce::Graphics& g) override
     {
         auto b = getLocalBounds().toFloat();
-        g.setColour(juce::Colour(0x20101020)); g.fillRoundedRectangle(b, 10);
-        g.setColour(juce::Colour(0x15ffffff)); g.fillRoundedRectangle(b.reduced(1), 9);
+        g.setColour(themeDark ? juce::Colour(0x20101020) : juce::Colour(0x30ffffff)); g.fillRoundedRectangle(b, 10);
+        g.setColour(themeDark ? juce::Colour(0x15ffffff) : juce::Colour(0x1e000000)); g.fillRoundedRectangle(b.reduced(1), 9);
         auto hl = b.removeFromTop(b.getHeight() * .4f);
         juce::ColourGradient hg(juce::Colour(0x08ffffff), hl.getCentreX(), hl.getY(), juce::Colours::transparentWhite, hl.getCentreX(), hl.getBottom(), false);
         g.setGradientFill(hg); g.fillRoundedRectangle(hl.reduced(1), 9);
@@ -783,6 +784,7 @@ public:
     }
 private:
     juce::String title; juce::Colour accent;
+    bool themeDark = true;
 };
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
