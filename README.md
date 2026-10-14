@@ -385,6 +385,8 @@ MSBuild.exe "path/to/NewProject_VST3.vcxproj" -p:Configuration=Release -p:Platfo
 
 The CMake project defines three targets: **`DrippyFX`** (VST3/AU/Standalone), **`CorvusInstrument`** (VST3/Standalone), and **`CorvusDSPTests`** (console regression harness).
 
+Use the included `CMakePresets.json` for the supported Windows VS 2026 configure/build:
+
 ```bash
 set JUCE_PATH=C:\path\to\JUCE
 cd path\to\source
