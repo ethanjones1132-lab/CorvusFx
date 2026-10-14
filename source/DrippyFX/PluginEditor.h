@@ -840,6 +840,7 @@ private:
     // Theme toggle button (also available via Ctrl+T)
     juce::TextButton themeToggleButton;
     // Theme state (plumbed in this slice; palette lands later)
+    std::unique_ptr<juce::PropertiesFile> themeProperties;
     bool themeDark = true;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CorvusFXAudioProcessorEditor)
 };
