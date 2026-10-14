@@ -267,7 +267,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::crea
     params.push_back(pctParam("master_side_drive", "Master Side Drive", 0));
     params.push_back(std::make_unique<juce::AudioParameterBool>("master_bypass", "Master Bypass", false));
     params.push_back(pctParam("output_trim", "Output Trim", 100));
-    params.push_back(std::make_unique<juce::AudioParameterInt>("preset", "Preset", 0, 42, 2));
+    params.push_back(std::make_unique<juce::AudioParameterInt>(
+        "preset", "Preset", 0, 42, 2,
+        juce::AudioParameterIntAttributes().withMeta(true)));
+#if 0
+params.push_back(std::make_unique<juce::AudioParameterInt>("preset", "Preset", 0, 42, 2));
+#endif
     return { params.begin(), params.end() };
 }
 

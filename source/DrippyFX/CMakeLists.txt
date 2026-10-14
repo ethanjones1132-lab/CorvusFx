@@ -108,7 +108,7 @@ juce_add_plugin(CorvusInstrument
     COPY_PLUGIN_AFTER_BUILD ${CORVUS_COPY_PLUGIN_AFTER_BUILD}
     PLUGIN_MANUFACTURER_CODE Crvs
     PLUGIN_CODE Cvi1
-    FORMATS VST3 Standalone
+    FORMATS VST3 AU Standalone
     PRODUCT_NAME "Corvus Instrument"
     VST3_CATEGORIES "Instrument" "Synth"
 )
@@ -189,6 +189,20 @@ else()
     target_compile_options(CorvusDSPTests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+
+# Ad-hoc sign AU bundles for local Core Audio discovery on Apple Silicon.
+# JUCE only ad-hoc-signs the AU when the copy step is enabled, but this
+# project keeps CORVUS_COPY_PLUGIN_AFTER_BUILD off.
+if(APPLE)
+    add_custom_command(TARGET DrippyFX_AU POST_BUILD
+        COMMAND /usr/bin/codesign --force --sign - --timestamp=none
+                $<TARGET_BUNDLE_DIR:DrippyFX_AU>
+        VERBATIM)
+    add_custom_command(TARGET CorvusInstrument_AU POST_BUILD
+        COMMAND /usr/bin/codesign --force --sign - --timestamp=none
+                $<TARGET_BUNDLE_DIR:CorvusInstrument_AU>
+        VERBATIM)
+endif()
 
 # Convenience helper for the regression harness.
 add_custom_target(CorvusDSPTestsRun
