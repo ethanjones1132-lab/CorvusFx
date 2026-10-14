@@ -307,9 +307,7 @@ bool CorvusFXAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
 
 void CorvusFXAudioProcessorEditor::toggleTheme()
 {
-    // Plumbing-only stage of the theme feature: the host mode is now
-    // mutable and a repaint is triggered on every toggle. Colour palette
-    // switching lands in later slices.
+    corvusLookAndFeel.setDarkTheme(themeDark);
     repaint();
 }
 

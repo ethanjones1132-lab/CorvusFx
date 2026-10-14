@@ -36,22 +36,38 @@ private:
 class CorvusLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    CorvusLookAndFeel()
+    CorvusLookAndFeel(bool darkTheme = true) : darkTheme_(darkTheme) { applyTheme(); }
+
+    void setDarkTheme(bool darkTheme)
     {
-        setColour(juce::ResizableWindow::backgroundColourId, juce::Colour(0xff050510));
-        setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xffc0c0d0));
-        setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xff0c0c1a));
-        setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xff2a2a50));
-        setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff12122a));
-        setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff3a3a6a));
-        setColour(juce::ComboBox::arrowColourId, juce::Colour(0xffb366ff));
-        setColour(juce::ComboBox::textColourId, juce::Colour(0xffd0d0e0));
-        setColour(juce::PopupMenu::backgroundColourId, juce::Colour(0xff12122a));
-        setColour(juce::PopupMenu::textColourId, juce::Colour(0xffd0d0e0));
-        setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(0xff3a2a6a));
-        setColour(juce::Label::textColourId, juce::Colour(0xffd0d0e0));
+        if (darkTheme_ == darkTheme)
+            return;
+        darkTheme_ = darkTheme;
+        applyTheme();
     }
 
+    bool isDarkTheme() const { return darkTheme_; }
+
+private:
+    bool darkTheme_ = true;
+
+    void applyTheme()
+    {
+        setColour(juce::ResizableWindow::backgroundColourId, darkTheme_ ? juce::Colour(0xff050510) : juce::Colour(0xffeef0f8));
+        setColour(juce::Slider::textBoxTextColourId, darkTheme_ ? juce::Colour(0xffc0c0d0) : juce::Colour(0xff303048));
+        setColour(juce::Slider::textBoxBackgroundColourId, darkTheme_ ? juce::Colour(0xff0c0c1a) : juce::Colour(0xffdfe2ef));
+        setColour(juce::Slider::textBoxOutlineColourId, darkTheme_ ? juce::Colour(0xff2a2a50) : juce::Colour(0xffb7bed8));
+        setColour(juce::ComboBox::backgroundColourId, darkTheme_ ? juce::Colour(0xff12122a) : juce::Colour(0xffffffff));
+        setColour(juce::ComboBox::outlineColourId, darkTheme_ ? juce::Colour(0xff3a3a6a) : juce::Colour(0xffb7bed8));
+        setColour(juce::ComboBox::arrowColourId, darkTheme_ ? juce::Colour(0xffb366ff) : juce::Colour(0xff51239f));
+        setColour(juce::ComboBox::textColourId, darkTheme_ ? juce::Colour(0xffd0d0e0) : juce::Colour(0xff222238));
+        setColour(juce::PopupMenu::backgroundColourId, darkTheme_ ? juce::Colour(0xff12122a) : juce::Colour(0xffffffff));
+        setColour(juce::PopupMenu::textColourId, darkTheme_ ? juce::Colour(0xffd0d0e0) : juce::Colour(0xff222238));
+        setColour(juce::PopupMenu::highlightedBackgroundColourId, darkTheme_ ? juce::Colour(0xff3a2a6a) : juce::Colour(0xffd6d8ef));
+        setColour(juce::Label::textColourId, darkTheme_ ? juce::Colour(0xffd0d0e0) : juce::Colour(0xff222238));
+    }
+
+public:
     void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
         float sliderPos, float rotaryStartAngle, float rotaryEndAngle,
         juce::Slider& slider) override
