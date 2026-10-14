@@ -22,6 +22,18 @@ option(CORVUS_COPY_PLUGIN_AFTER_BUILD
     OFF
 )
 
+option(CORVUS_ENABLE_PGO
+    "Enable profile-guided optimization. Two-pass workflow; see README build section."
+    OFF
+)
+
+if(CORVUS_ENABLE_PGO)
+    if(MSVC)
+        add_compile_options(/GL)
+    endif()
+    message(STATUS "Corvus PGO: instrumentation flags enabled. Run the training executable before an optimize pass.")
+endif()
+
 # Plugin configuration
 juce_add_plugin(DrippyFX
     COMPANY_NAME "DrippyFX"
