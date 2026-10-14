@@ -41,7 +41,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     addAndMakeVisible(presetLabel);
 
     // Factory preset categorization: grouped by vibe with disabled separator items
-    // Category 1: CLEAN ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â transparent enhancement, pristine highs (6 presets)
+    // Category 1: CLEAN ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â transparent enhancement, pristine highs (6 presets)
     presetSelector.addItem("--- CLEAN ---", 1);   presetSelector.setItemEnabled(1, false);
     presetSelector.addItem("Clean Sparkle", 2);
     presetSelector.addItem("Crystal Shimmer", 3);
@@ -50,7 +50,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.addItem("Glass Canon", 6);
     presetSelector.addItem("Air Lift", 7);
     
-    // Category 2: WARM ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â analog-style saturation, musical thickening (6 presets)
+    // Category 2: WARM ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â analog-style saturation, musical thickening (6 presets)
     presetSelector.addItem("--- WARM ---", 8);    presetSelector.setItemEnabled(8, false);
     presetSelector.addItem("Warm Glow", 9);
     presetSelector.addItem("Vintage Vibe", 10);
@@ -59,7 +59,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.addItem("Cozy Hiss", 13);
     presetSelector.addItem("Tube Glow", 14);
     
-    // Category 3: CREATIVE ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â modulation-forward, sound design (6 presets)
+    // Category 3: CREATIVE ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â modulation-forward, sound design (6 presets)
     presetSelector.addItem("--- CREATIVE ---", 15); presetSelector.setItemEnabled(15, false);
     presetSelector.addItem("Dreamy Space", 16);
     presetSelector.addItem("Cosmic Wide", 17);
@@ -68,7 +68,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.addItem("Nebula Drift", 20);
     presetSelector.addItem("Shimmerfall", 21);
     
-    // Category 4: EXTREME ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â aggressive, heavy processing (6 presets)
+    // Category 4: EXTREME ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â aggressive, heavy processing (6 presets)
     presetSelector.addItem("--- EXTREME ---", 22); presetSelector.setItemEnabled(22, false);
     presetSelector.addItem("Deep Echo", 23);
     presetSelector.addItem("Aggressive Drive", 24);
@@ -77,7 +77,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.addItem("Iron Press", 27);
     presetSelector.addItem("Obliterator", 28);
     
-    // Category 5: SIGNATURE ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â curated artist-style sounds, distinct character (6 presets)
+    // Category 5: SIGNATURE ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â curated artist-style sounds, distinct character (6 presets)
     presetSelector.addItem("--- SIGNATURE ---", 29); presetSelector.setItemEnabled(29, false);
     presetSelector.addItem("Velvet Morning", 30);
     presetSelector.addItem("Neon Dusk", 31);
@@ -86,7 +86,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.addItem("Circuit Bent", 34);
     presetSelector.addItem("Midnight Oil", 35);
     
-    // Category 6: DREAM ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ambient, ethereal, deep soundscapes (6 presets)
+    // Category 6: DREAM ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ambient, ethereal, deep soundscapes (6 presets)
     presetSelector.addItem("--- DREAM ---", 36); presetSelector.setItemEnabled(36, false);
     presetSelector.addItem("Cloud Chamber", 37);
     presetSelector.addItem("Frozen Lake", 38);
@@ -96,7 +96,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     presetSelector.addItem("Solar Flare", 42);
     
     presetSelector.setSelectedId(2); // Default to Clean Sparkle (first actual preset)
-    presetSelector.setTooltip("Select factory preset ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 36 curated sounds from clean enhancement to deep ambient soundscapes");
+    presetSelector.setTooltip("Select factory preset ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â 36 curated sounds from clean enhancement to deep ambient soundscapes");
     addAndMakeVisible(presetSelector);
 
     auto setupKnob = [this](AnimatedKnob& k, juce::Label& l, const juce::String& txt, const juce::String& paramID, const juce::String& tooltip = "") {
@@ -142,7 +142,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
         };
         };
 
-    setupKnob(overallKnob, overallLabel, "OVERALL", "overall", "Global wet/dry mix ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â blends the full effect chain with the dry signal");
+    setupKnob(overallKnob, overallLabel, "OVERALL", "overall", "Global wet/dry mix ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â blends the full effect chain with the dry signal");
     overallLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
     overallLabel.setColour(juce::Label::textColourId, juce::Colour(0xffb0b0c8));
 
@@ -156,7 +156,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     distortionBypassButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff552233));
     distortionBypassButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff886666));
     distortionBypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffcc8888));
-    distortionBypassButton.setTooltip("Bypass the distortion module entirely ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â click-free crossfade");
+    distortionBypassButton.setTooltip("Bypass the distortion module entirely ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â click-free crossfade");
 
     addAndMakeVisible(chorusBypassButton);
     chorusBypassButton.setButtonText("BYPASS");
@@ -164,7 +164,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     chorusBypassButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff223344));
     chorusBypassButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff6688aa));
     chorusBypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff88aacc));
-    chorusBypassButton.setTooltip("Bypass the chorus module entirely ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â click-free crossfade");
+    chorusBypassButton.setTooltip("Bypass the chorus module entirely ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â click-free crossfade");
 
     addAndMakeVisible(delayBypassButton);
     delayBypassButton.setButtonText("BYPASS");
@@ -172,7 +172,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     delayBypassButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff224433));
     delayBypassButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff66aa88));
     delayBypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff88ccaa));
-    delayBypassButton.setTooltip("Bypass the delay module entirely ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â click-free crossfade");
+    delayBypassButton.setTooltip("Bypass the delay module entirely ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â click-free crossfade");
 
     addAndMakeVisible(reverbBypassButton);
     reverbBypassButton.setButtonText("BYPASS");
@@ -180,7 +180,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     reverbBypassButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff442244));
     reverbBypassButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffaa66aa));
     reverbBypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffcc88cc));
-    reverbBypassButton.setTooltip("Bypass the reverb module entirely ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â click-free crossfade");
+    reverbBypassButton.setTooltip("Bypass the reverb module entirely ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â click-free crossfade");
 
     addAndMakeVisible(masterBypassButton);
     masterBypassButton.setButtonText("BYPASS");
@@ -188,26 +188,26 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     masterBypassButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff442233));
     masterBypassButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffaa6688));
     masterBypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffcc88aa));
-    masterBypassButton.setTooltip("Bypass the master output stage entirely ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â click-free crossfade");
+    masterBypassButton.setTooltip("Bypass the master output stage entirely ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â click-free crossfade");
 
-    setupKnob(fatnessKnob, fatnessLabel, "DRIVE", "fatness", "Distortion amount ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â blends tape saturation at low settings into tube warmth at high settings");
-    setupKnob(chorusDepthKnob, chorusDepthLabel, "DEPTH", "chorus_depth", "Chorus modulation depth ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â controls pitch excursion amount");
-    setupKnob(chorusRateKnob, chorusRateLabel, "RATE", "chorus_rate", "Chorus LFO speed (Hz) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 6 decorrelated voices never align");
-    setupKnob(chorusMixKnob, chorusMixLabel, "MIX", "chorus_mix", "Chorus wet/dry balance ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 10% dry anchor keeps pitch stable at full wet");
-    setupKnob(delayTimeKnob, delayTimeLabel, "TIME", "delay_time", "Delay time in milliseconds ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 0 to 2000ms with tape-style interpolation");
-    setupKnob(delayFeedbackKnob, delayFeedbackLabel, "FEEDBACK", "delay_feedback", "Delay feedback amount ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â exponential mapping for musical response");
+    setupKnob(fatnessKnob, fatnessLabel, "DRIVE", "fatness", "Distortion amount ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â blends tape saturation at low settings into tube warmth at high settings");
+    setupKnob(chorusDepthKnob, chorusDepthLabel, "DEPTH", "chorus_depth", "Chorus modulation depth ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â controls pitch excursion amount");
+    setupKnob(chorusRateKnob, chorusRateLabel, "RATE", "chorus_rate", "Chorus LFO speed (Hz) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â 6 decorrelated voices never align");
+    setupKnob(chorusMixKnob, chorusMixLabel, "MIX", "chorus_mix", "Chorus wet/dry balance ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â 10% dry anchor keeps pitch stable at full wet");
+    setupKnob(delayTimeKnob, delayTimeLabel, "TIME", "delay_time", "Delay time in milliseconds ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â 0 to 2000ms with tape-style interpolation");
+    setupKnob(delayFeedbackKnob, delayFeedbackLabel, "FEEDBACK", "delay_feedback", "Delay feedback amount ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â exponential mapping for musical response");
     setupKnob(delayMixKnob, delayMixLabel, "MIX", "delay_mix", "Delay wet/dry balance");
-    setupKnob(delayDampingKnob, delayDampingLabel, "DAMPING", "delay_damping", "Delay feedback tone ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â high values = darker, more tape-like repeats");
-    setupKnob(delayModKnob, delayModLabel, "MOD", "delay_mod", "Delay tape modulation depth ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â wow and flutter intensity for vintage tape character");
-    setupKnob(reverbSizeKnob, reverbSizeLabel, "SIZE", "reverb_size", "Reverb room size ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â controls both decay time and diffusion character");
-    setupKnob(reverbDampingKnob, reverbDampingLabel, "DAMPING", "reverb_damping", "Reverb high-frequency absorption ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â higher = shorter, darker tail");
+    setupKnob(delayDampingKnob, delayDampingLabel, "DAMPING", "delay_damping", "Delay feedback tone ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â high values = darker, more tape-like repeats");
+    setupKnob(delayModKnob, delayModLabel, "MOD", "delay_mod", "Delay tape modulation depth ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â wow and flutter intensity for vintage tape character");
+    setupKnob(reverbSizeKnob, reverbSizeLabel, "SIZE", "reverb_size", "Reverb room size ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â controls both decay time and diffusion character");
+    setupKnob(reverbDampingKnob, reverbDampingLabel, "DAMPING", "reverb_damping", "Reverb high-frequency absorption ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â higher = shorter, darker tail");
     setupKnob(reverbMixKnob, reverbMixLabel, "MIX", "reverb_mix", "Reverb wet/dry balance");
-    setupKnob(reverbModKnob, reverbModLabel, "MOD", "reverb_mod", "Reverb modulation depth ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â adds organic movement to the reverb tail");
-    setupKnob(masterDriveKnob, masterDriveLabel, "MASTER DRIVE", "master_drive", "Master output saturation ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â push-pull even harmonics for analog warmth");
-    setupKnob(masterWidthKnob, masterWidthLabel, "WIDTH", "master_width", "Stereo width ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 0% = mono, 100% = original stereo, >100% = widened");
-    setupKnob(masterMidDriveKnob, masterMidDriveLabel, "MID DRIVE", "master_mid_drive", "Mid channel saturation ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â push-pull even harmonics on center content");
-    setupKnob(masterSideDriveKnob, masterSideDriveLabel, "SIDE DRIVE", "master_side_drive", "Side channel saturation ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â push-pull even harmonics on stereo width");
-    setupKnob(outputTrimKnob, outputTrimLabel, "TRIM", "output_trim", "Output level trim ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 0% = silent, 100% = unity gain, 200% = +6dB boost");
+    setupKnob(reverbModKnob, reverbModLabel, "MOD", "reverb_mod", "Reverb modulation depth ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â adds organic movement to the reverb tail");
+    setupKnob(masterDriveKnob, masterDriveLabel, "MASTER DRIVE", "master_drive", "Master output saturation ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â push-pull even harmonics for analog warmth");
+    setupKnob(masterWidthKnob, masterWidthLabel, "WIDTH", "master_width", "Stereo width ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â 0% = mono, 100% = original stereo, >100% = widened");
+    setupKnob(masterMidDriveKnob, masterMidDriveLabel, "MID DRIVE", "master_mid_drive", "Mid channel saturation ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â push-pull even harmonics on center content");
+    setupKnob(masterSideDriveKnob, masterSideDriveLabel, "SIDE DRIVE", "master_side_drive", "Side channel saturation ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â push-pull even harmonics on stereo width");
+    setupKnob(outputTrimKnob, outputTrimLabel, "TRIM", "output_trim", "Output level trim ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â 0% = silent, 100% = unity gain, 200% = +6dB boost");
 
     auto applyLockColor = [this](AnimatedKnob& knob)
     {
@@ -274,6 +274,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     btnSlotA.setTooltip("Load preset snapshot A");
     btnSlotA.onClick = [this] { audioProcessor.loadSlotA(); btnSlotA.setToggleState(true, juce::dontSendNotification); btnSlotB.setToggleState(false, juce::dontSendNotification); };
     addAndMakeVisible(btnSlotA);
+    btnSlotA.setTooltip("Active slot A / recall slot A (spacebar)");
 
     btnSlotB.setButtonText("B");
     btnSlotB.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2a2a50));
@@ -285,6 +286,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     btnSlotB.setTooltip("Load preset snapshot B");
     btnSlotB.onClick = [this] { audioProcessor.loadSlotB(); btnSlotB.setToggleState(true, juce::dontSendNotification); btnSlotA.setToggleState(false, juce::dontSendNotification); };
     addAndMakeVisible(btnSlotB);
+    btnSlotB.setTooltip("Active slot B / recall slot B");
 
     btnSaveAB.setButtonText("SAVE");
     btnSaveAB.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1a1a30));
@@ -293,11 +295,11 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     btnSaveAB.onClick = [this] { if (audioProcessor.isSlotA()) audioProcessor.saveSlotA(); else audioProcessor.saveSlotB(); };
     addAndMakeVisible(btnSaveAB);
 
-    // Randomize Preset button ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â one-click creative inspiration
+    // Randomize Preset button ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â one-click creative inspiration
     randomizeButton.setButtonText("RND");
     randomizeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a2a50));
     randomizeButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb366ff));
-    randomizeButton.setTooltip("Randomize all parameters for instant creative exploration ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â bypass buttons rarely engage");
+    randomizeButton.setTooltip("Randomize all parameters for instant creative exploration ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â bypass buttons rarely engage");
     randomizeButton.onClick = [this] { audioProcessor.randomizePreset(); };
     addAndMakeVisible(randomizeButton);
 
@@ -401,7 +403,7 @@ void CorvusFXAudioProcessorEditor::resized()
     auto area = getLocalBounds();
     animatedBackground.setBounds(area);
 
-    // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Calculate proportional scaling factor based on reference size 1200x700 ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+    // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Calculate proportional scaling factor based on reference size 1200x700 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
     // This ensures all layout elements scale smoothly between min (1000x600) and max (1600x900)
     const float refW = 1200.0f;
     const float refH = 700.0f;
@@ -410,7 +412,7 @@ void CorvusFXAudioProcessorEditor::resized()
     const float scale = juce::jmin(scaleW, scaleH); // Uniform scaling preserves aspect ratios
     auto sc = [scale](int px) { return juce::roundToInt(px * scale); };
 
-    // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Top: title + preset ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+    // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Top: title + preset ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
     auto topSection = area.removeFromTop(sc(100));
     titleLabel.setBounds(topSection.removeFromTop(sc(60)).reduced(sc(20), sc(5)));
     auto presetArea = topSection.reduced(sc(160), sc(5));
@@ -432,35 +434,35 @@ void CorvusFXAudioProcessorEditor::resized()
     themeToggleButton.setBounds(abBtnArea.removeFromLeft(sc(62)).withHeight(abH).withTrimmedTop(topOff));
     presetSelector.setBounds(presetRow);
 
-    // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Level Meter (between title/preset and overall knob) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+    // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Level Meter (between title/preset and overall knob) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
     auto meterArea = area.removeFromTop(sc(60)).reduced(area.getWidth() / 4, 0);
     levelMeter.setBounds(meterArea);
 
     area.removeFromBottom(sc(20)); // version text space
     area.reduce(sc(20), sc(10));
 
-    // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Overall knob (centered hero) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+    // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Overall knob (centered hero) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
     auto overallRow = area.removeFromTop(sc(180));
     int oSize = sc(150);
     auto oArea = overallRow.withSizeKeepingCentre(oSize, oSize + sc(30));
     overallKnob.setBounds(oArea.removeFromTop(oSize));
     overallLabel.setBounds(oArea);
 
-    // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Master Drive knob (below Overall) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+    // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Master Drive knob (below Overall) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
     auto masterDriveRow = area.removeFromTop(sc(100));
     int mSize = sc(100);
     auto mArea = masterDriveRow.withSizeKeepingCentre(mSize, mSize + sc(25));
     masterDriveKnob.setBounds(mArea.removeFromTop(mSize));
     masterDriveLabel.setBounds(mArea);
 
-    // Master bypass button ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â right-aligned in the same row
+    // Master bypass button ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â right-aligned in the same row
     auto mdrRow = masterDriveRow.reduced(sc(40), 0);
     auto mbBypassArea = mdrRow.removeFromRight(sc(100));
     masterBypassButton.setBounds(mbBypassArea.removeFromTop(sc(25)).withTrimmedLeft(0));
 
     area.removeFromTop(sc(10));
 
-    // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Master Width / Mid Drive / Side Drive knobs (below Master Drive) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+    // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Master Width / Mid Drive / Side Drive knobs (below Master Drive) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
     auto masterMSSRow = area.removeFromTop(sc(100));
     int msSize = sc(80);
     int msGap = sc(20);
@@ -486,7 +488,7 @@ void CorvusFXAudioProcessorEditor::resized()
     masterSideDriveKnob.setBounds(msSideArea.removeFromTop(msSize));
     masterSideDriveLabel.setBounds(msSideArea);
 
-    // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Output Trim knob (below Width/Mid/Side, centered)
+    // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ Output Trim knob (below Width/Mid/Side, centered)
     auto trimRow = area.removeFromTop(sc(80));
     int trimSize = sc(70);
     auto trimArea = trimRow.withSizeKeepingCentre(trimSize, trimSize + sc(25));
@@ -495,7 +497,7 @@ void CorvusFXAudioProcessorEditor::resized()
 
     area.removeFromTop(sc(10));
 
-    // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ 2x2 grid of effect sections ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
+    // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ 2x2 grid of effect sections ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬
     int totalW = area.getWidth();
     int totalH = area.getHeight();
     int gap = juce::jmax(1, sc(15));
