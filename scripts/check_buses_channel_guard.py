@@ -169,8 +169,8 @@ def main():
 
     # no-op guard: benign edit outside the pinned shapes must still pass
     shifted = cpp_raw.replace(
-        'params.push_back(std::make_unique<juce::AudioParameterInt>("preset", "Preset", 0, 42, 2));',
-        'params.push_back(std::make_unique<juce::AudioParameterInt>("preset", "Preset" , 0, 42, 2));')
+        'params.push_back(std::make_unique<juce::AudioParameterBool>("master_bypass", "Master Bypass", false));',
+        'params.push_back(std::make_unique<juce::AudioParameterBool>("master_bypass", "Master Bypass" , false));')
     if shifted == cpp_raw:
         fail("no-op guard: unanchored neutral edit did not change the source")
     err = _verify(shifted)
