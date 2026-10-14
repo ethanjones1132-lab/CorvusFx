@@ -756,8 +756,8 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 smpR = dryBuffer.getReadPointer(1)[s] * (1.0f - sOverall) + smpR * sOverall;
         }
 
-        chData[0][s] = smpL;
-        if (!isMono) chData[1][s] = smpR;
+        chData[0][s] = std::isfinite(smpL) ? smpL : 0.0f;
+        if (!isMono) chData[1][s] = std::isfinite(smpR) ? smpR : 0.0f;
 
         // ── Output level meter (read processed samples) ──
         {
