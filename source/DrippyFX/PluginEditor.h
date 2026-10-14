@@ -2,9 +2,9 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
-// ══════════════════════════════════════════════════════════════
-// ANIMATED KNOB — smooth hover glow
-// ══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ANIMATED KNOB â€” smooth hover glow
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 class AnimatedKnob : public juce::Slider, public juce::Timer
 {
 public:
@@ -30,9 +30,9 @@ private:
     bool hov = false, prs = false; float glow = 0.0f;
 };
 
-// ══════════════════════════════════════════════════════════════
-// PREMIUM LOOK AND FEEL — glass knobs with depth and specular
-// ══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// PREMIUM LOOK AND FEEL â€” glass knobs with depth and specular
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 class CorvusLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -119,10 +119,10 @@ public:
     }
 };
 
-// ═══════════════════════════════════════════════════════════════
-// LEVEL METER — Vertical stereo peak/RMS bars with dB scale
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// LEVEL METER â€” Vertical stereo peak/RMS bars with dB scale
 // Smooth exponential decay for professional metering feel
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 class LevelMeter : public juce::Component, public juce::Timer
 {
 public:
@@ -153,7 +153,7 @@ public:
         int xOutL = xInR + barW + gap;
         int xOutR = xOutL + barW;
 
-        // ── dB scale (left side of meter area) ──
+        // â”€â”€ dB scale (left side of meter area) â”€â”€
         // Professional metering: standard dB markings at -6, -12, -18, -24, -30, -40, -50, -60
         // dB = 20 * log10(amplitude), where 0dB = 1.0 (top), -60dB = 0.001 (near bottom)
         auto drawDbScale = [&](float xStart, float scaleW)
@@ -266,10 +266,10 @@ private:
     float outRmsL = 0.0f, outRmsR = 0.0f;
 };
 
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // PHOTOREALISTIC DEEP SPACE BACKGROUND
-// Static layers cached to images → only animate overlay = 60fps
-// ═══════════════════════════════════════════════════════════════
+// Static layers cached to images â†’ only animate overlay = 60fps
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 class AnimatedBackground : public juce::Component, public juce::Timer
 {
 public:
@@ -284,13 +284,22 @@ public:
         // Ensure the backdrop fill matches the active theme.
         g.fillAll(themeDark ? juce::Colour(0xff050510) : juce::Colour(0xfff4f4fa));
 
+        if (!themeDark) {
+            juce::ColourGradient soft(
+                juce::Colour(0xfff8f9ff), getWidth() / 2.0f, getHeight() / 2.0f,
+                juce::Colour(0xffdfe2f2), 0.0f, 0.0f, true);
+            g.setGradientFill(soft);
+            g.fillRect(getLocalBounds());
+            return;
+        }
+
 
         // Cache static layers on resize
         if (cW != w || cH != h) { renderNebula(w, h); renderStars(w, h); cW = w; cH = h; }
 
         g.drawImageAt(nebulaCache, 0, 0);
 
-        // Animated nebula pulse — 3 breathing zones for organic feel
+        // Animated nebula pulse â€” 3 breathing zones for organic feel
         float pulse1 = std::sin(phase * 0.12f) * 0.025f;
         float pulse2 = std::sin(phase * 0.17f + 1.2f) * 0.02f;
         float pulse3 = std::sin(phase * 0.09f + 3.5f) * 0.015f;
@@ -321,15 +330,15 @@ public:
 
         g.drawImageAt(starCache, 0, 0);
 
-        // Animated hero star twinkle — deeply organic, never repetitive
+        // Animated hero star twinkle â€” deeply organic, never repetitive
         for (int i = 0; i < NUM_HERO_STARS; ++i)
         {
             auto& s = heroStars[i];
 
-            // ── 4-oscillator composite with irregular bursting ──
+            // â”€â”€ 4-oscillator composite with irregular bursting â”€â”€
             // Primary: main rhythm
             float w1 = std::sin(phase * s.spd1 + s.ph);
-            // Secondary: detuned against primary → beating pattern
+            // Secondary: detuned against primary â†’ beating pattern
             float w2 = std::sin(phase * s.spd2 + s.ph * 1.73f);
             // Tertiary: slow envelope that gates the star on/off
             float w3 = std::sin(phase * s.spd3 + s.ph * 0.61f);
@@ -358,7 +367,7 @@ public:
             float sz = s.sz;
             float dynSize = sz * (0.6f + al * 0.6f);
 
-            // ── Color temperature shift during twinkle ──
+            // â”€â”€ Color temperature shift during twinkle â”€â”€
             // Stars shimmer between their base color and white-hot
             juce::Colour baseCol(s.col);
             // At peak brightness, shift toward white; at dim, shift toward blue
@@ -368,12 +377,12 @@ public:
             juce::Colour coolSc = baseCol.interpolatedWith(
                 juce::Colour(0xffaabbff), (1.0f - al) * 0.3f);
 
-            // ── Outer atmospheric halo (very faint, very large) ──
+            // â”€â”€ Outer atmospheric halo (very faint, very large) â”€â”€
             float haloR = dynSize * 7.0f;
             g.setColour(coolSc.withAlpha(al * 0.04f));
             g.fillEllipse(sx - haloR, sy - haloR, haloR * 2, haloR * 2);
 
-            // ── Diffraction spikes with subtle rotation ──
+            // â”€â”€ Diffraction spikes with subtle rotation â”€â”€
             // Slight rotation over time gives organic shimmer
             float spikeRot = std::sin(phase * 0.07f + s.ph * 3.1f) * 0.08f;
             float spikeLen = dynSize * (3.5f + al * 4.0f);
@@ -405,7 +414,7 @@ public:
             g.drawLine(sx + diagLen * dSin, sy - diagLen * dCos,
                 sx - diagLen * dSin, sy + diagLen * dCos, 0.5f);
 
-            // ── 5-layer bloom with color gradient ──
+            // â”€â”€ 5-layer bloom with color gradient â”€â”€
             g.setColour(coolSc.withAlpha(al * 0.035f));
             g.fillEllipse(sx - dynSize * 6, sy - dynSize * 6, dynSize * 12, dynSize * 12);
             g.setColour(coolSc.withAlpha(al * 0.06f));
@@ -414,7 +423,7 @@ public:
             g.fillEllipse(sx - dynSize * 3, sy - dynSize * 3, dynSize * 6, dynSize * 6);
             g.setColour(sc.withAlpha(al * 0.3f));
             g.fillEllipse(sx - dynSize * 1.5f, sy - dynSize * 1.5f, dynSize * 3, dynSize * 3);
-            // Hot white core — slightly non-circular for realism
+            // Hot white core â€” slightly non-circular for realism
             float coreW = dynSize * 0.55f, coreH = dynSize * 0.45f;
             g.setColour(juce::Colours::white.withAlpha(al * 0.95f));
             g.fillEllipse(sx - coreW * 0.5f, sy - coreH * 0.5f, coreW, coreH);
@@ -543,10 +552,10 @@ private:
             }
             };
 
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // PRIMARY NEBULA (upper-left, purple/violet)
         // Core + mid-density + wispy edges
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         CL primaryCore[] = {
             { .30f, .33f, .38f, .32f, 0x0c5522aa },  // large base
             { .33f, .36f, .28f, .24f, 0x0e7733bb },  // mid layer
@@ -567,9 +576,9 @@ private:
         };
         paintClouds(primaryWisps, 6);
 
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // SECONDARY NEBULA (right side, blue/teal)
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         CL secondaryCore[] = {
             { .72f, .55f, .28f, .24f, 0x0a3344aa },
             { .70f, .52f, .20f, .18f, 0x0c4455bb },
@@ -586,10 +595,10 @@ private:
         };
         paintClouds(secondaryWisps, 4);
 
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // CONNECTING BRIDGE (between the two main clouds)
         // Faint material linking the two nebulae
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         CL bridge[] = {
             { .50f, .45f, .30f, .08f, 0x053333aa },  // wide faint horizontal
             { .48f, .42f, .20f, .06f, 0x064444aa },  // narrower overlay
@@ -597,9 +606,9 @@ private:
         };
         paintClouds(bridge, 3);
 
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // MAGENTA / WARM ACCENT WISPS
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         CL magentaCore[] = {
             { .45f, .65f, .22f, .16f, 0x08882266 },
             { .50f, .70f, .14f, .10f, 0x0aaa3377 },
@@ -614,10 +623,10 @@ private:
         };
         paintClouds(magentaWisps, 3);
 
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // FAINT OUTER HAZE (very subtle, very large)
         // Creates the impression of gas extending everywhere
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         CL outerHaze[] = {
             { .20f, .20f, .50f, .45f, 0x04332255 },
             { .80f, .75f, .45f, .40f, 0x03223355 },
@@ -627,10 +636,10 @@ private:
         };
         paintClouds(outerHaze, 5);
 
-        // ══════════════════════════════════════════
-        // DARK DUST LANES (subtractive — like real nebulae)
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+        // DARK DUST LANES (subtractive â€” like real nebulae)
         // These cut through the bright areas
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         CL darkLanes[] = {
             { .50f, .42f, .20f, .08f, 0x22000005 },
             { .38f, .55f, .15f, .06f, 0x1a000008 },
@@ -641,9 +650,9 @@ private:
         };
         paintClouds(darkLanes, 6);
 
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // EDGE GLOW (subtle bright rim on cloud edges)
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         CL edgeGlow[] = {
             { .24f, .28f, .06f, .04f, 0x08bb88ee },
             { .40f, .36f, .04f, .06f, 0x06aa77dd },
@@ -652,11 +661,11 @@ private:
         };
         paintClouds(edgeGlow, 4);
 
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // FILAMENTARY STRUCTURE (thin elongated wisps)
         // These are very elongated elliptical gradients
         // that create the fine threadlike texture of real nebulae
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         CL filaments[] = {
             // Primary cloud filaments
             { .26f, .30f, .25f, .02f, 0x066633aa },   // long horizontal strand
@@ -674,11 +683,11 @@ private:
         };
         paintClouds(filaments, 10);
 
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // SOFT OVERLAPPING CLOUD LAYERS
         // Multiple semi-transparent ellipses that overlap
         // to create depth and billowing cloud texture
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         CL cloudOverlaps[] = {
             // Primary region: stacked ovals at slight offsets
             { .28f, .34f, .16f, .14f, 0x066633aa },
@@ -697,11 +706,11 @@ private:
         };
         paintClouds(cloudOverlaps, 11);
 
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // LUMINOUS RIM HIGHLIGHTS
         // Bright thin edges where cloud density transitions
         // Simulates backlit gas illumination
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         CL rimLight[] = {
             { .24f, .27f, .04f, .02f, 0x0addaaff },  // primary upper rim
             { .38f, .42f, .03f, .02f, 0x08cc99ee },  // primary lower rim
@@ -712,9 +721,9 @@ private:
         };
         paintClouds(rimLight, 6);
 
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         // FILM GRAIN (photorealistic texture)
-        // ══════════════════════════════════════════
+        // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
         juce::Random gr(42);
         for (int i = 0; i < w * h / 60; ++i)
         {
@@ -751,9 +760,9 @@ private:
     }
 };
 
-// ══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // GLASS-MORPHISM EFFECT SECTION
-// ══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 class EffectSection : public juce::Component
 {
 public:
@@ -776,9 +785,9 @@ private:
     juce::String title; juce::Colour accent;
 };
 
-// ══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // MAIN EDITOR
-// ══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 class CorvusFXAudioProcessorEditor : public juce::AudioProcessorEditor, public juce::Timer
 {
 public:
