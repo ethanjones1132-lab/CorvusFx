@@ -113,6 +113,15 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
                     proc.clearMidiMapping(k.linkedParamID);
                 });
             menu.addSeparator();
+            if (proc.isParameterLocked(k.linkedParamID))
+                menu.addItem("Unlock Parameter", [&proc, &k]() {
+                    proc.setParameterLocked(k.linkedParamID, false);
+                });
+            else
+                menu.addItem("Lock Parameter", [&proc, &k]() {
+                    proc.setParameterLocked(k.linkedParamID, true);
+                });
+            menu.addSeparator();
             menu.addItem("Clear All MIDI Maps", [&proc]() {
                 proc.clearAllMidiMappings();
             });
