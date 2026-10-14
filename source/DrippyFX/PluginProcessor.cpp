@@ -800,6 +800,9 @@ void CorvusFXAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
 
+    // Version tag keeps session loading forward-compatible.
+    xml->setAttribute("schemaVersion", 1);
+
     // Save MIDI Learn mappings as a child element
     auto* mapsXml = xml->createNewChildElement("midiMaps");
     if (mapsXml)
@@ -834,6 +837,9 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
     std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(data, sizeInBytes));
     if (xml && xml->hasTagName(apvts.state.getType()))
     {
+        if (xml->hasAttribute("schemaVersion") && xml->getIntAttribute("schemaVersion") != 1)
+            return;
+
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
 
         // Restore MIDI Learn mappings
