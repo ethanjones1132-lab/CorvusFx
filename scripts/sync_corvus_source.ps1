@@ -11,6 +11,10 @@ $ErrorActionPreference = 'Stop'
 $relativePaths = @(
     'CMakeLists.txt',
     'PluginProcessor.h',
+    'PluginProcessor.cpp',
+    'PluginEditor.h',
+    'PluginEditor.cpp',
+    'CMakePresets.json',
     'dsp\CorvusEffects.h',
     'instrument\CorvusInstrumentEditor.cpp',
     'instrument\CorvusInstrumentEditor.h',
