@@ -313,15 +313,20 @@ void CorvusFXAudioProcessorEditor::toggleTheme()
 
 void CorvusFXAudioProcessorEditor::paint(juce::Graphics& g)
 {
+    const bool dark = themeDark;
+
+    // Background
+    g.fillAll(dark ? juce::Colour(0xff050510) : juce::Colour(0xfff4f4fa));
+
     // Vignette
     juce::ColourGradient vig(
         juce::Colours::transparentBlack, getWidth() / 2.0f, getHeight() / 2.0f,
-        juce::Colours::black.withAlpha(0.3f), 0, 0, true);
+        juce::Colours::black.withAlpha(dark ? 0.3f : 0.08f), 0, 0, true);
     g.setGradientFill(vig);
     g.fillRect(getLocalBounds());
 
     // Version text
-    g.setColour(juce::Colour(0xff444466));
+    g.setColour(dark ? juce::Colour(0xff444466) : juce::Colour(0xff999aa8));
     g.setFont(juce::Font(juce::FontOptions(9.0f)));
     g.drawText("CorvusFX v1.0 | Professional Multi-FX Suite",
         getLocalBounds().removeFromBottom(15), juce::Justification::centred, true);
