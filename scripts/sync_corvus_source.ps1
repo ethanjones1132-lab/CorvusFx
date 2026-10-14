@@ -1,12 +1,15 @@
 [CmdletBinding()]
 param(
-    [string]$SourceRoot = (Join-Path (Split-Path $PSScriptRoot -Parent) 'source\DrippyFX'),
+    [string]$SourceRoot = $null,
     [string]$DestinationRoot = 'C:\Users\ethan\Downloads\DrippyFX_v1.0.0_Complete\DrippyFX',
     [switch]$VerifyOnly
 )
 
-Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+if (-not $SourceRoot) {
+$scriptPath = $MyInvocation.MyCommand.Path;
+if ($scriptPath) { $SourceRoot = Join-Path (Split-Path (Split-Path $scriptPath -Parent) -Parent) 'source\DrippyFX' }
+}
+if (-not $SourceRoot) { $SourceRoot = 'C:\Projects\Corvus VST\source\DrippyFX' }
 
 $relativePaths = @(
     'CMakeLists.txt',
