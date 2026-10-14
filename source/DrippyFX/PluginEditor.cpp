@@ -116,10 +116,12 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
             if (proc.isParameterLocked(k.linkedParamID))
                 menu.addItem("Unlock Parameter", [&proc, &k]() {
                     proc.setParameterLocked(k.linkedParamID, false);
+                    k.setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xffc0c0d0));
                 });
             else
                 menu.addItem("Lock Parameter", [&proc, &k]() {
                     proc.setParameterLocked(k.linkedParamID, true);
+                    k.setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xff666666));
                 });
             menu.addSeparator();
             menu.addItem("Clear All MIDI Maps", [&proc]() {
