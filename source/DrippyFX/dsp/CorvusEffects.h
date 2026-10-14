@@ -4,7 +4,12 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#if (defined(__SSE2__) || defined(__x86_64__) || defined(__i386__) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2) || defined(_M_X64) || defined(_M_AMD64)) && __has_include(<xmmintrin.h>)
 #include <xmmintrin.h>  // SSE intrinsics for oversampling FIR optimization
+#define CORVUS_HAVE_SSE 1
+#else
+#define CORVUS_HAVE_SSE 0
+#endif
 #include <array>
 #include <map>
 
@@ -123,16 +128,21 @@ struct Oversampling2x
     int idx = 0;
     double sampleRate = 44100.0;
 
+#if CORVUS_HAVE_SSE
     // Pre-staged coefficient vectors for SSE (aligned for _mm_load_ps)
     __m128 coeffVec0;  // coeffs[0..3]
     __m128 coeffVec1;  // coeffs[4..7]
     __m128 coeffVecEven;  // coeffs[0], coeffs[2], coeffs[4], coeffs[6] (even taps for half-band)
     bool sseInitialized = false;
+#else
+    bool sseInitialized = false;
+#endif
 
     void prepare(double sr) { sampleRate = sr; initSSE(); reset(); }
 
     void initSSE()
     {
+#if CORVUS_HAVE_SSE
         if (sseInitialized) return;
         // Coefficients in reverse order for circular buffer indexing
         // idx, idx-1, idx-2, idx-3 -> we load state in that order
@@ -142,6 +152,7 @@ struct Oversampling2x
         float evenTaps[4] = { coeffs[0], coeffs[2], coeffs[4], coeffs[6] };
         coeffVecEven = _mm_loadu_ps(evenTaps);
         sseInitialized = true;
+#endif
     }
 
     void reset()
@@ -153,6 +164,7 @@ struct Oversampling2x
         idx = 0;
     }
 
+#if CORVUS_HAVE_SSE
     // SSE-optimized 8-tap FIR convolution
     // state: circular buffer, idx: write position
     // Returns dot product of state[idx], state[idx-1]... with coeffs[0..7]
@@ -187,7 +199,29 @@ struct Oversampling2x
         _mm_storeu_ps(result, sum1);
         return result[0] + result[1];
     }
+#else
+    // Portable scalar 8-tap FIR preserving the SSE horizontal-sum reduction order.
+    inline float firSSE(const float* state, int readIdx) const
+    {
+        float p0 = state[readIdx] * coeffs[0];
+        float p1 = state[(readIdx - 1 + FILTER_TAPS) % FILTER_TAPS] * coeffs[1];
+        float p2 = state[(readIdx - 2 + FILTER_TAPS) % FILTER_TAPS] * coeffs[2];
+        float p3 = state[(readIdx - 3 + FILTER_TAPS) % FILTER_TAPS] * coeffs[3];
+        float p4 = state[(readIdx - 4 + FILTER_TAPS) % FILTER_TAPS] * coeffs[4];
+        float p5 = state[(readIdx - 5 + FILTER_TAPS) % FILTER_TAPS] * coeffs[5];
+        float p6 = state[(readIdx - 6 + FILTER_TAPS) % FILTER_TAPS] * coeffs[6];
+        float p7 = state[(readIdx - 7 + FILTER_TAPS) % FILTER_TAPS] * coeffs[7];
+        float a0 = p0 + p1;
+        float a1 = p2 + p3;
+        float b0 = p4 + p5;
+        float b1 = p6 + p7;
+        float s0 = a0 + a1;
+        float s1 = b0 + b1;
+        return s0 + s1;
+    }
+#endif
 
+#if CORVUS_HAVE_SSE
     // SSE-optimized 4-tap half-band FIR (even taps only: 0,2,4,6)
     inline float firHalfBandSSE(const float* state, int readIdx) const
     {
@@ -208,6 +242,19 @@ struct Oversampling2x
         _mm_storeu_ps(result, sum);
         return result[0];
     }
+#else
+    // Portable scalar 4-tap half-band FIR preserving the SSE reduction order.
+    inline float firHalfBandSSE(const float* state, int readIdx) const
+    {
+        float p0 = state[readIdx] * coeffs[0];
+        float p1 = state[(readIdx - 2 + FILTER_TAPS) % FILTER_TAPS] * coeffs[2];
+        float p2 = state[(readIdx - 4 + FILTER_TAPS) % FILTER_TAPS] * coeffs[4];
+        float p3 = state[(readIdx - 6 + FILTER_TAPS) % FILTER_TAPS] * coeffs[6];
+        float a = p0 + p1;
+        float b = p2 + p3;
+        return a + b;
+    }
+#endif
 
     // Process one input sample at base rate, produce one output sample at base rate.
     // Internally runs the DSP callback at 2x rate with anti-alias filtering.
