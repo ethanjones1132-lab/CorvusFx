@@ -499,6 +499,8 @@ For the full engineering change log with binary verification, see `PRIORITIES.md
 | **Studio One** | ⚠️ Community reports welcome |
 | **Bitwig** | ⚠️ Community reports welcome |
 
+Press **Ctrl+T** in the Corvus FX editor to toggle the dark/light theme palette (Ctrl+Z / Ctrl+Y remain Undo/Redo).
+
 Tested on **Windows 10 & 11 (x64)**. macOS support is not yet available.
 
 ---
