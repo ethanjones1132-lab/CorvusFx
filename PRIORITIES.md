@@ -1,13 +1,13 @@
 # PRIORITIES.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-08-22 (Vantage product-builder — finish/update planning docs)
+> **Last updated:** 2026-10-14 (Corvus instrument vertical slice implemented and locally verified)
 > **Canonical location:** repo root. `docs/PRIORITIES.md` is a historical long-form archive (stale after 2026-07-26); do not treat it as SoT.
 
 ## Active Priorities
 
 | Priority | Item | Status | Notes |
 |----------|------|--------|-------|
-| P1 | **Corvus Instrument vertical slice** | 🔶 Planned | Design + plan landed 2026-08-08 (`docs/superpowers/specs/2026-08-08-corvus-instrument-design.md`, `docs/superpowers/plans/2026-08-08-corvus-instrument-vertical-slice.md`). Separate synth target; preserve FX identity; shared DSP extraction first. No implementation commits yet. |
+| P1 | **Corvus Instrument vertical slice** | ✅ Implemented and locally verified | Design + plan landed 2026-08-08 (`docs/superpowers/specs/2026-08-08-corvus-instrument-design.md`, `docs/superpowers/plans/2026-08-08-corvus-instrument-vertical-slice.md`). Implementation exists at `source/DrippyFX/dsp/CorvusEffects.h`, `source/DrippyFX/instrument/*`, and CMake targets `DrippyFX`, `CorvusInstrument`, `CorvusDSPTests`, `CorvusFXStateTests`; plugin codes are Crvs/Cvi1 with five signature patches. Verified through the portable Mac gate (75 source checkers, portable Release build, CorvusDSPTests / CorvusFXStateTests, both AU validators, shared-effects fingerprint 0xe8dffa927c566497). Windows DAW runtime smoke and signed distribution are not claimed. |
 | P2 | **Dark/light theme toggle** | ⬜ Backlog (authorized) | Vantage job `job-019ff3ae-32ca-79d0-86be-81b5e93f054b` / auth `job-authorization-01a012b7-df70-7bf0-8165-03ede607fe28` active under root-corvus-vst. No child permit currently available. Persist via existing editor state; keep preset/A-B/randomize/undo/MIDI-learn intact. |
 | P3 | **Profile-guided optimization (PGO) build** | ⬜ Backlog | ~1% CPU savings; requires build infrastructure |
 | P3 | **Planning docs dual-tree cleanup** | 🔶 In progress | Root SoT refreshed this cycle. Optional later: archive or clearly banner `docs/{PRIORITIES,ROADMAP,AGENTS}.md` so agents stop reading stale copies. |
@@ -17,7 +17,7 @@
 | Product | Role | State |
 |---------|------|-------|
 | **Corvus FX (DrippyFX)** | Multi-FX VST3 effect | Shipping quality baseline; Phase 4 UI complete; Phase 5 CPU work largely done |
-| **Corvus Instrument** | Separate synth + shared FX chain | Design approved; vertical-slice plan open; not started in source |
+| **Corvus Instrument** | Separate synth + shared FX chain | Vertical slice implemented and locally verified: oscillator, 16-voice engine, ADSR, shared Corvus FX chain, five signature patches, deterministic tests; plugin codes Crvs/Cvi1. Mac portable gate verified; no Windows DAW runtime smoke or signed distribution claimed. |
 
 ## Completed Milestones
 

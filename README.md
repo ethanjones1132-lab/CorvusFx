@@ -323,7 +323,7 @@ The effects DSP (distortion, chorus, delay, reverb, master output, oversampling,
 
 ## Corvus Instrument (Companion Synth)
 
-> 🚧 **In development — Phase 2 "playable vertical slice".** Shipped as a separate plugin target, not part of the Corvus FX effect.
+> ✅ **Implemented vertical slice — Mac portable gate verified (no Windows DAW runtime smoke or signed distribution claimed).** Shipped as a separate plugin target, not part of the Corvus FX effect.
 
 **Corvus Instrument** is a new JUCE instrument target (`IS_SYNTH TRUE`, MIDI note input, stereo output with no required audio input) with its own plugin identifier (`Crvs` / `Cvi1`), state format, presets, and editor. It routes polyphonic voices through the **shared Corvus effects chain** after the voice mix, so patches arrive mix-ready rather than dry.
 

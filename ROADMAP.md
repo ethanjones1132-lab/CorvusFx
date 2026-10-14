@@ -1,6 +1,6 @@
 # ROADMAP.md — Corvus VST (DrippyFX)
 
-> **Last updated:** 2026-08-22 (Vantage product-builder — finish/update planning docs)
+> **Last updated:** 2026-10-14 (Corvus instrument vertical slice implemented and locally verified)
 > **Canonical location:** repo root. `docs/ROADMAP.md` is a historical archive (stale after ~2026-07-11).
 
 ## Phase 1: Foundation ✅ (2026-06-24 through 2026-07-09)
@@ -52,17 +52,17 @@
 - ⬜ SIMD for remaining hot inner loops (if profiling shows need)
 - ⬜ Antiderivative antialiasing as alternative to oversampling
 
-## Phase 6: Corvus Instrument (next commercial product line) 🔶 Planned
+## Phase 6: Corvus Instrument (vertical slice implemented; future product expansion separate) ✅ Locally verified
 
-**Status:** Design approved 2026-08-08; vertical-slice plan written; **implementation not started**.
+**Status:** Design approved 2026-08-08; vertical-slice plan executed and implemented in `source/DrippyFX` on 2026-09-20. The implemented slice is verified through the portable Mac gate: 75 source checkers, portable Release build, `CorvusDSPTests` / `CorvusFXStateTests`, both AU validators, and shared-effects fingerprint `0xe8dffa927c566497`. Windows DAW runtime smoke, signed distribution, and runtime acceptance beyond the Mac portable gate are not claimed.
 
 | Track | Target | Status |
 |-------|--------|--------|
-| Shared DSP extraction | `source/DrippyFX/dsp/CorvusEffects.h` behavior-preserving within `1.0e-6f` fixture tolerance | ⬜ Open (Task 1–2 in plan) |
-| FX regression lock | Deterministic JUCE unit fixture + fingerprint for existing Corvus FX | ⬜ Open |
-| Instrument target | Separate VST3/Standalone synth; unique plugin codes; MIDI polyphony | ⬜ Open |
-| First voice engine | 16-voice, band-limited oscillator, amp envelope, global Corvus FX chain | ⬜ Open |
-| Signature patches | Five atmospheric factory patches for the vertical slice | ⬜ Open |
+| Shared DSP extraction | `source/DrippyFX/dsp/CorvusEffects.h` behavior-preserving within `1.0e-6f` fixture tolerance | ✅ Implemented and locked (`CorvusDSPTests`) |
+| FX regression lock | Deterministic JUCE unit fixture + fingerprint for existing Corvus FX | ✅ Implemented and locked (fingerprint `0xe8dffa927c566497`) |
+| Instrument target | Separate VST3/Standalone synth; unique plugin codes `Crvs`/`Cvi1`; MIDI polyphony | ✅ Implemented (`CorvusInstrument`, `IS_SYNTH TRUE`) |
+| First voice engine | 16-voice, band-limited oscillator, amp envelope, global Corvus FX chain | ✅ Implemented |
+| Signature patches | Five atmospheric factory patches for the vertical slice | ✅ Implemented |
 | Explicit out of scope (slice) | Wavetable import, granular, sampling, sequencer, arpeggiator, custom UI, unlimited modulation | — |
 
 **Authoritative docs:**
@@ -82,5 +82,5 @@
 | Per-sample transcendental calls | 0 | 0 ✅ |
 | Knobs with MIDI learn | 19/19 | 19/19 ✅ |
 | Block-level sr-only hoist (exp + arithmetic) | 16/16 | 16/16 ✅ |
-| Root planning docs current vs product reality | refreshed 2026-08-22 | current ✅ |
-| Instrument vertical slice tasks closed | 0 / plan open | slice shipped ⬜ |
+| Root planning docs current vs product reality | refreshed 2026-10-14 | current ✅ |
+| Instrument vertical slice tasks closed | 7/7 slice tasks implemented and portable-gate verified | slice shipped ✅ |
