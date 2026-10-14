@@ -392,6 +392,13 @@ cmake -G "Visual Studio 18 2026" -A x64 -DJUCE_PATH="%JUCE_PATH%" -S . -B build
 cmake --build build --config Release
 ```
 
+Optional profile-guided optimization infrastructure:
+
+```bash
+cmake -G "Visual Studio 18 2026" -A x64 -DJUCE_PATH="%JUCE_PATH%" -DCORVUS_ENABLE_PGO=ON -S . -B build-pgo
+cmake --build build-pgo --config Release
+```
+
 Source code is located in the `source/DrippyFX/` directory of this repo, alongside deployed binaries under `drippy/` and `DrippyMk2/`.
 
 | Path | Contents |
