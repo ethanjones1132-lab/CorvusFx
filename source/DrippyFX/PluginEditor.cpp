@@ -252,6 +252,14 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     randomizeButton.onClick = [this] { audioProcessor.randomizePreset(); };
     addAndMakeVisible(randomizeButton);
 
+    // Theme toggle button
+    themeToggleButton.setButtonText("THEME");
+    themeToggleButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff24244a));
+    themeToggleButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb0b0cf));
+    themeToggleButton.setTooltip("Toggle dark/light theme palette");
+    themeToggleButton.onClick = [this] { themeDark = !themeDark; toggleTheme(); };
+    addAndMakeVisible(themeToggleButton);
+
     // Default: A is active -- snapshot both slots with initial state
     btnSlotA.setToggleState(true, juce::dontSendNotification);
     audioProcessor.saveSlotA();
@@ -364,6 +372,8 @@ void CorvusFXAudioProcessorEditor::resized()
     btnSaveAB.setBounds(abBtnArea.removeFromLeft(sc(60)).withHeight(abH).withTrimmedTop(topOff));
     abBtnArea.removeFromLeft(sc(8));
     randomizeButton.setBounds(abBtnArea.removeFromLeft(sc(40)).withHeight(abH).withTrimmedTop(topOff));
+    abBtnArea.removeFromLeft(sc(4));
+    themeToggleButton.setBounds(abBtnArea.removeFromLeft(sc(62)).withHeight(abH).withTrimmedTop(topOff));
     presetSelector.setBounds(presetRow);
 
     // ── Level Meter (between title/preset and overall knob) ──

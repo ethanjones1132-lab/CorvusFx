@@ -833,6 +833,8 @@ private:
     juce::TextButton btnSlotA, btnSlotB, btnSaveAB;
     // Randomize preset button
     juce::TextButton randomizeButton;
+    // Theme toggle button (also available via Ctrl+T)
+    juce::TextButton themeToggleButton;
     // Theme state (plumbed in this slice; palette lands later)
     bool themeDark = true;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CorvusFXAudioProcessorEditor)
