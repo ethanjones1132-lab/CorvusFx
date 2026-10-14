@@ -273,7 +273,7 @@ private:
 class AnimatedBackground : public juce::Component, public juce::Timer
 {
 public:
-    AnimatedBackground() { setInterceptsMouseClicks(false, false); startTimer(16); }
+    AnimatedBackground() { setInterceptsMouseClicks(false, false); startTimer(33); }
     void resized() override { nebulaCache = juce::Image(); starCache = juce::Image(); cW = cH = 0; }
 
     void paint(juce::Graphics& g) override
