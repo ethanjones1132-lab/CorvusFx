@@ -178,3 +178,10 @@ if(MSVC)
 else()
     target_compile_options(CorvusDSPTests PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+
+# Convenience helper for the regression harness.
+add_custom_target(CorvusDSPTestsRun
+    COMMAND $<TARGET_FILE:CorvusDSPTests>
+    DEPENDS CorvusDSPTests
+)
