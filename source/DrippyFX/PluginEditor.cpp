@@ -296,7 +296,21 @@ bool CorvusFXAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
         um.redo();
         return true;
     }
+    if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'T')
+    {
+        themeDark = !themeDark;
+        toggleTheme();
+        return true;
+    }
     return false;
+}
+
+void CorvusFXAudioProcessorEditor::toggleTheme()
+{
+    // Plumbing-only stage of the theme feature: the host mode is now
+    // mutable and a repaint is triggered on every toggle. Colour palette
+    // switching lands in later slices.
+    repaint();
 }
 
 void CorvusFXAudioProcessorEditor::paint(juce::Graphics& g)

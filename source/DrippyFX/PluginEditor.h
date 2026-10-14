@@ -768,6 +768,7 @@ public:
     void resized() override;
     void timerCallback() override;
     bool keyPressed(const juce::KeyPress& key) override;
+    void toggleTheme();
 private:
     CorvusFXAudioProcessor& audioProcessor;
     CorvusLookAndFeel corvusLookAndFeel;
@@ -816,5 +817,7 @@ private:
     juce::TextButton btnSlotA, btnSlotB, btnSaveAB;
     // Randomize preset button
     juce::TextButton randomizeButton;
+    // Theme state (plumbed in this slice; palette lands later)
+    bool themeDark = true;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CorvusFXAudioProcessorEditor)
 };
