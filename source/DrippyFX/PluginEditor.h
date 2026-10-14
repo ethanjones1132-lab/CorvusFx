@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
@@ -275,11 +275,15 @@ class AnimatedBackground : public juce::Component, public juce::Timer
 public:
     AnimatedBackground() { setInterceptsMouseClicks(false, false); startTimer(33); }
     void resized() override { nebulaCache = juce::Image(); starCache = juce::Image(); cW = cH = 0; }
-
+    void setDarkTheme(bool isDark) { themeDark = isDark; resized(); repaint(); }
     void paint(juce::Graphics& g) override
     {
         int w = getWidth(), h = getHeight();
         if (w < 1 || h < 1) return;
+
+        // Ensure the backdrop fill matches the active theme.
+        g.fillAll(themeDark ? juce::Colour(0xff050510) : juce::Colour(0xfff4f4fa));
+
 
         // Cache static layers on resize
         if (cW != w || cH != h) { renderNebula(w, h); renderStars(w, h); cW = w; cH = h; }
@@ -460,7 +464,7 @@ public:
     }
 
 private:
-    float phase = 0; juce::Image nebulaCache, starCache; int cW = 0, cH = 0;
+    float phase = 0; juce::Image nebulaCache, starCache; int cW = 0, cH = 0; bool themeDark = true;
     // Hero stars: 3 independent oscillator speeds per star for organic feel
     // spd1 = primary pulse, spd2 = secondary (detuned), spd3 = slow envelope
     static constexpr int NUM_HERO_STARS = 22;

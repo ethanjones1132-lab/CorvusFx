@@ -326,6 +326,7 @@ bool CorvusFXAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
 
 void CorvusFXAudioProcessorEditor::toggleTheme()
 {
+    animatedBackground.setDarkTheme(themeDark);
     corvusLookAndFeel.setDarkTheme(themeDark);
     repaint();
 }
