@@ -389,7 +389,7 @@ void CorvusFXAudioProcessorEditor::resized()
     presetLabel.setBounds(presetArea.removeFromTop(sc(15)));
     auto presetRow = presetArea;
     // A/B compare buttons -- right of preset selector
-    auto abBtnArea = presetRow.removeFromRight(sc(220));
+    auto abBtnArea = presetRow.removeFromRight(sc(290));
     int abH = sc(22);
     int abW = sc(32);
     int topOff = sc(3);
