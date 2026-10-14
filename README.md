@@ -505,6 +505,7 @@ Press **Ctrl+T** in the Corvus FX editor to toggle the dark/light theme palette 
 
 - **Ctrl+Z / Ctrl+Y**: Undo / Redo parameter changes.
 - **Ctrl+T**: Toggle the dark/light theme palette.
+- **Alt+R**: Randomize all unlocked parameters.
 - **RND**: Randomize all unlocked parameters (bypasses engage ~15%).
 - **Right-click any knob**: MIDI learn, lock/unlock a parameter, or clear mappings.
 
