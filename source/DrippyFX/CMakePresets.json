@@ -1,0 +1,30 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "windows-vs2026-release",
+      "generator": "Visual Studio 18 2026",
+      "binaryDir": "${sourceDir}/build",
+      "architecture": "x64",
+      "cacheVariables": {
+        "JUCE_PATH": "C:/Users/ethan/Downloads/juce-8.0.12-windows/JUCE",
+        "CORVUS_COPY_PLUGIN_AFTER_BUILD": "OFF",
+        "CORVUS_ENABLE_PGO": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "release",
+      "configurePreset": "windows-vs2026-release",
+      "configuration": "Release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dsp-tests",
+      "configurePreset": "windows-vs2026-release",
+      "configuration": "Release"
+    }
+  ]
+}
