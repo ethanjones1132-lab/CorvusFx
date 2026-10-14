@@ -1,6 +1,6 @@
 # AGENTS.md — Corvus VST (DrippyFX) Agent Working Rules
 
-This file gives autonomous AI agents the minimal project-specific context needed to work safely in this repo.
+> **ARCHIVE / NOT SoT (banner added 2026-10-13).** Canonical agent rules live at repo-root `AGENTS.md`. This archived copy may contain stale build paths and historical pitfall notes; prefer root SoT.
 
 ---
 
