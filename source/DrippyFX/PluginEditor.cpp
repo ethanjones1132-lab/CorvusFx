@@ -361,6 +361,11 @@ bool CorvusFXAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
         toggleTheme();
         return true;
     }
+    if (key.getModifiers().isAltDown() && key.getKeyCode() == 'R')
+    {
+        audioProcessor.randomizePreset();
+        return true;
+    }
     return false;
 }
 
