@@ -83,4 +83,4 @@
 | Knobs with MIDI learn | 19/19 | 19/19 ✅ |
 | Block-level sr-only hoist (exp + arithmetic) | 16/16 | 16/16 ✅ |
 | Root planning docs current vs product reality | refreshed 2026-10-14 | current ✅ |
-| Instrument vertical slice tasks closed | 7/7 slice tasks implemented and portable-gate verified | slice shipped ✅ |
+| Instrument vertical slice tasks closed | 7/8 tasks implemented and portable-gate verified; Task 8 acceptance open | Task 8 open (four-target build, artifact hashes, Standalone/DAW smoke) |
