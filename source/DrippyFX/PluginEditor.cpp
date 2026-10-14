@@ -18,6 +18,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
         themeProperties = std::make_unique<juce::PropertiesFile>(opts);
         if (themeProperties)
             themeDark = themeProperties->getBoolValue("themeDark", true);
+        corvusLookAndFeel.setDarkTheme(themeDark);
     }
     setSize(1200, 700);
     setResizable(true, true);
