@@ -185,3 +185,29 @@ add_custom_target(CorvusDSPTestsRun
     COMMAND $<TARGET_FILE:CorvusDSPTests>
     DEPENDS CorvusDSPTests
 )
+
+# Session regressions exercise the real FX processor independently of the
+# instrument's createPluginFilter entry point and DSP fixture.
+juce_add_console_app(CorvusFXStateTests PRODUCT_NAME "Corvus FX State Tests")
+juce_generate_juce_header(CorvusFXStateTests)
+target_sources(CorvusFXStateTests PRIVATE
+    PluginProcessor.cpp
+    PluginEditor.cpp
+    tests/CorvusFxStateTests.cpp
+)
+target_include_directories(CorvusFXStateTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(CorvusFXStateTests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0
+)
+target_link_libraries(CorvusFXStateTests PRIVATE
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+add_custom_target(CorvusFXStateTestsRun
+    COMMAND $<TARGET_FILE:CorvusFXStateTests>
+    DEPENDS CorvusFXStateTests
+)

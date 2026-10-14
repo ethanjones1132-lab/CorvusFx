@@ -118,9 +118,19 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
         l.setColour(juce::Label::textColourId, juce::Colour(0xff999aaa));
         addAndMakeVisible(l);
         k.linkedParamID = paramID;
+        k.onGestureStart = [this]() {
+            audioProcessor.undoManager.beginNewTransaction();
+        };
         k.onRightClick = [this, &k](const juce::MouseEvent&) {
             auto& proc = audioProcessor;
             juce::PopupMenu menu;
+            // Armed-learn affordance: offer cancellation while a learn is
+            // pending (otherwise the next CC silently consumes the armed
+            // state with no escape hatch except capturing or editor close).
+            if (proc.isMidiLearnActive())
+                menu.addItem("Cancel MIDI Learn", [&proc]() {
+                    proc.stopMidiLearn();
+                });
             menu.addItem("MIDI Learn", [&proc, &k]() {
                 proc.startMidiLearn(k.linkedParamID);
             });
@@ -316,24 +326,42 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     themeToggleButton.onClick = [this] { themeDark = !themeDark; toggleTheme(); };
     addAndMakeVisible(themeToggleButton);
 
-    // Default: A is active -- snapshot both slots with initial state
-    btnSlotA.setToggleState(true, juce::dontSendNotification);
-    audioProcessor.saveSlotA();
-    audioProcessor.saveSlotB();
+    // Default: A is active -- snapshot both slots with the restored init
+    // state, but ONLY when the processor didn't have saved snapshots
+    // restored by setStateInformation: state with an "abSlots" child
+    // already carries a saved A/B compare, and the blind reseed would
+    // overwrite both slots with the current (identical) live values.
+    if (!audioProcessor.hasPersistedABSnapshots())
+    {
+        btnSlotA.setToggleState(true, juce::dontSendNotification);
+        audioProcessor.saveSlotA();
+        audioProcessor.saveSlotB();
+    }
+
+    // Reflect the recalled active slot even when the persisted pair skips reseeding.
+    btnSlotA.setToggleState(audioProcessor.isSlotA(), juce::dontSendNotification);
+    btnSlotB.setToggleState(!audioProcessor.isSlotA(), juce::dontSendNotification);
 
     // Level meter
     addAndMakeVisible(levelMeter);
+    startTimerHz(30); // drives timerCallback -> meters read + decay order
 }
 
 CorvusFXAudioProcessorEditor::~CorvusFXAudioProcessorEditor()
 {
+    // An armed MIDI-Learn is editor-lifetime UI state: kill it when the
+    // editor closes so a stray CC can't hijack a knob in a later session.
+    audioProcessor.stopMidiLearn();
     setLookAndFeel(nullptr);
 }
 
 void CorvusFXAudioProcessorEditor::timerCallback()
 {
-    // Update level meter from processor (audio thread -> message thread via atomics)
+    // Update level meter from processor (audio thread -> message thread via atomics).
+    // Decay the processor-side atomics FIRST so the copies below are the
+    // authoritative displayed values (a stale peak can't resurrect after silence).
     auto& meters = audioProcessor.levelMeters;
+    meters.decayPeaks(0.96f);
     levelMeter.setInputPeakL(meters.inPeakL.load(std::memory_order_relaxed));
     levelMeter.setInputPeakR(meters.inPeakR.load(std::memory_order_relaxed));
     levelMeter.setInputRmsL(meters.inRmsL.load(std::memory_order_relaxed));

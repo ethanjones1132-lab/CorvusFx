@@ -34,7 +34,7 @@ void CorvusFXAudioProcessor::parameterChanged(const juce::String& parameterID, f
         // The combo has 42 items (IDs 1-42) with 6 disabled separators (IDs 1,8,15,22,29,36).
         // We convert the item ID to a preset index via a lookup table.
         static const int idToPreset[43] = {
-            0,  -1, 0, 1, 2, 3, 4, 5,   // IDs 0-7  (0=unused, 1=separator, 2-7=CLEAN presets 0-5)
+            -1, -1, 0, 1, 2, 3, 4, 5,   // IDs 0-7  (0=unused, 1=separator, 2-7=CLEAN presets 0-5)
             -1, 6, 7, 8, 9,10,11,       // IDs 8-14 (8=separator, 9-14=WARM presets 6-11)
             -1,12,13,14,15,16,17,        // IDs 15-21 (15=separator, 16-21=CREATIVE presets 12-17)
             -1,18,19,20,21,22,23,        // IDs 22-28 (22=separator, 23-28=EXTREME presets 18-23)
@@ -54,6 +54,7 @@ void CorvusFXAudioProcessor::loadPreset(int index)
     // via setCurrentProgram's presetToId[] lookup.
     // Combo order: CLEAN [0-5], WARM [6-11], CREATIVE [12-17], EXTREME [18-23], SIGNATURE [24-29], DREAM [30-35]
     if (index < 0 || index >= 36) return;
+    undoManager.beginNewTransaction("Load Preset");
     
     //                    fat  cD   cR    cM   dT   dFb  dM   dDmp dMod rS   rDmp rM   rMod  mDrv mWid mMid mSide dByp cByp dByp rByp mByp
     struct P { float fat, cD, cR, cM, dT, dFb, dM, dDmp, dMod, rS, rDmp, rM, rMod, mDrv, mWid, mMid, mSide, distByp, chorusByp, delayByp, reverbByp, masterByp, oTrim; };
@@ -167,6 +168,7 @@ void CorvusFXAudioProcessor::randomizePreset()
     // Skips the preset parameter (factory preset index stays unchanged).
     // Bypass buttons have ~15% chance of being active; continuous params get full-range random.
     juce::Random rng;
+    undoManager.beginNewTransaction("Randomize");
     auto& params = getParameters();
     for (auto* param : params)
     {
@@ -327,6 +329,13 @@ void CorvusFXAudioProcessor::changeProgramName(int, const juce::String&) {}
 // MIDI Learn: map management
 bool CorvusFXAudioProcessor::hasMidiMapping(const juce::String& paramID) const
 {
+    // The map is mutated on the audio thread (learn capture) and on the
+    // message thread (clear/restore) under midiMapLock; this reader runs on
+    // the message thread (knob context menu) and must take the same lock so
+    // an audio-thread insert during the iteration cannot tear the map.
+    juce::CriticalSection& mapLock =
+        const_cast<juce::CriticalSection&>(midiMapLock);
+    const juce::ScopedLock lock(mapLock);
     for (const auto& [cc, pid] : midiMap)
         if (pid == paramID) return true;
     return false;
@@ -363,6 +372,7 @@ static constexpr const char* abParamIds[24] = {
 
 void CorvusFXAudioProcessor::saveSlotA()
 {
+    undoManager.beginNewTransaction("A/B Compare");
     for (int i = 0; i < NUM_AB_PARAMS; ++i)
     {
         auto* p = apvts.getParameter(abParamIds[i]);
@@ -373,6 +383,7 @@ void CorvusFXAudioProcessor::saveSlotA()
 
 void CorvusFXAudioProcessor::saveSlotB()
 {
+    undoManager.beginNewTransaction("A/B Compare");
     for (int i = 0; i < NUM_AB_PARAMS; ++i)
     {
         auto* p = apvts.getParameter(abParamIds[i]);
@@ -383,21 +394,39 @@ void CorvusFXAudioProcessor::saveSlotB()
 
 void CorvusFXAudioProcessor::loadSlotA()
 {
+    undoManager.beginNewTransaction("A/B Compare");
     for (int i = 0; i < NUM_AB_PARAMS; ++i)
     {
         auto* p = apvts.getParameter(abParamIds[i]);
         if (p) p->setValueNotifyingHost(snapshotA[i]);
     }
+    // A/B preset choice INTENTIONALLY STALE: loadSlotA restores the 24
+    // knob-level snapshot values only. Writing the "preset" id too would
+    // fire parameterChanged -> loadPreset, whose set() writes stomp every
+    // non-preset parameter (the post-preset tweaks this snapshot captured)
+    // back to the factory recipe, so the snapshot the user just restored is
+    // destroyed before it is audible. A/B compare is a knob-level restore,
+    // not a program change; the preset ComboBox may honestly follow the
+    // last-touched preset instead.
     abSlotIsA = true;
 }
 
 void CorvusFXAudioProcessor::loadSlotB()
 {
+    undoManager.beginNewTransaction("A/B Compare");
     for (int i = 0; i < NUM_AB_PARAMS; ++i)
     {
         auto* p = apvts.getParameter(abParamIds[i]);
         if (p) p->setValueNotifyingHost(snapshotB[i]);
     }
+    // A/B preset choice INTENTIONALLY STALE: loadSlotB restores the 24
+    // knob-level snapshot values only. Writing the "preset" id too would
+    // fire parameterChanged -> loadPreset, whose set() writes stomp every
+    // non-preset parameter (the post-preset tweaks this snapshot captured)
+    // back to the factory recipe, so the snapshot the user just restored is
+    // destroyed. A/B compare is a knob-level restore, not a program change;
+    // the preset ComboBox may honestly follow the last-touched preset
+    // instead.
     abSlotIsA = false;
 }
 
@@ -459,7 +488,6 @@ void CorvusFXAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     smoothMasterWidth.setTargetValue(apvts.getRawParameterValue("master_width")->load() / 100.0f);
     smoothMasterMidDrive.setTargetValue(apvts.getRawParameterValue("master_mid_drive")->load() / 100.0f);
     smoothMasterSideDrive.setTargetValue(apvts.getRawParameterValue("master_side_drive")->load() / 100.0f);
-    smoothOutputTrim.setTargetValue(apvts.getRawParameterValue("output_trim")->load() / 100.0f);
     smoothOutputTrim.setTargetValue(apvts.getRawParameterValue("output_trim")->load() / 100.0f);
 
     // Bypass crossfade gain init (click-free): 1.0 active, 0.0 dry pass-through.
@@ -531,6 +559,7 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     smoothMasterWidth.setTargetValue(apvts.getRawParameterValue("master_width")->load() / 100.0f);
     smoothMasterMidDrive.setTargetValue(apvts.getRawParameterValue("master_mid_drive")->load() / 100.0f);
     smoothMasterSideDrive.setTargetValue(apvts.getRawParameterValue("master_side_drive")->load() / 100.0f);
+    smoothOutputTrim.setTargetValue(apvts.getRawParameterValue("output_trim")->load() / 100.0f);
     const bool distortionBypass = apvts.getRawParameterValue("distortion_bypass")->load() > 0.5f;
     const bool chorusBypass = apvts.getRawParameterValue("chorus_bypass")->load() > 0.5f;
     const bool delayBypass = apvts.getRawParameterValue("delay_bypass")->load() > 0.5f;
@@ -547,34 +576,62 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // MIDI Learn: apply CC to parameter mappings from MIDI input
     // When midiLearnActive is true, the next CC message captures that CC
     // for the target parameter (triggered by right-click in the UI).
+    if (!midiMessages.isEmpty())
     {
-        const juce::ScopedLock lock(midiMapLock);
-        if (!midiMessages.isEmpty())
+        // Snapshot the live map under midiMapLock, then release the lock
+        // BEFORE the apply path: setValueNotifyingHost must never run while
+        // this audio thread holds a lock the message thread needs for
+        // clearMidiMapping / clearAllMidiMappings / setStateInformation,
+        // and host notification latency must not sit inside the critical
+        // section. The snapshot is a handful of <int, String> entries.
+        std::map<int, juce::String> mapSnapshot;
+        int capturedCc = -1;
         {
-            for (const auto& metadata : midiMessages)
+            const juce::ScopedLock lock(midiMapLock);
+            if (midiLearnActive)
             {
-                auto msg = metadata.getMessage();
-                if (msg.isController())
+                // Capture the FIRST CC in the buffer for the target parameter;
+                // the flag clears so later CCs go through the apply path as
+                // normal. The full buffer keeps getting scanned (no loop
+                // exit), mirroring the skip-only-this-CC semantics.
+                for (const auto& metadata : midiMessages)
                 {
-                    int cc = msg.getControllerNumber();
-                    float normValue = msg.getControllerValue() / 127.0f;
-                    if (midiLearnActive)
+                    auto msg = metadata.getMessage();
+                    if (msg.isController() && capturedCc == -1)
                     {
-                        // Capture this CC for the target parameter
+                        const int cc = msg.getControllerNumber();
+                        // Refuse to steal: if this CC is already mapped to a
+                        // DIFFERENT parameter, leave the mapping (and the
+                        // learn armed) untouched so the user can move a knob
+                        // on an unused CC — an overwrite here silently
+                        // re-maps the first knob with no UI affordance.
+                        auto existing = midiMap.find(cc);
+                        if (existing != midiMap.end() && existing->second != midiLearnParamID)
+                            continue;
+                        capturedCc = cc;
                         midiMap[cc] = midiLearnParamID;
                         midiLearnActive = false;
-                        auto* p = apvts.getParameter(midiLearnParamID);
-                        if (p) p->setValueNotifyingHost(normValue);
-                        break;
-                    }
-                    // Apply existing mapping
-                    auto it = midiMap.find(cc);
-                    if (it != midiMap.end())
-                    {
-                        auto* p = apvts.getParameter(it->second);
-                        if (p) p->setValueNotifyingHost(normValue);
                     }
                 }
+            }
+            mapSnapshot = midiMap;
+        }
+        // Lock released — apply mappings from the snapshot. The captured CC
+        // skips its own mapping step (skip-only-this-CC semantics).
+        for (const auto& metadata : midiMessages)
+        {
+            auto msg = metadata.getMessage();
+            if (!msg.isController())
+                continue;
+            int cc = msg.getControllerNumber();
+            if (cc == capturedCc)
+                continue;
+            float normValue = msg.getControllerValue() / 127.0f;
+            auto it = mapSnapshot.find(cc);
+            if (it != mapSnapshot.end())
+            {
+                auto* p = apvts.getParameter(it->second);
+                if (p) p->setValueNotifyingHost(normValue);
             }
         }
     }
@@ -800,8 +857,17 @@ void CorvusFXAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
 
+    // createXml() returns nullptr on a corrupt/cyclic copyState tree; skip
+    // serialization rather than dereferencing a null root element (mirrors
+    // the setStateInformation guard).
+    if (! xml)
+        return;
+
     // Version tag keeps session loading forward-compatible.
     xml->setAttribute("schemaVersion", 1);
+    // Save the A/B-compare snapshots with the state (abSlots child below).
+    // Without this the two float[24] snapshots and the active slot live only
+    // in memory, so reloading a project silently loses both saved snapshots.
 
     // Save MIDI Learn mappings as a child element
     auto* mapsXml = xml->createNewChildElement("midiMaps");
@@ -829,6 +895,19 @@ void CorvusFXAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
         }
     }
 
+    // abSlots child: snapshotA/snapshotB as base64 binary floats,
+    // active slot as an int attribute.
+    if (auto* abXml = xml->createNewChildElement("abSlots"))
+    {
+        abXml->setAttribute("slot", abSlotIsA ? 1 : 0);
+        abXml->createNewChildElement("snapshotA")->addTextElement(
+            juce::Base64::toBase64(snapshotA.data(),
+                static_cast<size_t>(NUM_AB_PARAMS) * sizeof(float)));
+        abXml->createNewChildElement("snapshotB")->addTextElement(
+            juce::Base64::toBase64(snapshotB.data(),
+                static_cast<size_t>(NUM_AB_PARAMS) * sizeof(float)));
+    }
+
     copyXmlToBinary(*xml, destData);
 }
 
@@ -840,18 +919,65 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
         if (xml->hasAttribute("schemaVersion") && xml->getIntAttribute("schemaVersion") != 1)
             return;
 
-        apvts.replaceState(juce::ValueTree::fromXml(*xml));
+        // Transport metadata is decoded below from the original XML. Keep
+        // it out of the parameter ValueTree: XML text children are discarded
+        // by ValueTree::fromXml, and retaining their wrappers would serialize
+        // stale duplicate slots/maps/locks on the next save.
+        juce::XmlElement parameterState(*xml);
+        parameterState.deleteAllChildElementsWithTagName("abSlots");
+        parameterState.deleteAllChildElementsWithTagName("midiMaps");
+        parameterState.deleteAllChildElementsWithTagName("paramLocks");
+        apvts.replaceState(juce::ValueTree::fromXml(parameterState));
 
-        // Restore MIDI Learn mappings
-        if (auto* mapsXml = xml->getChildByName("midiMaps"))
+        // Restore A/B-compare snapshots only when the state carries them.
+        // Older states (no "abSlots" child) leave abSnapshotsPersisted
+        // false so the editor constructor reseed keeps its legacy role:
+        // initialising both slots with the recall's parameter values.
+        // Restored slots reopen a saved A/B compare instead of leaving both
+        // slots in a state where a mere editor reopen destroys them.
+        abSnapshotsPersisted = false;
+        if (auto* abXml = xml->getChildByName("abSlots"))
+        {
+            juce::MemoryOutputStream aMB;
+            bool restoredA = false;
+            bool restoredB = false;
+            if (auto* aXml = abXml->getChildByName("snapshotA"))
+            {
+                restoredA = juce::Base64::convertFromBase64(aMB, aXml->getAllSubText())
+                    && aMB.getDataSize() == static_cast<size_t>(NUM_AB_PARAMS) * sizeof(float);
+            }
+            juce::MemoryOutputStream bMB;
+            if (auto* bXml = abXml->getChildByName("snapshotB"))
+            {
+                restoredB = juce::Base64::convertFromBase64(bMB, bXml->getAllSubText())
+                    && bMB.getDataSize() == static_cast<size_t>(NUM_AB_PARAMS) * sizeof(float);
+            }
+            if (restoredA && restoredB)
+            {
+                std::memcpy(snapshotA.data(), aMB.getData(), aMB.getDataSize());
+                std::memcpy(snapshotB.data(), bMB.getData(), bMB.getDataSize());
+                abSlotIsA = abXml->getIntAttribute("slot", 0) != 0;
+                abSnapshotsPersisted = true;
+            }
+        }
+
+        // Clear MIDI Learn mappings unconditionally: a saved state from an
+        // older build (without a "midiMaps" child) must not silently keep the
+        // previous session's CC mappings armed.
         {
             const juce::ScopedLock lock(midiMapLock);
             midiMap.clear();
+        }
+
+        // Restore MIDI Learn mappings (only when the state carries them)
+        if (auto* mapsXml = xml->getChildByName("midiMaps"))
+        {
+            const juce::ScopedLock lock(midiMapLock);
             for (auto* mapXml : mapsXml->getChildWithTagNameIterator("map"))
             {
                 int cc = mapXml->getIntAttribute("cc");
                 juce::String paramID = mapXml->getStringAttribute("param");
-                if (paramID.isNotEmpty())
+                if (paramID.isNotEmpty() && apvts.getParameter(paramID) != nullptr)
                     midiMap[cc] = paramID;
             }
         }

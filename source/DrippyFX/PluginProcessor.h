@@ -54,14 +54,34 @@ public:
     void loadSlotA();
     void loadSlotB();
     bool isSlotA() const { return abSlotIsA; }
+    bool hasPersistedABSnapshots() const { return abSnapshotsPersisted; }
 
     // MIDI Learn
-    void startMidiLearn(const juce::String& paramID) { midiLearnParamID = paramID; midiLearnActive = true; }
+    void startMidiLearn(const juce::String& paramID)
+    {
+        // Armed-learn state is read by the audio thread under midiMapLock;
+        // write under the same lock so the capture branch can never see a
+        // torn juce::String parameter ID.
+        const juce::ScopedLock lock(midiMapLock);
+        midiLearnParamID = paramID;
+        midiLearnActive = true;
+    }
+    bool isMidiLearnActive() const { return midiLearnActive.load(); }
     void stopMidiLearn() { midiLearnActive = false; }
     bool hasMidiMapping(const juce::String& paramID) const;
     void clearMidiMapping(const juce::String& paramID);
     void clearAllMidiMappings();
-    const std::map<int, juce::String>& getMidiMappings() const { return midiMap; }
+    // Returns a snapshot copy taken under midiMapLock. Never return a
+    // reference to the live map: it is mutated on the audio thread (learn
+    // capture) and the message thread (clear/restore) under midiMapLock, so
+    // any caller iterating it unsynchronized would race the insert/erase.
+    std::map<int, juce::String> getMidiMappings() const
+    {
+        juce::CriticalSection& mapLock =
+            const_cast<juce::CriticalSection&>(midiMapLock);
+        const juce::ScopedLock lock(mapLock);
+        return midiMap;
+    }
 
 
 private:
@@ -125,6 +145,11 @@ private:
     std::array<float, NUM_AB_PARAMS> snapshotA = {};
     std::array<float, NUM_AB_PARAMS> snapshotB = {};
     bool abSlotIsA = true;
+    // abSnapshotsPersisted: set true by setStateInformation when the host
+    // state carried an "abSlots" child, so the editor constructor can skip
+    // the blind reseed that would otherwise overwrite the restored
+    // snapshots with identical live values.
+    bool abSnapshotsPersisted = false;
     // MIDI Learn State (accessed across audio/message threads)
     std::atomic<bool> midiLearnActive{false};
     juce::String midiLearnParamID;
@@ -140,6 +165,23 @@ public:
         std::atomic<float> inRmsL   { 0.0f }, inRmsR   { 0.0f };
         std::atomic<float> outPeakL { 0.0f }, outPeakR { 0.0f };
         std::atomic<float> outRmsL  { 0.0f }, outRmsR  { 0.0f };
+
+        // Display-side peak decay, run on the message thread from the editor
+        // timer (relaxed load/store is fine for approximate meter display).
+        // Processor-side so decayed values are authoritative and a refresh
+        // never resurrects a stale bar from a non-decaying atomic.
+        void decayPeaks(float factor = 0.96f)
+        {
+            auto mul = [&](std::atomic<float>& a)
+            {
+                a.store(a.load(std::memory_order_relaxed) * factor,
+                        std::memory_order_relaxed);
+            };
+            mul(inPeakL);  mul(inPeakR);
+            mul(inRmsL);   mul(inRmsR);
+            mul(outPeakL); mul(outPeakR);
+            mul(outRmsL);  mul(outRmsR);
+        }
     } levelMeters;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CorvusFXAudioProcessor)

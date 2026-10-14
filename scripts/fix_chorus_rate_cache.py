@@ -1,4 +1,6 @@
-"""Hoist Chorus LFO rate-to-increment division from per-sample loop to beginBlock().
+"""ALREADY APPLIED — DO NOT RERUN: its Windows-tree effect is already in the SoT.
+
+Hoist Chorus LFO rate-to-increment division from per-sample loop to beginBlock().
 
 Eliminates 6 redundant float-divide operations per sample (1 per voice × 6 voices).
 The computation `rate * v.rateScale * twoPi / sampleRate` is constant across

@@ -1,3 +1,4 @@
+# ALREADY APPLIED — DO NOT RERUN. One-shot Windows migration fix; kept as a record.
 """Fix 'void' return type on destructor (C2577). Also need to check levelMeters access."""
 import sys
 

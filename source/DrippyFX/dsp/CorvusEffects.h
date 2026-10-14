@@ -82,6 +82,7 @@ struct DCBlocker
     }
     void reset() { x1 = y1 = 0.0f; }
 };
+
 //==============================================================================
 // UTILITY: One-pole filter
 //==============================================================================
@@ -96,7 +97,7 @@ struct OnePole
 //==============================================================================
 // 2x OVERSAMPLING WRAPPER — Anti-aliasing for non-linear waveshaping
 // Eliminates aliasing from tanh/tape saturation by processing at 2x sample rate.
-// Uses a 2nd-order half-band FIR filter for up/down sampling (8 coefficients).
+// Uses an 8-tap low-pass FIR for up/down sampling, with even-phase polyphase filtering.
 // SSE-optimized polyphase FIR filtering for 4x throughput on hot path.
 //==============================================================================
 struct Oversampling2x
@@ -110,8 +111,15 @@ struct Oversampling2x
         0.418265f,  0.088024f, 0.000000f, -0.006289f
     };
 
-    float stateL[FILTER_TAPS] = {};
-    float stateR[FILTER_TAPS] = {};
+    // Up- and down-conversion keep SEPARATE FIR history buffers.
+    // The downsample tail (odd-phase DSP output) must never feed back into
+    // the next call's upsampler as base-rate filter history — sharing one
+    // buffer parks dsp2 into the up-conversion state and smears the
+    // oversampled spectrum.
+    float upStateL[FILTER_TAPS] = {};
+    float upStateR[FILTER_TAPS] = {};
+    float downStateL[FILTER_TAPS] = {};
+    float downStateR[FILTER_TAPS] = {};
     int idx = 0;
     double sampleRate = 44100.0;
 
@@ -130,7 +138,7 @@ struct Oversampling2x
         // idx, idx-1, idx-2, idx-3 -> we load state in that order
         coeffVec0 = _mm_loadu_ps(&coeffs[0]);  // c0, c1, c2, c3
         coeffVec1 = _mm_loadu_ps(&coeffs[4]);  // c4, c5, c6, c7
-        // Even taps for half-band odd phase: c0, c2, c4, c6 (c1,c3,c5,c7 are zero anyway)
+        // Even taps for the zero-stuffed even phase; odd-position input samples are zero.
         float evenTaps[4] = { coeffs[0], coeffs[2], coeffs[4], coeffs[6] };
         coeffVecEven = _mm_loadu_ps(evenTaps);
         sseInitialized = true;
@@ -138,8 +146,10 @@ struct Oversampling2x
 
     void reset()
     {
-        std::memset(stateL, 0, sizeof(stateL));
-        std::memset(stateR, 0, sizeof(stateR));
+        std::memset(upStateL, 0, sizeof(upStateL));
+        std::memset(upStateR, 0, sizeof(upStateR));
+        std::memset(downStateL, 0, sizeof(downStateL));
+        std::memset(downStateR, 0, sizeof(downStateR));
         idx = 0;
     }
 
@@ -164,15 +174,11 @@ struct Oversampling2x
             state[(readIdx - 4 + FILTER_TAPS) % FILTER_TAPS]
         );  // s1 = [s[idx-7], s[idx-6], s[idx-5], s[idx-4]]
 
-        // Multiply with coefficients (coeffs[0..3] with s[idx..idx-3], coeffs[4..7] with s[idx-4..idx-7])
-        // Note: coeffVec0 = [c0,c1,c2,c3], coeffVec1 = [c4,c5,c6,c7]
-        // We need: s[idx]*c0 + s[idx-1]*c1 + s[idx-2]*c2 + s[idx-3]*c3 + s[idx-4]*c4 + ...
-        // s0 is [s[idx-3], s[idx-2], s[idx-1], s[idx]] -> reverse to match coeffs
-        __m128 s0_rev = _mm_shuffle_ps(s0, s0, _MM_SHUFFLE(0, 1, 2, 3));  // [s[idx], s[idx-1], s[idx-2], s[idx-3]]
-        __m128 s1_rev = _mm_shuffle_ps(s1, s1, _MM_SHUFFLE(0, 1, 2, 3));  // [s[idx-4], s[idx-5], s[idx-6], s[idx-7]]
-
-        __m128 prod0 = _mm_mul_ps(s0_rev, coeffVec0);
-        __m128 prod1 = _mm_mul_ps(s1_rev, coeffVec1);
+        // _mm_set_ps lists high-to-low lanes: s0's low lane already holds
+        // state[idx], matching coeffs[0]. Reversing each vector would pair
+        // samples with the wrong taps and alter the filter response.
+        __m128 prod0 = _mm_mul_ps(s0, coeffVec0);
+        __m128 prod1 = _mm_mul_ps(s1, coeffVec1);
 
         // Horizontal sum of both products
         __m128 sum0 = _mm_hadd_ps(prod0, prod1);  // [p0+p1, p2+p3, p4+p5, p6+p7]
@@ -193,9 +199,7 @@ struct Oversampling2x
             state[readIdx]
         );  // s = [s[idx-6], s[idx-4], s[idx-2], s[idx]]
 
-        // Reverse to match evenTaps order: c0, c2, c4, c6
-        __m128 s_rev = _mm_shuffle_ps(s, s, _MM_SHUFFLE(0, 1, 2, 3));  // [s[idx], s[idx-2], s[idx-4], s[idx-6]]
-        __m128 prod = _mm_mul_ps(s_rev, coeffVecEven);
+        __m128 prod = _mm_mul_ps(s, coeffVecEven);
 
         // Horizontal sum
         __m128 sum = _mm_hadd_ps(prod, prod);  // [p0+p1, p2+p3, ...]
@@ -211,37 +215,34 @@ struct Oversampling2x
     void processSample(float inL, float inR, float& outL, float& outR, ProcessFn&& dsp)
     {
         // ── UP SAMPLE 2x: even phase ──
-        stateL[idx] = inL;
-        stateR[idx] = inR;
-        float upL_even = firSSE(stateL, idx);
-        float upR_even = firSSE(stateR, idx);
-
-        // ── UP SAMPLE 2x: odd phase (half-band, only even taps) ──
-        float upL_odd = firHalfBandSSE(stateL, idx) * 2.0f;
-        float upR_odd = firHalfBandSSE(stateR, idx) * 2.0f;
-
+        // Zero-stuff at the 2x clock, with interpolation gain 2. Each
+        // up/down history advances through BOTH phases, independently.
+        const int evenIdx = idx;
+        upStateL[idx] = 2.0f * inL;
+        upStateR[idx] = 2.0f * inR;
+        float upL_even = firHalfBandSSE(upStateL, idx);
+        float upR_even = firHalfBandSSE(upStateR, idx);
         idx = (idx + 1) % FILTER_TAPS;
+        upStateL[idx] = 0.0f;
+        upStateR[idx] = 0.0f;
+        float upL_odd = firSSE(upStateL, idx);
+        float upR_odd = firSSE(upStateR, idx);
 
         // ── DSP at 2x rate ──
         float dspL1, dspR1, dspL2, dspR2;
         dsp(upL_even, upR_even, dspL1, dspR1);
-        dsp(upL_odd,  upR_odd,  dspL2, dspR2);
+        dsp(upL_odd, upR_odd, dspL2, dspR2);
 
-        // ── DOWN SAMPLE 2x: even phase ──
-        stateL[idx] = dspL1;
-        stateR[idx] = dspR1;
-        float downL_even = firSSE(stateL, idx);
-        float downR_even = firSSE(stateR, idx);
-
-        // ── DOWN SAMPLE 2x: odd phase (half-band) ──
-        stateL[idx] = dspL2;
-        stateR[idx] = dspR2;
-
+        // ── DOWN SAMPLE 2x: keep both DSP phases, then decimate ──
+        idx = evenIdx;
+        downStateL[idx] = dspL1;
+        downStateR[idx] = dspR1;
         idx = (idx + 1) % FILTER_TAPS;
-
-        // Use even phase for latency alignment
-        outL = downL_even;
-        outR = downR_even;
+        downStateL[idx] = dspL2;
+        downStateR[idx] = dspR2;
+        outL = firSSE(downStateL, idx);
+        outR = firSSE(downStateR, idx);
+        idx = (idx + 1) % FILTER_TAPS;
     }
 
     // ── MONO OVERSAMPLING — For single-channel feedback paths (e.g., chorus feedback)
@@ -250,27 +251,25 @@ struct Oversampling2x
     void processSampleMono(float in, float& out, ProcessFn&& dsp)
     {
         // ── UP SAMPLE 2x ──
-        stateL[idx] = in;  // reuse L state for mono
-        float up_even = firSSE(stateL, idx);
-        float up_odd = firHalfBandSSE(stateL, idx) * 2.0f;
-
+        const int evenIdx = idx;
+        upStateL[idx] = 2.0f * in;
+        float up_even = firHalfBandSSE(upStateL, idx);
         idx = (idx + 1) % FILTER_TAPS;
+        upStateL[idx] = 0.0f;
+        float up_odd = firSSE(upStateL, idx);
 
         // ── DSP at 2x rate ──
         float dsp1, dsp2;
         dsp(up_even, dsp1);
-        dsp(up_odd,  dsp2);
+        dsp(up_odd, dsp2);
 
         // ── DOWN SAMPLE 2x ──
-        stateL[idx] = dsp1;
-        float down_even = firSSE(stateL, idx);
-
-        stateL[idx] = dsp2;
-
+        idx = evenIdx;
+        downStateL[idx] = dsp1;
         idx = (idx + 1) % FILTER_TAPS;
-
-        // Use even phase for latency alignment
-        out = down_even;
+        downStateL[idx] = dsp2;
+        out = firSSE(downStateL, idx);
+        idx = (idx + 1) % FILTER_TAPS;
     }
 };
 
@@ -567,7 +566,14 @@ struct EnhancedChorus
         }
         // Precompute drift phase recurrence constants
         // Drift uses two sine frequencies: 2.32x and 5.71x the base driftDelta
-        float dDelta = chorusBlockCoeffs.driftDelta;
+        // BUGFIX (rate-conversion): driftDelta = 0.07/sr is a CYCLES-per-sample
+        // fraction, but the sin/cos recurrence advances in RADIANS. The delta
+        // must be scaled by twoPi or the drift runs 2π× too slow (~0.026 Hz
+        // instead of the designed 2.32×0.07 ≈ 0.162 Hz). Same 2π-conversion
+        // class as the delay wow/flutter rate bug fixed 2026-07-29 (`4333761`);
+        // the reverb master LFO in UpgradedReverb::beginBlock() does this
+        // correctly (modPhaseIncrement * twoPi).
+        float dDelta = chorusBlockCoeffs.driftDelta * juce::MathConstants<float>::twoPi;
         for (int i = 0; i < NUM_VOICES; ++i)
         {
             // Frequency multipliers for the two drift components
@@ -1041,11 +1047,9 @@ struct UpgradedReverb
         float buf[MAX_SIZE] = {};
         int size = 1, pos = 0;
         float fb = 0.5f;
-        float modOffset = 0.0f;  // Sub-sample modulation offset for organic diffusion
 
         void setSize(int s) { size = juce::jlimit(1, MAX_SIZE - 1, s); }
         void setFeedback(float f) { fb = f; }
-        void setModOffset(float m) { modOffset = m; }
         void mute() { std::memset(buf, 0, sizeof(buf)); pos = 0; }
 
         // modOffset: sub-sample read offset for allpass modulation.
@@ -1137,6 +1141,9 @@ struct UpgradedReverb
     float modCos = 1.0f;  // cos(modPhase * twoPi)
     int modTick = 0;      // master LFO renormalization tick counter
     double sampleRate = 44100.0;
+    // Last roomSize applied to earlyL/earlyR tap delays; mute-on-change guard
+    // in beginBlock() resets the tap buffers only when this actually moves.
+    float lastRoomSize = 0.0f;
 
     // Block-level coefficient cache — avoids recomputing feedback/damp per sample
     // and hoists comb modulation calculations out of the hot loop.
@@ -1161,6 +1168,11 @@ struct UpgradedReverb
         // Precomputed once per block in beginBlock().
         float combCosDelta[NUM_COMBS] = {};  // cos(twoPi * i * 0.1234567f) per comb
         float combSinDelta[NUM_COMBS] = {};  // sin(twoPi * i * 0.1234567f) per comb
+        // Allpass LFO phase offsets: sin/cos of twoPi * i * 0.29177f, precomputed
+        // once per block so each allpass derives a moving modulation offset from
+        // the master LFO (modSin/modCos) — same recurrence pattern as the combs.
+        float apCosDelta[NUM_AP] = {};  // cos(twoPi * i * 0.29177f) per allpass
+        float apSinDelta[NUM_AP] = {};  // sin(twoPi * i * 0.29177f) per allpass
 
         // Master modulation LFO phase recurrence — replaces 2 std::sin()+std::cos()/sample
         // with 4 multiplies. The master LFO phase advances per sample at rate 0.37 Hz.
@@ -1197,6 +1209,18 @@ struct UpgradedReverb
                 // ── Early reflections scale with room size ──
                 // Small rooms: tight, bright, loud early reflections
                 // Large rooms: wide, diffuse, quiet early reflections
+                // Retarget every block, but mute the tap buffers only when the
+                // room actually changes — otherwise the new (larger) tap delays
+                // would read history written by the old room's taps and smear
+                // the early field with a blend of both rooms for several
+                // hundred ms. Muting on an unchanged size would silence the
+                // early energy every audio block.
+                if (std::fabs(roomSize - lastRoomSize) > 1e-4f)
+                {
+                    earlyL.mute();
+                    earlyR.mute();
+                    lastRoomSize = roomSize;
+                }
                 earlyL.setRoomSize(roomSize);
                 earlyR.setRoomSize(roomSize);
 
@@ -1227,6 +1251,19 @@ struct UpgradedReverb
             float di = juce::MathConstants<float>::twoPi * static_cast<float>(i) * 0.1234567f;
             blockCoeffs.combSinDelta[i] = std::sin(di);
             blockCoeffs.combCosDelta[i] = std::cos(di);
+        }
+
+        // ── Precompute allpass LFO phase offsets ──
+        // Same recurrence pattern as the combs: each allpass derives its
+        // modulation offset from the master LFO (modSin/modCos) with a fixed
+        // per-allpass phase offset, so the diffusion network actually moves.
+        // Offsets use a different stride (0.29177) than the combs so the
+        // allpass modulation decorrelates from the comb modulation.
+        for (int i = 0; i < NUM_AP; ++i)
+        {
+            float di = juce::MathConstants<float>::twoPi * static_cast<float>(i) * 0.29177f;
+            blockCoeffs.apSinDelta[i] = std::sin(di);
+            blockCoeffs.apCosDelta[i] = std::cos(di);
         }
 
         // ── Apply coefficients to comb filters once per block ──
@@ -1344,9 +1381,12 @@ struct UpgradedReverb
         }
         for (int i = 0; i < NUM_AP; ++i)
         {
-            // Allpass modulation: applies sub-sample read offset for organic diffusion
-            // Each allpass gets a different phase offset to decorrelate left/right
-            float apMod = modDepth * (0.5f + static_cast<float>(i) * 0.12f);  // scaled per allpass
+            // Allpass modulation follows the master LFO like the combs:
+            // sin(φ + Δi) = sin(φ)cos(Δi) + cos(φ)sin(Δi) with per-allpass
+            // phase offsets (apSinDelta/apCosDelta precomputed in beginBlock),
+            // so the diffusion network actually moves with the advertised
+            // "organic" tail instead of sitting at a static constant offset.
+            float apMod = (modSin * blockCoeffs.apCosDelta[i] + modCos * blockCoeffs.apSinDelta[i]) * modDepth;
             lateL = apL[i].process(lateL, apMod);
             lateR = apR[i].process(lateR, -apMod);  // inverted for stereo decorrelation
         }

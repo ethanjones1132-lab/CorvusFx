@@ -1,4 +1,6 @@
-"""Fix: add modPhaseIncrement to Reverb BlockCoeffs, hoisting last per-sample divide.
+"""ALREADY APPLIED — DO NOT RERUN: its Windows-tree effect is already in the SoT.
+
+Fix: add modPhaseIncrement to Reverb BlockCoeffs, hoisting last per-sample divide.
 
 Two remaining optimizations identified:
 1. EnhancedChorus LFO rate caching (done in previous run, `d48eaf0`)

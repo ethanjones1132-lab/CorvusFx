@@ -18,6 +18,7 @@ public:
             if (onRightClick) onRightClick(e);
             return;
         }
+        if (onGestureStart) onGestureStart();  // begin undo transaction before first knob move
         juce::Slider::mouseDown(e);  prs = true;
     }
     void mouseUp(const juce::MouseEvent& e) override { juce::Slider::mouseUp(e);    prs = false; }
@@ -25,6 +26,7 @@ public:
     float getGlowAmount() const { return glow; }
     juce::String linkedParamID;
     std::function<void(const juce::MouseEvent&)> onRightClick;
+    std::function<void()> onGestureStart;
 
 private:
     bool hov = false, prs = false; float glow = 0.0f;
@@ -122,11 +124,11 @@ public:
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // LEVEL METER â€” Vertical stereo peak/RMS bars with dB scale
 // Smooth exponential decay for professional metering feel
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-class LevelMeter : public juce::Component, public juce::Timer
+// ═══════════════════════════════════════════════════════════════
+class LevelMeter : public juce::Component
 {
 public:
-    LevelMeter() { startTimerHz(30); }
+    LevelMeter() { setInterceptsMouseClicks(false, false); }
 
     void setInputPeakL(float v)  { inPeakL  = juce::jlimit(0.0f, 1.0f, v); repaint(); }
     void setInputPeakR(float v)  { inPeakR  = juce::jlimit(0.0f, 1.0f, v); repaint(); }
@@ -245,21 +247,10 @@ public:
         // Peak hold decay - handled externally by timer callback
     }
 
-    void decayPeaks(float factor = 0.96f)
-    {
-        inPeakL  *= factor;
-        inPeakR  *= factor;
-        outPeakL *= factor;
-        outPeakR *= factor;
-        repaint();
-    }
+        // Peak hold decay lives on the processor's LevelMeters, applied by the
+        // editor's timer before copying there — one timer, no local decay.
 
-    void timerCallback() override
-    {
-        decayPeaks(0.96f);
-    }
-
-private:
+    private:
     float inPeakL = 0.0f, inPeakR = 0.0f;
     float inRmsL = 0.0f, inRmsR = 0.0f;
     float outPeakL = 0.0f, outPeakR = 0.0f;

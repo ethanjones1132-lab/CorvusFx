@@ -383,7 +383,9 @@ MSBuild.exe "path/to/NewProject_VST3.vcxproj" -p:Configuration=Release -p:Platfo
 
 ### CMake Build (Alternative)
 
-The CMake project defines three targets: **`DrippyFX`** (VST3/AU/Standalone), **`CorvusInstrument`** (VST3/Standalone), and **`CorvusDSPTests`** (console regression harness).
+The CMake project defines four targets: **`DrippyFX`** (VST3/AU/Standalone), **`CorvusInstrument`** (VST3/Standalone), and **`CorvusDSPTests`** (shared DSP/instrument regression harness), and **`CorvusFXStateTests`** (FX session state regression harness).
+
+Run the portable source gate with `bash scripts/verify_corvus_source.sh` from the repository root. After configuring CMake, build and run `CorvusDSPTestsRun` and `CorvusFXStateTestsRun` to verify the shared effects, instrument behavior, and FX A/B/MIDI/lock session recall. Keep `CORVUS_COPY_PLUGIN_AFTER_BUILD=OFF` while validating a baseline.
 
 Use the included `CMakePresets.json` for the supported Windows VS 2026 configure/build:
 
