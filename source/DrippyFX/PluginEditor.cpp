@@ -432,9 +432,9 @@ void CorvusFXAudioProcessorEditor::resized()
     // ── 2x2 grid of effect sections ──
     int totalW = area.getWidth();
     int totalH = area.getHeight();
-    int gap = sc(15);
-    int secW = (totalW - gap) / 2;
-    int secH = (totalH - gap) / 2;
+    int gap = juce::jmax(1, sc(15));
+    int secW = juce::jmax(1, (totalW - gap) / 2);
+    int secH = juce::jmax(1, (totalH - gap) / 2);
     int bottomY = area.getY() + secH + gap;
 
     // === TOP ROW ===
