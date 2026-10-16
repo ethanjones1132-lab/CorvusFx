@@ -17,7 +17,7 @@
 | Product | Role | State |
 |---------|------|-------|
 | **Corvus FX (DrippyFX)** | Multi-FX VST3 effect | Shipping quality baseline; Phase 4 UI complete; Phase 5 CPU work largely done |
-| **Corvus Instrument** | Separate synth + shared FX chain | Vertical slice implemented and locally verified: oscillator, 16-voice engine, ADSR, shared Corvus FX chain, five signature patches, deterministic tests; plugin codes Crvs/Cvi1. Mac portable gate verified; no Windows DAW runtime smoke or signed distribution claimed. |
+| **Corvus Instrument** | Separate synth + shared FX chain | Vertical slice implemented and locally verified: oscillator, 16-voice engine, ADSR, shared Corvus FX chain, five signature patches, deterministic tests; plugin codes Crvs/Cvi1. Mac portable gate verified; no Windows DAW runtime smoke or signed distribution claimed. · src: 1727ed9, 4a73450, docs/integration/2026-10-14-clean-baseline.md |
 
 ## Completed Milestones
 

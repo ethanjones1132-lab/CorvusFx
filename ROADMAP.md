@@ -58,11 +58,11 @@
 
 | Track | Target | Status |
 |-------|--------|--------|
-| Shared DSP extraction | `source/DrippyFX/dsp/CorvusEffects.h` behavior-preserving within `1.0e-6f` fixture tolerance | ✅ Implemented and locked (`CorvusDSPTests`) |
-| FX regression lock | Deterministic JUCE unit fixture + fingerprint for existing Corvus FX | ✅ Implemented and locked (fingerprint `0xe8dffa927c566497`) |
-| Instrument target | Separate VST3/Standalone synth; unique plugin codes `Crvs`/`Cvi1`; MIDI polyphony | ✅ Implemented (`CorvusInstrument`, `IS_SYNTH TRUE`) |
-| First voice engine | 16-voice, band-limited oscillator, amp envelope, global Corvus FX chain | ✅ Implemented |
-| Signature patches | Five atmospheric factory patches for the vertical slice | ✅ Implemented |
+| Shared DSP extraction | `source/DrippyFX/dsp/CorvusEffects.h` behavior-preserving within `1.0e-6f` fixture tolerance | ✅ Implemented and locked (`CorvusDSPTests`) · src: 1727ed9, 4a73450 |
+| FX regression lock | Deterministic JUCE unit fixture + fingerprint for existing Corvus FX | ✅ Implemented and locked (fingerprint `0xe8dffa927c566497`) · src: 1727ed9, 4a73450 |
+| Instrument target | Separate VST3/Standalone synth; unique plugin codes `Crvs`/`Cvi1`; MIDI polyphony | ✅ Implemented (`CorvusInstrument`, `IS_SYNTH TRUE`) · src: 1727ed9, 4a73450 |
+| First voice engine | 16-voice, band-limited oscillator, amp envelope, global Corvus FX chain | ✅ Implemented · src: 1727ed9, 4a73450 |
+| Signature patches | Five atmospheric factory patches for the vertical slice | ✅ Implemented · src: 1727ed9, 4a73450 |
 | Explicit out of scope (slice) | Wavetable import, granular, sampling, sequencer, arpeggiator, custom UI, unlimited modulation | — |
 
 **Authoritative docs:**
