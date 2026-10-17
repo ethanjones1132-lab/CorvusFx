@@ -348,23 +348,62 @@ The full design (second oscillator, sub/noise, filter, modulation matrix, additi
 - **OS**: Windows 10 or 11 (x64)
 - **CPU**: Intel/AMD processor (SSE2 or later, AVX2 recommended)
 
-### Quick Install
+### What Ships
 
-1. **Download** the latest `CorvusFX.vst3` from the [Releases](https://github.com/ethanjones1132-lab/CorvusFx/releases) page
-2. **Copy** the file to your VST3 plugin directory:
+| Plugin | Format | Notes |
+|--------|--------|-------|
+| **Corvus FX** | VST3 (Windows x64) | 5-module multi-effects, 36 presets |
+| **Corvus Instrument** | VST3 (Windows x64) | Synth, 5 patches, shares the Corvus DSP core |
+| **Corvus Instrument** | Standalone (Windows x64) | Shipped as a `.zip`; runs without a DAW |
+
+### Install (Windows)
+
+VST3 plugins install as **bundles** — folders whose name ends in `.vst3`.
+Copy the whole bundle; do not extract or rename the inner files.
+
+1. **Download** the release artifacts from the [Releases](https://github.com/ethanjones1132-lab/CorvusFx/releases) page
+2. **Copy** each wanted `*.vst3` bundle into the standard VST3 plugin directory:
    ```
    C:\Program Files\Common Files\VST3\
    ```
-3. **Rescan** plugins in your DAW
+   (Windows may ask for administrator rights when writing here.)
+3. **Rescan** plugins in your DAW. If a plugin does not appear, add
+   `C:\Program Files\Common Files\VST3\` to the host's VST3 scan paths.
+4. **Standalone** (Corvus Instrument): unzip and run the `.exe` directly — no
+   install step and no DAW required.
 
-### Variants
+### Windows VST3 Paths
 
-| Variant | Path |
-|---------|------|
-| **Mk1** | `drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3` |
-| **Mk2** | `DrippyMk2/NewProject.vst3/Contents/x86_64-win/DrippyMk2.vst3` |
+| Plugin | Repo path (build/deploy checkout) | Installed path |
+|--------|-----------------------------------|----------------|
+| **Corvus FX** | `drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3` | `C:\Program Files\Common Files\VST3\DrippyMk1.vst3` |
+| **Corvus Instrument** | CMake target `CorvusInstrument_VST3` → `CorvusInstrument.vst3` | `C:\Program Files\Common Files\VST3\CorvusInstrument.vst3` |
+| **Corvus Instrument (Standalone)** | CMake target `CorvusInstrument_Standalone` → `.zip` | unzipped `.exe`, any folder |
 
-Mk1 is the current mainline. Mk2 is an experimental alternative build. The companion instrument builds as `CorvusInstrument.vst3` / Standalone from the same CMake project.
+`DrippyMk1.vst3` is the mainline Corvus FX binary; its name is preserved so
+existing DAW references keep resolving. `DrippyMk2` is an experimental
+alternative build and is **not** part of the v1.0.0 artifact set.
+
+> 📦 **v1.0.0 binaries are not published yet.** See
+> [`docs/release/v1.0.0-notes.md`](docs/release/v1.0.0-notes.md) for the draft
+> release notes, the artifact list, and the pending Windows verification.
+
+### Uninstall (Windows)
+
+1. **Close** your DAW (and any running standalone instance).
+2. **Delete** the plugin bundle(s) you installed from
+   `C:\Program Files\Common Files\VST3\`:
+   ```
+   C:\Program Files\Common Files\VST3\DrippyMk1.vst3
+   C:\Program Files\Common Files\VST3\CorvusInstrument.vst3
+   ```
+3. **Delete** the unzipped Standalone folder, if you installed one.
+4. **Rescan** plugins in your DAW — the removed plugins disappear from the list.
+
+Uninstalling the plugin does not touch your saved DAW projects or their plugin
+state. The editor also keeps a small per-user preference file
+(`CorvusFX.settings`, in your Windows user settings folder) that remembers the
+dark/light theme; delete it if you want to reset the theme to its default.
 
 ---
 
