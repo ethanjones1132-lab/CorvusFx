@@ -443,6 +443,9 @@ void CorvusFXAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     distortion.prepare(sampleRate);
     upgradedReverb.prepare(sampleRate);
     masterOutput.prepare(sampleRate);
+    // Kept as a prepared resource only: processBlock's dry feed is a scalar
+    // per-sample capture, so a host block larger than this hint never resizes
+    // it (and never allocates) on the audio thread.
     dryBuffer.setSize(2, samplesPerBlock, false, true, true);
 
     // CV-017: re-assert the MIDI apply snapshot capacity (reserve() is a
@@ -689,12 +692,6 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     if (reverbMix > 0.001f)
         upgradedReverb.beginBlock(reverbSize, reverbDamping, reverbMix, sReverbMod, 1.0f, reverbPreDelay);
 
-    // Store dry signal
-    if (dryBuffer.getNumSamples() < numSamples || dryBuffer.getNumChannels() < chProc)
-        dryBuffer.setSize(chProc, numSamples, false, false, true);
-    for (int ch = 0; ch < chProc; ++ch)
-        dryBuffer.copyFrom(ch, 0, buffer, ch, 0, numSamples);
-
     // ── Level meter accumulation (merged into main loop) ──
     // Accumulates peak/RMS in the same pass as DSP processing,
     // eliminating two full buffer iterations per processBlock call.
@@ -726,6 +723,15 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     for (int s = 0; s < numSamples; ++s)
     {
+        // Capture the pristine channel input once per sample, before any DSP
+        // writes back into chData. This scalar dry feed is block-length
+        // independent, so hosts that hand us a block larger than the prepared
+        // size never trigger a scratch-buffer setSize allocation in the audio
+        // callback. The R capture keeps the mono duplicate, exactly like the
+        // former dryBuffer feed.
+        const float dryL = chData[0][s];
+        const float dryR = isMono ? dryL : chData[1][s];
+
         const float sFatness      = smoothFatness.getNextValue();
         const float sChorusDepth  = smoothChorusDepth.getNextValue();
         const float sChorusRate   = smoothChorusRate.getNextValue();
@@ -744,12 +750,12 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
         // ── Input level meter (read dry signal before DSP) ──
         {
-            float inV_ = std::abs(dryBuffer.getReadPointer(0)[s]);
+            float inV_ = std::abs(dryL);
             if (inV_ > inPeakL_) inPeakL_ = inV_;
             inRmsSumL_ += inV_ * inV_;
             if (!isMono)
             {
-                float inVR_ = std::abs(dryBuffer.getReadPointer(1)[s]);
+                float inVR_ = std::abs(dryR);
                 if (inVR_ > inPeakR_) inPeakR_ = inVR_;
                 inRmsSumR_ += inVR_ * inVR_;
             }
@@ -838,9 +844,9 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // 9. OVERALL WET/DRY — per-sample linear crossfade with smoothing
         if (sOverall < 0.999f)
         {
-            smpL = dryBuffer.getReadPointer(0)[s] * (1.0f - sOverall) + smpL * sOverall;
+            smpL = dryL * (1.0f - sOverall) + smpL * sOverall;
             if (!isMono)
-                smpR = dryBuffer.getReadPointer(1)[s] * (1.0f - sOverall) + smpR * sOverall;
+                smpR = dryR * (1.0f - sOverall) + smpR * sOverall;
         }
 
         chData[0][s] = std::isfinite(smpL) ? smpL : 0.0f;
