@@ -173,9 +173,13 @@ def _verify(raw):
     return None
 
 
-cpp_raw = CPP.read_text()
 if not CPP.exists():
     fail(f"missing source file {CPP}")
+
+# The source carries UTF-8 punctuation in comments (e.g. em dashes and box
+# drawing); the locale-default decode raises on those bytes on Windows, so
+# every read decodes explicitly as UTF-8.
+cpp_raw = CPP.read_text(encoding="utf-8")
 
 err = _verify(cpp_raw)
 if err:
@@ -234,7 +238,7 @@ print("ab-base64-roundtrip: neutral no-op edit passes (probe specificity "
       "proven)")
 
 # real tree never mutated — re-verify the live source once more before gating
-err = _verify(CPP.read_text())
+err = _verify(CPP.read_text(encoding="utf-8"))
 if err:
     fail(f"final source re-verification failed: {err}")
 print("AB-BASE64-ROUNDTRIP OK")
