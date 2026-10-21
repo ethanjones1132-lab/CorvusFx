@@ -35,7 +35,7 @@ def check(srcdir: Path) -> list:
         p = srcdir / rel
         if not p.exists():
             fail(f"missing source file {p}")
-        return p.read_text(), p
+        return p.read_text(encoding="utf-8"), p
 
     edit_c, edit_c_path = read("PluginEditor.cpp")
     edit_h, _ = read("PluginEditor.h")
@@ -130,10 +130,10 @@ def main():
             shutil.copy(SRC / f, tmpsrc / f)
         tmp_c = tmpsrc / "PluginEditor.cpp"
         kept = [
-            ln for ln in tmp_c.read_text().splitlines()
+            ln for ln in tmp_c.read_text(encoding="utf-8").splitlines()
             if not ("startTimer" in ln and not ln.strip().startswith("//"))
         ]
-        tmp_c.write_text("\n".join(kept))
+        tmp_c.write_text("\n".join(kept), encoding="utf-8")
         env = dict(os.environ, METER_TIMER_SRC=str(tmp))
         res = subprocess.run([sys.executable, str(Path(__file__).resolve()),
                               "--no-negative"], env=env,

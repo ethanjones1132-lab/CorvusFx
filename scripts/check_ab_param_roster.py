@@ -42,8 +42,8 @@ hdr_path = SRC / "PluginProcessor.h"
 for p in (cpp_path, hdr_path):
     if not p.exists():
         fail(f"missing source file {p}")
-cpp_raw = cpp_path.read_text()
-hdr_raw = hdr_path.read_text()
+cpp_raw = cpp_path.read_text(encoding="utf-8")
+hdr_raw = hdr_path.read_text(encoding="utf-8")
 cpp = strip_comments(cpp_raw)
 hdr = strip_comments(hdr_raw)
 

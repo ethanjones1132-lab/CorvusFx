@@ -25,7 +25,7 @@ def read(rel):
     p = SRC / rel
     if not p.exists():
         fail(f"missing source file {p}")
-    return p.read_text(), p
+    return p.read_text(encoding="utf-8"), p
 
 proc_h, proc_h_path = read("PluginProcessor.h")
 proc_c, proc_c_path = read("PluginProcessor.cpp")

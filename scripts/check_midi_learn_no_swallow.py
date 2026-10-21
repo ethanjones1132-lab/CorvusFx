@@ -18,7 +18,7 @@ import sys
 
 SRC = "source/DrippyFX/PluginProcessor.cpp"
 
-src = open(SRC).read()
+src = open(SRC, encoding="utf-8").read()
 
 # Strip comments so a comment mentioning "break" can't fake anything,
 # and so commented-out code can't satisfy checks either.

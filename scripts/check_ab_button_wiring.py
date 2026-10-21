@@ -248,7 +248,7 @@ def _reject(mutated, label, needle):
 
 
 def main():
-    text = ED.read_text()
+    text = ED.read_text(encoding="utf-8")
     try:
         check_pass(text, "real tree")
     except Rejected as r:
@@ -287,7 +287,7 @@ def main():
 
     # real tree never mutated — re-verify the live source once more
     try:
-        check_pass(ED.read_text(), "final re-verify")
+        check_pass(ED.read_text(encoding="utf-8"), "final re-verify")
     except Rejected as r:
         print(f"AB-BUTTON-WIRING FAIL: final re-verify failed: {r}")
         return 1

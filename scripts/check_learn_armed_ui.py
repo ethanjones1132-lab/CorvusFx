@@ -69,8 +69,8 @@ hd = SRC / "PluginProcessor.h"
 for path in (ed, hd):
     if not path.exists():
         fail(f"missing source file {path}")
-check_editor(ed.read_text())
-check_header(hd.read_text())
+check_editor(ed.read_text(encoding="utf-8"))
+check_header(hd.read_text(encoding="utf-8"))
 print("learn-armed-ui: real tree OK")
 
 # ---- negative self-probes (mutated TEMP texts; real tree never mutated) ----
@@ -91,8 +91,8 @@ def expect_reject(name: str, text: str, old: str, new: str, which: str) -> None:
         return
     fail(f"probe '{name}' was NOT rejected — the checker asserted nothing")
 
-ed_text = ed.read_text()
-hd_text = hd.read_text()
+ed_text = ed.read_text(encoding="utf-8")
+hd_text = hd.read_text(encoding="utf-8")
 
 # probe 1: strip the cancel menu item
 expect_reject("cancel item stripped", ed_text,

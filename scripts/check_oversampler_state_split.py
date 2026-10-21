@@ -131,7 +131,7 @@ def main():
     if not HEADER.exists():
         print(f"OVERSAMPLER-STATE-SPLIT FAIL: missing source file {HEADER}")
         return 1
-    text = HEADER.read_text()
+    text = HEADER.read_text(encoding="utf-8")
     ok, diag = run_text(text)
     if not ok:
         print(f"OVERSAMPLER-STATE-SPLIT FAIL: {diag}")
@@ -167,7 +167,7 @@ def main():
                 print(f"OVERSAMPLER-STATE-SPLIT FAIL: negative '{label}' mutation is a no-op — checker stale vs source")
                 return 1
             p = Path(tmpdir) / "PluginProcessor.h"
-            p.write_text(mutated)
+            p.write_text(mutated, encoding="utf-8")
             ok2, diag2 = run_text(mutated)
             if ok2:
                 print(f"OVERSAMPLER-STATE-SPLIT FAIL: negative check '{label}' did NOT fail — checker too weak")

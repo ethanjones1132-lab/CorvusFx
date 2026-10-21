@@ -137,7 +137,7 @@ def _verify(cpp_text):
 def main():
     if not CPP.exists():
         fail(f"missing source file {CPP}")
-    cpp_raw = CPP.read_text()
+    cpp_raw = CPP.read_text(encoding="utf-8")
     err = _verify(cpp_raw)
     if err:
         fail(err)

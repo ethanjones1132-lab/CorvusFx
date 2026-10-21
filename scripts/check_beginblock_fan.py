@@ -116,7 +116,7 @@ def check_fan(body):
 proc_c_path = SRC / "PluginProcessor.cpp"
 if not proc_c_path.exists():
     fail(f"missing source file {proc_c_path}")
-proc_c = proc_c_path.read_text()
+proc_c = proc_c_path.read_text(encoding="utf-8")
 proc_body = extract_body(proc_c, "processBlock")
 
 reason = check_fan(proc_body)

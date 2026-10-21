@@ -204,8 +204,8 @@ class _Rejected(Exception):
     pass
 
 
-cpp_raw = CPP_PATH.read_text()
-hdr_raw = HDR_PATH.read_text()
+cpp_raw = CPP_PATH.read_text(encoding="utf-8")
+hdr_raw = HDR_PATH.read_text(encoding="utf-8")
 for p in (CPP_PATH, HDR_PATH):
     if not p.exists():
         fail(f"missing source file {p}")
@@ -285,7 +285,7 @@ print("raw-param: benign non-roster edit passes (probe specificity proven)")
 
 # real tree never mutated — re-verify the live source once more before gating.
 try:
-    verify(strip_comments(CPP_PATH.read_text()), strip_comments(HDR_PATH.read_text()))
+    verify(strip_comments(CPP_PATH.read_text(encoding="utf-8")), strip_comments(HDR_PATH.read_text(encoding="utf-8")))
 except _Rejected as r:
     fail(f"final source re-verification failed: {r}")
 print("raw-param: OK")

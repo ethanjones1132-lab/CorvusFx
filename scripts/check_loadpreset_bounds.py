@@ -118,7 +118,7 @@ def _verify(code):
     return None
 
 
-cpp_raw = CPP.read_text()
+cpp_raw = CPP.read_text(encoding="utf-8")
 if not CPP.exists():
     fail(f"missing source file {CPP}")
 code = cpp_raw
@@ -180,7 +180,7 @@ if _verify(strip_comments(neutral)) is not None:
 print("loadpreset-bounds: neutral no-op edit passes (probe specificity proven)")
 
 # real tree never mutated — re-verify the live source once more before gating
-err = _verify(strip_comments(CPP.read_text()))
+err = _verify(strip_comments(CPP.read_text(encoding="utf-8")))
 if err:
     fail(f"final source re-verification failed: {err}")
 print("LOADPRESET-BOUNDS OK")

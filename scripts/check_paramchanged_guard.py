@@ -113,7 +113,7 @@ def check_param_changed_guard(body):
 proc_c_path = SRC / "PluginProcessor.cpp"
 if not proc_c_path.exists():
     fail(f"missing source file {proc_c_path}")
-proc_c = proc_c_path.read_text()
+proc_c = proc_c_path.read_text(encoding="utf-8")
 
 err = check_param_changed_guard(extract_parameter_changed_body(proc_c))
 if err:

@@ -162,8 +162,8 @@ def main():
         fail(f"missing source file {CPP}")
     if not H.exists():
         fail(f"missing header file {H}")
-    cpp_raw = CPP.read_text()
-    h_raw = H.read_text()
+    cpp_raw = CPP.read_text(encoding="utf-8")
+    h_raw = H.read_text(encoding="utf-8")
     err = _verify(cpp_raw, h_raw)
     if err:
         fail(err)

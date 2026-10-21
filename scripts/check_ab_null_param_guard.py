@@ -69,7 +69,7 @@ class _Rejected(Exception):
 def _verify(cpp_text):
     stripped = strip_comments(cpp_text)
     mn = re.search(r"NUM_AB_PARAMS\s*=\s*(\d+)", strip_comments(
-        (SRC / "PluginProcessor.h").read_text()))
+        (SRC / "PluginProcessor.h").read_text(encoding="utf-8")))
     if not mn:
         raise _Rejected("NUM_AB_PARAMS missing from the header")
     n = int(mn.group(1))
@@ -101,7 +101,7 @@ def main():
     global N_PARAMS
     if not CPP.exists():
         fail(f"missing source file {CPP}")
-    cpp_raw = CPP.read_text()
+    cpp_raw = CPP.read_text(encoding="utf-8")
     try:
         N_PARAMS = _verify(cpp_raw)
     except _Rejected as r:

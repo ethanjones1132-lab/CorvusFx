@@ -20,7 +20,7 @@ import sys
 
 SRC = "source/DrippyFX/PluginProcessor.cpp"
 
-src = open(SRC).read()
+src = open(SRC, encoding="utf-8").read()
 
 # Strip comments so commented-out code can't fake a pass.
 no_comments = re.sub(r"//[^\n]*", "", src)

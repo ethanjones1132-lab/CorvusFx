@@ -71,7 +71,7 @@ def load_sources():
     for p in paths:
         if not p.exists():
             fail(f"missing source file {p}")
-        texts.append((p, strip_comments(p.read_text())))
+        texts.append((p, strip_comments(p.read_text(encoding="utf-8"))))
     return texts
 
 def sole_call_site(texts):
@@ -151,7 +151,7 @@ def check(texts):
 
 texts = load_sources()
 proc_c_path = texts[0][0]
-proc_c_raw = proc_c_path.read_text()
+proc_c_raw = proc_c_path.read_text(encoding="utf-8")
 if not check(texts):
     fail("loadPreset call-site shape drifted: need exactly ONE call site, "
          "inside parameterChanged taking idToPreset[...], with the "
@@ -227,7 +227,7 @@ probe("'Load Preset' transaction stripped",
 # 4. no-op: a benign comment edit inside parameterChanged must stay accepted
 def benign_edit(ts):
     p, _ = ts[0]
-    txt = p.read_text()
+    txt = p.read_text(encoding="utf-8")
     anchor = None
     for l in txt.splitlines():
         if "ComboBoxAttachment maps the parameter" in l:

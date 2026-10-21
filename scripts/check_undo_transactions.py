@@ -85,7 +85,7 @@ def check(banner_sites):
 
 if not PROC.exists():
     fail(f"missing source file {PROC}")
-ab = check(collect(strip_comments(PROC.read_text())))
+ab = check(collect(strip_comments(PROC.read_text(encoding="utf-8"))))
 if ab:
     fail(ab + " (PluginProcessor.cpp)")
 print("undo-transactions: banner roster pinned "
@@ -99,7 +99,7 @@ AB_LINE = 'undoManager.beginNewTransaction("A/B Compare");'
 
 
 def probe(description, old, new, count=1):
-    tmp_raw = strip_comments(PROC.read_text()).replace(old, new, count)
+    tmp_raw = strip_comments(PROC.read_text(encoding="utf-8")).replace(old, new, count)
     err = check(collect(tmp_raw))
     if err is None:
         print(f"undo-transactions: SELF-PROBE FAIL (checker should "
@@ -122,7 +122,7 @@ probe("Randomize banner dropped (beginRandomize undo granularity gone)",
       'undoManager.beginNewTransaction("Randomize");\n', "", 1)
 
 # no-op guard: benign comment stays rejected-from-count and accepted
-raw_txt = PROC.read_text() + "\n// beginNewTransaction(\"A/B Compare\") future site\n"
+raw_txt = PROC.read_text(encoding="utf-8") + "\n// beginNewTransaction(\"A/B Compare\") future site\n"
 tmp = strip_comments(raw_txt)
 if check(collect(tmp)) is not None:
     fail("no-op guard: harmless commented-out banner wrongly counted")

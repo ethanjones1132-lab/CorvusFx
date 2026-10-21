@@ -36,7 +36,7 @@ def check(srcdir: Path) -> list:
     p = srcdir / "dsp" / "CorvusEffects.h"
     if not p.exists():
         fail(f"missing source file {p}")
-    text = p.read_text()
+    text = p.read_text(encoding="utf-8")
     lines = text.splitlines()
     notes = []
 
@@ -161,7 +161,7 @@ def main():
         (tmpsrc / "dsp").mkdir()
         shutil.copy(SRC / "dsp" / "CorvusEffects.h", tmpsrc / "dsp" / "CorvusEffects.h")
         t = tmpsrc / "dsp" / "CorvusEffects.h"
-        txt = t.read_text()
+        txt = t.read_text(encoding="utf-8")
         # remove the guard condition line(s): collapse "if (... lastRoomSize
         # ...)" block to unconditional mute — easiest reliable mutation:
         # drop the lastRoomSize comparison so the guard check fails
@@ -169,7 +169,7 @@ def main():
         # and strip the guard test, leaving mute() unconditional-ish:
         mut = re.sub(r"if\s*\([^)]*lastRoomSize[^)]*\)\s*\{?", "", mut, count=1)
         mut = mut.replace("lastRoomSize = roomSize;", "", 1)
-        t.write_text(mut)
+        t.write_text(mut, encoding="utf-8")
         env = dict(os.environ, EARLY_REFLECT_SRC=str(tmp))
         res = subprocess.run([sys.executable, str(Path(__file__).resolve()),
                               "--no-negative"], env=env,

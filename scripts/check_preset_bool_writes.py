@@ -116,7 +116,7 @@ def recheck(mutated_full_text):
 proc_c_path = SRC / "PluginProcessor.cpp"
 if not proc_c_path.exists():
     fail(f"missing source file {proc_c_path}")
-proc_c = proc_c_path.read_text()
+proc_c = proc_c_path.read_text(encoding="utf-8")
 
 if not recheck(proc_c):
     load_body = extract_body(proc_c, "loadPreset")

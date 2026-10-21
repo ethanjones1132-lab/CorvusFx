@@ -137,7 +137,7 @@ proc_c_path = SRC / "PluginProcessor.cpp"
 if not proc_c_path.exists():
     fail(f"missing source file {proc_c_path_path}" if False else
          f"missing source file {proc_c_path}")
-proc_c = proc_c_path.read_text()
+proc_c = proc_c_path.read_text(encoding="utf-8")
 
 for fn, checker in (("setCurrentProgram", check_set_current_program),
                     ("getProgramName", check_get_program_name),

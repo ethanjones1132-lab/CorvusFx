@@ -77,7 +77,7 @@ def extract_body(text, fn_name):
     return None
 
 
-cpp_raw = CPP.read_text()
+cpp_raw = CPP.read_text(encoding="utf-8")
 stripped = strip_comments(cpp_raw)
 
 bodies = {}

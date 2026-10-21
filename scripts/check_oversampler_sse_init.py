@@ -175,7 +175,7 @@ def main():
                 print(f"FAIL: negative '{label}' mutation is a no-op — checker stale vs source")
                 return 1
             p = Path(tmpdir) / "PluginProcessor.h"
-            p.write_text(mutated)
+            p.write_text(mutated, encoding="utf-8")
             ok2, _ = check(mutated)
             if ok2:
                 print(f"FAIL: negative check '{label}' did NOT fail — checker too weak")

@@ -25,7 +25,7 @@ def fail(msg):
 path = SRC / "PluginProcessor.h"
 if not path.exists():
     fail(f"missing source file {path}")
-text = path.read_text()
+text = path.read_text(encoding="utf-8")
 
 def strip_comments(src):
     src = re.sub(r"//[^\n]*", "", src)
@@ -77,7 +77,7 @@ print("midi-learn-lock: stopMidiLearn still clears midiLearnActive")
 # audio-thread capture branch must remain under midiMapLock and record the
 # armed param ID into midiMap (either `midiMap[cc] = ...` legacy single-CC
 # shape or `midiMap[capturedCc] = ...` snapshot-lock-scope shape)
-cpp = (SRC / "PluginProcessor.cpp").read_text()
+cpp = (SRC / "PluginProcessor.cpp").read_text(encoding="utf-8")
 mcap = re.search(r"midiMap\s*\[\s*(?:cc|capturedCc)\s*\]\s*=\s*midiLearnParamID", cpp)
 if not mcap:
     fail("audio-thread learn-capture branch (midiMap[...] = midiLearnParamID) missing from PluginProcessor.cpp")

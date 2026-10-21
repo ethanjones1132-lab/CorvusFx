@@ -123,9 +123,9 @@ ed_path = SRC / "PluginEditor.cpp"
 for p in (cpp_path, hdr_path, ed_path):
     if not p.exists():
         fail(f"missing source file {p}")
-cpp_raw = cpp_path.read_text()
-ed_raw = ed_path.read_text()
-hdr_raw = hdr_path.read_text()
+cpp_raw = cpp_path.read_text(encoding="utf-8")
+ed_raw = ed_path.read_text(encoding="utf-8")
+hdr_raw = hdr_path.read_text(encoding="utf-8")
 
 # Real-tree assertions (same core, on the live tree)
 try:

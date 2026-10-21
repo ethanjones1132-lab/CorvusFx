@@ -119,7 +119,7 @@ def check(txt_stripped):
 
 if not ED.exists():
     fail(f"missing source file {ED}")
-ed_txt = strip_comments(ED.read_text())
+ed_txt = strip_comments(ED.read_text(encoding="utf-8"))
 err = check(ed_txt)
 if err:
     fail(err + " (PluginEditor.cpp)")
@@ -132,8 +132,8 @@ print("editor-attach-pairs: 19 setupKnob ids == 19 SliderAttachment ids "
 # ---------------------------------------------------------------------------
 
 def probe(description, old, new, count=1):
-    tmp_raw = ED.read_text().replace(old, new, count)
-    if tmp_raw == ED.read_text():
+    tmp_raw = ED.read_text(encoding="utf-8").replace(old, new, count)
+    if tmp_raw == ED.read_text(encoding="utf-8"):
         print(f"editor-attach-pairs: no-op mutation guard -> skipping "
               f"invalid probe ({description})")
         return
@@ -166,9 +166,9 @@ probe('rMixAtt/rModAtt attachment ids swapped',
       'apvts, "reverb_mod", rMixAtt'.replace("rMixAtt", "reverbMixKnob"))
 
 # 4. no-op guard: benign comment addition must stay accepted
-tmp = ED.read_text().replace(
+tmp = ED.read_text(encoding="utf-8").replace(
     "// Attachments\n", "// Attachments\n// benign probe edit\n", 1)
-if tmp == ED.read_text():
+if tmp == ED.read_text(encoding="utf-8"):
     print("editor-attach-pairs: no-op probe skipped")
 elif check(strip_comments(tmp)) is not None:
     fail("no-op guard: benign edit was wrongly rejected")

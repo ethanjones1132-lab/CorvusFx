@@ -73,7 +73,7 @@ def brace_span(s, open_idx):
     return -1
 
 
-text = SRC.read_text()
+text = SRC.read_text(encoding="utf-8")
 code = strip_comments(text)
 
 m_loop = re.search(
@@ -298,7 +298,7 @@ if run_text(neutral) is not None:
 print("output-chain: benign non-chain edit passes (probe specificity proven)")
 
 # Real tree never mutated — but re-verify the live source one last time before gating.
-run_text(SRC.read_text())  # raises via sys.exit inside _verify? no: verify raises _Rejected
+run_text(SRC.read_text(encoding="utf-8"))  # raises via sys.exit inside _verify? no: verify raises _Rejected
 _v = None
 try:
     _verify(text)

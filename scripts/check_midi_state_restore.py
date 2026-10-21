@@ -24,7 +24,7 @@ def fail(msg) -> NoReturn:
 path = SRC / "PluginProcessor.cpp"
 if not path.exists():
     fail(f"missing source file {path}")
-text = path.read_text()
+text = path.read_text(encoding="utf-8")
 
 # locate setStateInformation body
 m = re.search(r"void\s+CorvusFXAudioProcessor::setStateInformation\s*\(", text)
