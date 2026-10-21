@@ -19,6 +19,10 @@ CorvusFXAudioProcessor::CorvusFXAudioProcessor()
 apvts(*this, &undoManager, "Parameters", createParameterLayout())
 {
     apvts.addParameterListener("preset", this);
+
+    // CV-017: reserve the audio-thread MIDI apply snapshot storage before
+    // any audio runs, so processBlock's clear-and-refill never allocates.
+    mapSnapshot.reserve(128);
 }
 
 CorvusFXAudioProcessor::~CorvusFXAudioProcessor()
@@ -441,6 +445,11 @@ void CorvusFXAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     masterOutput.prepare(sampleRate);
     dryBuffer.setSize(2, samplesPerBlock, false, true, true);
 
+    // CV-017: re-assert the MIDI apply snapshot capacity (reserve() is a
+    // no-op once the capacity is already there; both sites stay off the
+    // audio thread).
+    mapSnapshot.reserve(128);
+
     // ── Parameter smoothing initialization ──
     // 20ms smoothing time: responsive feel, no zipper noise.
     // Reset current values to parameter defaults so smoothing
@@ -584,7 +593,12 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // clearMidiMapping / clearAllMidiMappings / setStateInformation,
         // and host notification latency must not sit inside the critical
         // section. The snapshot is a handful of <int, String> entries.
-        std::map<int, juce::String> mapSnapshot;
+        //
+        // CV-017: the snapshot lives in the member `mapSnapshot` vector
+        // (PluginProcessor.h), whose capacity is reserved in the
+        // constructor and prepareToPlay — off the audio thread. Clearing a
+        // vector keeps its reserved capacity and the refill appends plain
+        // copies, so this block heap-allocates nothing.
         int capturedCc = -1;
         {
             const juce::ScopedLock lock(midiMapLock);
@@ -614,7 +628,17 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                     }
                 }
             }
-            mapSnapshot = midiMap;
+            mapSnapshot.clear();
+            // Entries are appended in midiMap's ascending-CC order (std::map
+            // iterates sorted), and only legal MIDI CC numbers 0..127 are
+            // copied: the apply path below only ever looks up
+            // getControllerNumber() values, so an out-of-range "cc"
+            // attribute surviving a state restore is a dead entry that can
+            // never grow the snapshot past its reserved 128-entry capacity —
+            // the refill is guaranteed not to reallocate.
+            for (const auto& [cc, pid] : midiMap)
+                if (cc >= 0 && cc <= 127)
+                    mapSnapshot.emplace_back(cc, pid);
         }
         // Lock released — apply mappings from the snapshot. The captured CC
         // skips its own mapping step (skip-only-this-CC semantics).
@@ -627,11 +651,17 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
             if (cc == capturedCc)
                 continue;
             float normValue = msg.getControllerValue() / 127.0f;
-            auto it = mapSnapshot.find(cc);
-            if (it != mapSnapshot.end())
+            // The snapshot is a flat vector of (cc, paramID) pairs in
+            // ascending CC order. Scan it and notify through that entry.
+            for (const auto& entry : mapSnapshot)
             {
-                auto* p = apvts.getParameter(it->second);
-                if (p) p->setValueNotifyingHost(normValue);
+                if (entry.first == cc)
+                {
+                    auto* p = apvts.getParameter(entry.second);
+                    if (p)
+                        p->setValueNotifyingHost(normValue);
+                    break;
+                }
             }
         }
     }

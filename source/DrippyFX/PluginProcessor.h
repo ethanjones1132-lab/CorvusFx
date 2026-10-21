@@ -8,6 +8,8 @@
 #include <atomic>
 #include <map>
 #include <set>
+#include <utility>
+#include <vector>
 
 //==============================================================================
 class CorvusFXAudioProcessor : public juce::AudioProcessor,
@@ -135,6 +137,18 @@ private:
     // MIDI Learn - maps MIDI CC numbers to parameter IDs
     std::map<int, juce::String> midiMap;
     juce::CriticalSection midiMapLock;
+
+    // CV-017: reusable, pre-reserved storage for the audio-thread CC apply
+    // snapshot. Replaces the per-block std::map local that heap-allocated
+    // (and freed) map nodes on every MIDI block: processBlock now only
+    // clear-and-refills this member under midiMapLock. Clearing keeps the
+    // reserved capacity and the refill appends plain copies (a juce::String
+    // copy is a ref-count bump), so the refill never allocates. Capacity is
+    // reserved off the audio thread in the constructor and re-asserted in
+    // prepareToPlay; MIDI CC numbers are 0..127, so a full legal mapping
+    // table is at most 128 entries — capping the refill at that width makes
+    // growth impossible. Only the audio thread touches this member.
+    std::vector<std::pair<int, juce::String>> mapSnapshot;
 
     std::set<juce::String> lockedParams;
     juce::CriticalSection lockedParamsLock;
