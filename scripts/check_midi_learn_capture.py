@@ -64,6 +64,8 @@ Self-tests (all in memory — the real C++ tree is never written):
     inside processBlock, capture write outside the lock, host notification
     under the lock, lost flag clear, lost refuse-to-steal;
   * a stale/no-op probe self-test proving no-op mutations are still caught;
+  * a multi-lock member-vector fixture proving the audio-thread mutations
+    anchor on the processBlock refill, not the first midiMapLock in the file;
   * shape-aware probes against the live tree: every probe applicable to the
     DETECTED shape must hit a live pattern and be rejected (a probe whose
     pattern vanished is reported as NO-OP and fails the run, so the probes
@@ -546,6 +548,73 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>&, juce::MidiB
 }
 """
 
+# The unmerged CV-017 processor edits midiMap from the message thread under an
+# earlier ScopedLock on the same lock; processBlock's own lock comes later.
+# Audio-thread probes must anchor on the processBlock refill clear, never on
+# the first midiMapLock in the translation unit.
+FIXTURE_NEW_MULTILOCK_CPP = """CorvusFXAudioProcessor::CorvusFXAudioProcessor()
+{
+    mapSnapshot.reserve(128);
+}
+
+void CorvusFXAudioProcessor::prepareToPlay(double, int)
+{
+    mapSnapshot.reserve(128);
+}
+
+void CorvusFXAudioProcessor::setMidiMapFromMessageThread(int cc, const juce::String& pid)
+{
+    const juce::ScopedLock lock(midiMapLock);
+    midiMap[cc] = pid;
+}
+
+void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer& midiMessages)
+{
+    if (!midiMessages.isEmpty())
+    {
+        int capturedCc = -1;
+        {
+            const juce::ScopedLock lock(midiMapLock);
+""" + _CAPTURE + """            mapSnapshot.clear();
+            for (const auto& [cc, pid] : midiMap)
+                if (cc >= 0 && cc <= 127)
+                    mapSnapshot.emplace_back(cc, pid);
+        }
+        for (const auto& metadata : midiMessages)
+        {
+            auto msg = metadata.getMessage();
+            if (!msg.isController())
+                continue;
+            int cc = msg.getControllerNumber();
+            if (cc == capturedCc)
+                continue;
+            const float normValue = msg.getControllerValue() / 127.0f;
+            for (const auto& mapping : mapSnapshot)
+                if (mapping.first == cc)
+                {
+                    auto* p = apvts.getParameter(mapping.second);
+                    if (p) p->setValueNotifyingHost(normValue);
+                }
+        }
+    }
+}
+"""
+
+# `mapSnapshot.clear();` is the processBlock refill: the earlier message-thread
+# locks do not carry it. Mutating the first ScopedLock in the file would leave
+# processBlock untouched, so check() would still accept a member-vector tree.
+REFILL_CLEAR = r"(mapSnapshot\s*\.\s*clear\s*\(\s*\)\s*;)"
+RESERVE_AT_REFILL = (REFILL_CLEAR, r"mapSnapshot.reserve(128);\n \1")
+SHADOW_AT_REFILL = (
+    REFILL_CLEAR,
+    r"std::vector<std::pair<int, juce::String>> mapSnapshot;\n \1")
+
+# The old (broken) anchor — the first midiMapLock in the translation unit.
+# Kept only for the multi-lock fixture guard below, which proves it reaches the
+# message-thread lock instead of processBlock and is therefore not sufficient.
+OLD_FIRST_LOCK_ANCHOR = (
+    r"((?:const\s+)?juce::ScopedLock\s+lock\s*\(\s*midiMapLock\s*\)\s*;)")
+
 
 # ---------------------------------------------------------------------------
 # Mutation plumbing (in memory only; StaleProbe keeps no-op detection alive)
@@ -689,15 +758,13 @@ NEW_SHAPE_PROBES = [
        "")]),
     ("reserve moved onto the audio thread",
      "capacity must be established off-thread only",
-     [(r"((?:const\s+)?juce::ScopedLock\s+lock\s*\(\s*midiMapLock\s*\)\s*;)",
-       r"\1\n mapSnapshot.reserve(128);")]),
+     [RESERVE_AT_REFILL]),
     ("clear dropped from the refill",
      "stale entries would accumulate every block",
      [(r"mapSnapshot\s*\.\s*clear\s*\(\s*\)\s*;", "")]),
     ("mapSnapshot shadowed by a local vector",
      "a local vector allocates on the audio thread",
-     [(r"((?:const\s+)?juce::ScopedLock\s+lock\s*\(\s*midiMapLock\s*\)\s*;)",
-       r"std::vector<std::pair<int, juce::String>> mapSnapshot;\n \1")]),
+     [SHADOW_AT_REFILL]),
     ("apply path reverted to the live midiMap",
      "the post-lock apply path must scan the preallocated snapshot",
      [(r":\s*mapSnapshot\s*\)", ": midiMap)")]),
@@ -716,6 +783,8 @@ expect_ok("local-map snapshot (master shape)",
           FIXTURE_OLD_CPP, FIXTURE_OLD_HEADER, "local-map")
 expect_ok("preallocated member-vector snapshot (CV-017 shape)",
           FIXTURE_NEW_CPP, FIXTURE_NEW_HEADER, "member-vector")
+expect_ok("member-vector with an earlier message-thread midiMapLock",
+          FIXTURE_NEW_MULTILOCK_CPP, FIXTURE_NEW_HEADER, "member-vector")
 
 
 # ---------------------------------------------------------------------------
@@ -743,6 +812,47 @@ c, h = fixture_mutation(
 expect_fixture_reject(
     "reserve inside processBlock", c, h,
     "audio-thread capacity work must fail")
+
+# CV-017 regression: the audio-thread mutations must reach processBlock even
+# when an earlier message-thread ScopedLock(midiMapLock) precedes it.
+c, h = fixture_mutation(
+    "reserve in processBlock (multi-lock source)",
+    cpp_mutations=[RESERVE_AT_REFILL],
+    cpp=FIXTURE_NEW_MULTILOCK_CPP, hdr=FIXTURE_NEW_HEADER)
+expect_fixture_reject(
+    "reserve in processBlock (multi-lock source)", c, h,
+    "the audio-thread reserve probe must anchor on the processBlock refill, "
+    "not the earlier message-thread lock")
+
+c, h = fixture_mutation(
+    "local vector shadowing mapSnapshot (multi-lock source)",
+    cpp_mutations=[SHADOW_AT_REFILL],
+    cpp=FIXTURE_NEW_MULTILOCK_CPP, hdr=FIXTURE_NEW_HEADER)
+expect_fixture_reject(
+    "local vector shadowing mapSnapshot (multi-lock source)", c, h,
+    "the shadowing probe must anchor on the processBlock refill, not the "
+    "earlier message-thread lock")
+
+# Guard the fixture itself: a probe still anchored on the FIRST midiMapLock
+# would rewrite only the earlier message-thread lock and leave processBlock
+# accepted. This fixture must expose exactly that (so the old anchor fails the
+# two rejections above instead of passing silently).
+c, h = fixture_mutation(
+    "legacy first-lock reserve anchor (multi-lock fixture guard)",
+    cpp_mutations=[
+        (OLD_FIRST_LOCK_ANCHOR, r"\1\n mapSnapshot.reserve(128);")],
+    cpp=FIXTURE_NEW_MULTILOCK_CPP, hdr=FIXTURE_NEW_HEADER)
+expect_ok("legacy first-lock reserve anchor (multi-lock fixture guard)",
+          c, h, "member-vector")
+
+c, h = fixture_mutation(
+    "legacy first-lock shadow anchor (multi-lock fixture guard)",
+    cpp_mutations=[
+        (OLD_FIRST_LOCK_ANCHOR,
+         r"std::vector<std::pair<int, juce::String>> mapSnapshot;\n \1")],
+    cpp=FIXTURE_NEW_MULTILOCK_CPP, hdr=FIXTURE_NEW_HEADER)
+expect_ok("legacy first-lock shadow anchor (multi-lock fixture guard)",
+          c, h, "member-vector")
 
 c, h = fixture_mutation(
     "capture write outside the lock",
