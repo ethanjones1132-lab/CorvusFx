@@ -139,6 +139,206 @@ public:
     }
 };
 
+//==============================================================================
+// DELAY CHANNEL ISOLATION
+// The delay's tape-saturation oversampler must keep one FIR history per
+// channel. A shared Oversampling2x instance makes the left and right feedback
+// paths reuse the same up/down history and the same read index, so the right
+// channel's saturation tail bleeds into the left (and back again).
+//==============================================================================
+class CorvusDelayChannelIsolationTest final : public juce::UnitTest
+{
+public:
+    CorvusDelayChannelIsolationTest() : juce::UnitTest("Corvus delay channel isolation") {}
+
+    void runTest() override
+    {
+        const auto leftTone = makeTone(testFrames, 0.40f, 220.0f);
+        const auto rightTone = makeTone(testFrames, 0.40f, 220.0f);
+        const auto silence = std::vector<float>(testFrames, 0.0f);
+
+        beginTest("left-only input leaves the right channel bit-exactly silent");
+        {
+            auto delay = std::make_unique<EnhancedDelay>();
+            delay->prepare(testSampleRate);
+            delay->beginBlock(0.40f);
+            const auto rendered = renderDelay(*delay, leftTone, silence,
+                                              10.0f, 0.60f, 0.50f, 0.0f, 0.0f);
+
+            auto leakedSamples = 0;
+            auto worstLeak = 0.0f;
+            auto drivenEnergy = 0.0;
+            for (std::size_t frame = 0; frame < testFrames; ++frame)
+            {
+                if (rendered.right[frame] != 0.0f)
+                {
+                    ++leakedSamples;
+                    worstLeak = std::max(worstLeak, std::abs(rendered.right[frame]));
+                }
+                drivenEnergy += static_cast<double>(rendered.left[frame])
+                              * static_cast<double>(rendered.left[frame]);
+            }
+            expect(leakedSamples == 0,
+                   "the undriven channel must stay bit-exactly silent -- the delay's "
+                   "tape-saturation oversampler must not share FIR history between channels");
+            expect(drivenEnergy > 1.0e-3, "the driven channel must still produce signal");
+            logMessage(juce::String("Delay bleed (left driven): leaked samples = ")
+                       + juce::String(leakedSamples)
+                       + ", worst leak = " + juce::String(worstLeak, 8));
+        }
+
+        beginTest("right-only input leaves the left channel bit-exactly silent");
+        {
+            auto delay = std::make_unique<EnhancedDelay>();
+            delay->prepare(testSampleRate);
+            delay->beginBlock(0.40f);
+            const auto rendered = renderDelay(*delay, silence, rightTone,
+                                              10.0f, 0.60f, 0.50f, 0.0f, 0.0f);
+
+            auto leakedSamples = 0;
+            auto worstLeak = 0.0f;
+            auto drivenEnergy = 0.0;
+            for (std::size_t frame = 0; frame < testFrames; ++frame)
+            {
+                if (rendered.left[frame] != 0.0f)
+                {
+                    ++leakedSamples;
+                    worstLeak = std::max(worstLeak, std::abs(rendered.left[frame]));
+                }
+                drivenEnergy += static_cast<double>(rendered.right[frame])
+                              * static_cast<double>(rendered.right[frame]);
+            }
+            expect(leakedSamples == 0,
+                   "the undriven channel must stay bit-exactly silent -- the delay's "
+                   "tape-saturation oversampler must not share FIR history between channels");
+            expect(drivenEnergy > 1.0e-3, "the driven channel must still produce signal");
+            logMessage(juce::String("Delay bleed (right driven): leaked samples = ")
+                       + juce::String(leakedSamples)
+                       + ", worst leak = " + juce::String(worstLeak, 8));
+        }
+
+        beginTest("ping-pong cross-feed still routes the echo into the opposite channel");
+        {
+            auto delay = std::make_unique<EnhancedDelay>();
+            delay->prepare(testSampleRate);
+            delay->beginBlock(0.40f);
+            const auto rendered = renderDelay(*delay, leftTone, silence,
+                                              10.0f, 0.60f, 0.50f, 1.0f, 0.0f);
+
+            auto crossFeedPeak = 0.0f;
+            for (std::size_t frame = 0; frame < testFrames; ++frame)
+                crossFeedPeak = std::max(crossFeedPeak, std::abs(rendered.right[frame]));
+            expect(crossFeedPeak > 0.05f,
+                   "ping-pong must cross-feed the left echo into the right channel");
+        }
+
+        beginTest("feedback stays clamped to the 0.92 ceiling");
+        {
+            auto clamped = std::make_unique<EnhancedDelay>();
+            auto overdriven = std::make_unique<EnhancedDelay>();
+            clamped->prepare(testSampleRate);
+            clamped->beginBlock(0.40f);
+            overdriven->prepare(testSampleRate);
+            overdriven->beginBlock(0.40f);
+
+            const auto clampedRender = renderDelay(*clamped, leftTone, rightTone,
+                                                   10.0f, 0.92f, 0.50f, 0.50f, 0.05f);
+            const auto overdrivenRender = renderDelay(*overdriven, leftTone, rightTone,
+                                                      10.0f, 5.0f, 0.50f, 0.50f, 0.05f);
+
+            auto mismatches = 0;
+            for (std::size_t frame = 0; frame < testFrames; ++frame)
+                if (clampedRender.left[frame] != overdrivenRender.left[frame]
+                    || clampedRender.right[frame] != overdrivenRender.right[frame])
+                    ++mismatches;
+            expect(mismatches == 0,
+                   "feedback above the 0.92 ceiling must be clamped to the same signal");
+        }
+
+        beginTest("reset and re-prepare restore the exact starting state");
+        {
+            auto delay = std::make_unique<EnhancedDelay>();
+            delay->prepare(testSampleRate);
+            delay->beginBlock(0.40f);
+            const auto first = renderDelay(*delay, leftTone, rightTone,
+                                           10.0f, 0.60f, 0.50f, 0.50f, 0.05f);
+
+            delay->reset();
+            delay->beginBlock(0.40f);
+            const auto afterReset = renderDelay(*delay, leftTone, rightTone,
+                                                10.0f, 0.60f, 0.50f, 0.50f, 0.05f);
+            expectIdentical(afterReset, first, "reset()");
+
+            delay->prepare(testSampleRate);
+            delay->beginBlock(0.40f);
+            const auto afterPrepare = renderDelay(*delay, leftTone, rightTone,
+                                                  10.0f, 0.60f, 0.50f, 0.50f, 0.05f);
+            expectIdentical(afterPrepare, first, "prepare()");
+
+            auto fresh = std::make_unique<EnhancedDelay>();
+            fresh->prepare(testSampleRate);
+            fresh->beginBlock(0.40f);
+            const auto freshRender = renderDelay(*fresh, leftTone, rightTone,
+                                                 10.0f, 0.60f, 0.50f, 0.50f, 0.05f);
+            expectIdentical(freshRender, first, "a freshly prepared delay");
+        }
+    }
+
+private:
+    static constexpr double testSampleRate = 48000.0;
+    static constexpr std::size_t testFrames = 4096;
+
+    struct DelayRender
+    {
+        std::vector<float> left;
+        std::vector<float> right;
+    };
+
+    static std::vector<float> makeTone(std::size_t frames, float amplitude, float frequency)
+    {
+        std::vector<float> samples(frames, 0.0f);
+        for (std::size_t frame = 0; frame < frames; ++frame)
+        {
+            const auto phase = juce::MathConstants<double>::twoPi
+                             * static_cast<double>(frequency)
+                             * static_cast<double>(frame) / testSampleRate;
+            samples[frame] = amplitude * static_cast<float>(std::sin(phase));
+        }
+        return samples;
+    }
+
+    static DelayRender renderDelay(EnhancedDelay& delay,
+                                   const std::vector<float>& inputLeft,
+                                   const std::vector<float>& inputRight,
+                                   float delayTimeMs, float feedback, float mix,
+                                   float pingPong, float modAmount)
+    {
+        DelayRender rendered;
+        rendered.left.assign(inputLeft.size(), 0.0f);
+        rendered.right.assign(inputLeft.size(), 0.0f);
+        for (std::size_t frame = 0; frame < inputLeft.size(); ++frame)
+        {
+            float left = 0.0f, right = 0.0f;
+            delay.processSample(inputLeft[frame], inputRight[frame], left, right,
+                                delayTimeMs, feedback, mix, pingPong, modAmount);
+            rendered.left[frame] = left;
+            rendered.right[frame] = right;
+        }
+        return rendered;
+    }
+
+    void expectIdentical(const DelayRender& actual, const DelayRender& expected,
+                         const juce::String& what)
+    {
+        auto mismatches = 0;
+        for (std::size_t frame = 0; frame < expected.left.size(); ++frame)
+            if (actual.left[frame] != expected.left[frame]
+                || actual.right[frame] != expected.right[frame])
+                ++mismatches;
+        expect(mismatches == 0, what + " must reproduce the delay output bit-for-bit");
+    }
+};
+
 class CorvusEffectsBaselineTest final : public juce::UnitTest
 {
 public:
@@ -165,6 +365,12 @@ public:
         // change the waveform. The integration also repairs zero-stuffing,
         // both decimation phases, and SSE lane order while retaining split
         // histories: identity gain is 1 at DC and 0.999658 at 440 Hz.
+        // CV-018 (2026-10-21) gives the delay's tape-saturation oversampler one
+        // Oversampling2x instance per channel, which removes the left/right
+        // feedback bleed a shared instance caused. That bleed was part of this
+        // fixture's waveform, so removing it intentionally changes the fixture
+        // again: the locked reference below and the measured level window have
+        // to be re-measured on the pinned toolchain (native build acceptance).
         // The previous Windows digest was
         // 0x144377379d3ea850; it is historical, not a reference for this DSP.
         // Raw float hashes depend on compiler/architecture. This reference
@@ -810,6 +1016,7 @@ public:
 };
 
 CorvusOversamplingTest corvusOversamplingTest;
+CorvusDelayChannelIsolationTest corvusDelayChannelIsolationTest;
 CorvusEffectsBaselineTest corvusEffectsBaselineTest;
 CorvusWavetableOscillatorTest corvusWavetableOscillatorTest;
 CorvusVoiceAndEngineTest corvusVoiceAndEngineTest;

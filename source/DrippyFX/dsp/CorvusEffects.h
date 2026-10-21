@@ -826,7 +826,12 @@ struct EnhancedDelay
 
     OnePole fbLP[2], fbHP[2];
     float smoothedDelay[2] = {};
-    Oversampling2x oversample;    // 2x oversampling for tape saturation anti-aliasing
+    // 2x oversampling for tape saturation anti-aliasing — ONE instance per
+    // channel. A single shared instance makes both channels reuse the same
+    // up/down FIR history and the same read index, so the right channel's
+    // saturation tail bleeds into the left and back again (same class of bug
+    // the chorus feedback was fixed for in 30427ef).
+    Oversampling2x oversample[2];
     int lfoTick = 0;              // LFO renormalization tick counter
 
     // Block-level coefficient cache — avoids recomputing 2× std::exp() every sample.
@@ -872,19 +877,10 @@ struct EnhancedDelay
     void prepare(double sr)
     {
         sampleRate = sr;
-        oversample.prepare(sr);
-        std::memset(buffer, 0, sizeof(buffer));
-        writePos[0] = writePos[1] = 0;
-        smoothedDelay[0] = smoothedDelay[1] = 0.0f;
-        // Initialize LFO phase recurrence state: sin(0)=0, cos(0)=1
-        blockCoeffs.lfoSin = 0.0f;
-        blockCoeffs.lfoCos = 1.0f;
-        blockCoeffs.lfo2Sin = 0.0f;
-        blockCoeffs.lfo2Cos = 1.0f;
-        for (int ch = 0; ch < 2; ++ch)
-        {
-            fbLP[ch].reset(); fbHP[ch].reset();
-        }
+        // Stage the SSE coefficient vectors and clear both channel histories.
+        oversample[0].prepare(sr);
+        oversample[1].prepare(sr);
+        reset();
         // Feedback low-cut: fixed at 80Hz (cached in prepare(), not on every block)
         blockCoeffs.fbHPCoeff = static_cast<float>(std::exp(-6.2832f * 80.0f / sr));
         // Precompute sr-only constants (not on every block)
@@ -895,6 +891,32 @@ struct EnhancedDelay
         blockCoeffs.maxDelayF = static_cast<float>(MAX_DELAY - 4);
         blockCoeffs.msToSamples = static_cast<float>(sr) * 0.001f;
         blockCoeffs.smooth = 0.9997f;
+    }
+
+    // Clear every piece of delay state so a reset (or a re-prepare) restarts
+    // from the same silence the module had when it was constructed.
+    // Both oversampler histories are cleared: leaving one channel's FIR tail
+    // behind would bleed the previous take into the next one.
+    void reset()
+    {
+        std::memset(buffer, 0, sizeof(buffer));
+        writePos[0] = writePos[1] = 0;
+        smoothedDelay[0] = smoothedDelay[1] = 0.0f;
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            fbLP[ch].reset(); fbHP[ch].reset();
+        }
+        oversample[0].reset();
+        oversample[1].reset();
+        // Initialize LFO phase recurrence state: sin(0)=0, cos(0)=1
+        blockCoeffs.lfoSin = 0.0f;
+        blockCoeffs.lfoCos = 1.0f;
+        blockCoeffs.lfo2Sin = 0.0f;
+        blockCoeffs.lfo2Cos = 1.0f;
+        // The renormalization tick is part of the modulation state: a reset
+        // must restart the cadence, otherwise a re-prepared delay is not
+        // bit-identical to a freshly prepared one.
+        lfoTick = 0;
     }
 
     void beginBlock(float damping)
@@ -966,16 +988,19 @@ struct EnhancedDelay
         float fbR = delayedR * (1.0f - pingPong) + delayedL * pingPong;
 
         // Soft tape saturation — 2x oversampled to eliminate aliasing in feedback loop
-                // Without oversampling, harmonics from tanh-style clipping fold back and compound
-                // with each feedback iteration, creating metallic artifacts in the tail.
-                // Mono oversampling: fbL and fbR are processed independently, halving FIR filter cost
-                // compared to stereo processSample (same optimization applied to Master mid/side 2026-07-12).
-                auto tapeSat = [](float x) -> float { return x / (1.0f + std::abs(x) * 0.4f); };
-                float fbOutL, fbOutR;
-                oversample.processSampleMono(fbL, fbOutL, [&tapeSat](float in, float& out) { out = tapeSat(in); });
-                oversample.processSampleMono(fbR, fbOutR, [&tapeSat](float in, float& out) { out = tapeSat(in); });
-                fbL = fbOutL;
-                fbR = fbOutR;
+        // Without oversampling, harmonics from tanh-style clipping fold back and compound
+        // with each feedback iteration, creating metallic artifacts in the tail.
+        // Mono oversampling: fbL and fbR are processed independently, halving FIR filter cost
+        // compared to stereo processSample (same optimization applied to Master mid/side 2026-07-12).
+        // Each channel owns its own Oversampling2x instance: a shared instance reuses one
+        // FIR history and one read index for both channels, so the right channel's
+        // saturation tail bleeds into the left feedback path (and back again).
+        auto tapeSat = [](float x) -> float { return x / (1.0f + std::abs(x) * 0.4f); };
+        float fbOutL, fbOutR;
+        oversample[0].processSampleMono(fbL, fbOutL, [&tapeSat](float in, float& out) { out = tapeSat(in); });
+        oversample[1].processSampleMono(fbR, fbOutR, [&tapeSat](float in, float& out) { out = tapeSat(in); });
+        fbL = fbOutL;
+        fbR = fbOutR;
 
         // High-cut on feedback - use cached coefficient
         fbL = fbLP[0].processLP(fbL, blockCoeffs.fbLPCoeff);
