@@ -34,6 +34,8 @@ void CorvusFXAudioProcessor::parameterChanged(const juce::String& parameterID, f
 {
     if (parameterID == "preset")
     {
+        if (restoringPresetState.load())
+            return;
         // ComboBoxAttachment maps the parameter value to combo box item ID.
         // The combo has 42 items (IDs 1-42) with 6 disabled separators (IDs 1,8,15,22,29,36).
         // We convert the item ID to a preset index via a lookup table.
@@ -963,7 +965,9 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
         parameterState.deleteAllChildElementsWithTagName("abSlots");
         parameterState.deleteAllChildElementsWithTagName("midiMaps");
         parameterState.deleteAllChildElementsWithTagName("paramLocks");
+        restoringPresetState.store(true);
         apvts.replaceState(juce::ValueTree::fromXml(parameterState));
+        restoringPresetState.store(false);
 
         // Restore A/B-compare snapshots only when the state carries them.
         // Older states (no "abSlots" child) leave abSnapshotsPersisted

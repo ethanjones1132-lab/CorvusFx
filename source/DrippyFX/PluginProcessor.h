@@ -164,6 +164,7 @@ private:
     // the blind reseed that would otherwise overwrite the restored
     // snapshots with identical live values.
     bool abSnapshotsPersisted = false;
+    std::atomic<bool> restoringPresetState{false};
     // MIDI Learn State (accessed across audio/message threads)
     std::atomic<bool> midiLearnActive{false};
     juce::String midiLearnParamID;
