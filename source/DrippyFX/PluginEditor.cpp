@@ -1,6 +1,9 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#include <initializer_list>
+#include <utility>
+
 CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p),
     distortionSection("DISTORTION", juce::Colour(0xffff6b35)),
@@ -121,37 +124,66 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
         k.onGestureStart = [this]() {
             audioProcessor.undoManager.beginNewTransaction();
         };
-        k.onRightClick = [this, &k](const juce::MouseEvent&) {
-            auto& proc = audioProcessor;
+        // The menu is shown asynchronously, so every callback below must be
+        // able to outlive this knob (and the editor). Capture only the
+        // parameter id by value and guard all component/processor access with
+        // SafePointer; raw `[&k]`/`[&proc]` captures can fire after teardown.
+        k.onRightClick = [this, paramID = k.linkedParamID,
+                          safeKnob = juce::Component::SafePointer<AnimatedKnob>(&k)]
+                         (const juce::MouseEvent&)
+        {
+            juce::Component::SafePointer<CorvusFXAudioProcessorEditor> safeEditor(this);
             juce::PopupMenu menu;
             // Armed-learn affordance: offer cancellation while a learn is
             // pending (otherwise the next CC silently consumes the armed
             // state with no escape hatch except capturing or editor close).
-            if (proc.isMidiLearnActive())
-                menu.addItem("Cancel MIDI Learn", [&proc]() {
-                    proc.stopMidiLearn();
+            if (audioProcessor.isMidiLearnActive())
+                menu.addItem("Cancel MIDI Learn", [safeEditor]() {
+                    if (auto* editor = safeEditor.getComponent())
+                        if (auto* proc = static_cast<CorvusFXAudioProcessor*>(
+                                editor->getAudioProcessor()))
+                            proc->stopMidiLearn();
                 });
-            menu.addItem("MIDI Learn", [&proc, &k]() {
-                proc.startMidiLearn(k.linkedParamID);
+            menu.addItem("MIDI Learn", [safeEditor, paramID]() {
+                if (auto* editor = safeEditor.getComponent())
+                    if (auto* proc = static_cast<CorvusFXAudioProcessor*>(
+                            editor->getAudioProcessor()))
+                        proc->startMidiLearn(paramID);
             });
-            if (proc.hasMidiMapping(k.linkedParamID))
-                menu.addItem("Forget MIDI Mapping", [&proc, &k]() {
-                    proc.clearMidiMapping(k.linkedParamID);
+            if (audioProcessor.hasMidiMapping(paramID))
+                menu.addItem("Forget MIDI Mapping", [safeEditor, paramID]() {
+                    if (auto* editor = safeEditor.getComponent())
+                        if (auto* proc = static_cast<CorvusFXAudioProcessor*>(
+                                editor->getAudioProcessor()))
+                            proc->clearMidiMapping(paramID);
                 });
             menu.addSeparator();
-            if (proc.isParameterLocked(k.linkedParamID))
-                menu.addItem("Unlock Parameter", [&proc, &k]() {
-                    proc.setParameterLocked(k.linkedParamID, false);
-                    k.setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xffc0c0d0));
+            if (audioProcessor.isParameterLocked(paramID))
+                menu.addItem("Unlock Parameter", [safeEditor, safeKnob, paramID]() {
+                    if (auto* editor = safeEditor.getComponent())
+                        if (auto* proc = static_cast<CorvusFXAudioProcessor*>(
+                                editor->getAudioProcessor()))
+                            proc->setParameterLocked(paramID, false);
+                    if (auto* knob = safeKnob.getComponent())
+                        knob->setColour(juce::Slider::textBoxTextColourId,
+                                        juce::Colour(0xffc0c0d0));
                 });
             else
-                menu.addItem("Lock Parameter", [&proc, &k]() {
-                    proc.setParameterLocked(k.linkedParamID, true);
-                    k.setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xff666666));
+                menu.addItem("Lock Parameter", [safeEditor, safeKnob, paramID]() {
+                    if (auto* editor = safeEditor.getComponent())
+                        if (auto* proc = static_cast<CorvusFXAudioProcessor*>(
+                                editor->getAudioProcessor()))
+                            proc->setParameterLocked(paramID, true);
+                    if (auto* knob = safeKnob.getComponent())
+                        knob->setColour(juce::Slider::textBoxTextColourId,
+                                        juce::Colour(0xff666666));
                 });
             menu.addSeparator();
-            menu.addItem("Clear All MIDI Maps", [&proc]() {
-                proc.clearAllMidiMappings();
+            menu.addItem("Clear All MIDI Maps", [safeEditor]() {
+                if (auto* editor = safeEditor.getComponent())
+                    if (auto* proc = static_cast<CorvusFXAudioProcessor*>(
+                            editor->getAudioProcessor()))
+                        proc->clearAllMidiMappings();
             });
             menu.showMenuAsync(juce::PopupMenu::Options());
         };
@@ -454,17 +486,68 @@ void CorvusFXAudioProcessorEditor::resized()
     const float scale = juce::jmin(scaleW, scaleH); // Uniform scaling preserves aspect ratios
     auto sc = [scale](int px) { return juce::roundToInt(px * scale); };
 
+    // Reference-pixel layout constants. scripts/check_editor_layout_async.py
+    // parses these names so the rendered geometry stays verifiable at both
+    // supported minimum and default sizes; keep the names stable.
+    const int kTopSectionRef = 100;
+    const int kTitleRef = 60;
+    const int kPresetInsetXRef = 160;
+    const int kPresetInsetYRef = 5;
+    const int kPresetLabelRef = 15;
+    const int kPresetButtonRailRef = 290;
+    const int kPresetButtonHeightRef = 22;
+    const int kPresetButtonMinHeightRef = 16;
+    const int kMeterRef = 60;
+    const int kFooterRef = 20;
+    const int kContentInsetXRef = 20;
+    const int kContentInsetYRef = 10;
+    const int kRailGapRef = 16;
+    const int kRailMinRef = 230;
+    const int kRailMaxRef = 300;
+    const int kOverallRowRef = 180;
+    const int kOverallKnobRef = 150;
+    const int kOverallLabelRef = 30;
+    const int kMasterDriveRowRef = 100;
+    const int kMasterDriveKnobRef = 100;
+    const int kMasterDriveLabelRef = 25;
+    const int kMasterBypassWidthRef = 100;
+    const int kMasterBypassHeightRef = 25;
+    const int kMasterSideRowRef = 100;
+    const int kMasterSideKnobRef = 80;
+    const int kMasterSideGapRef = 20;
+    const int kMasterSideLabelRef = 25;
+    const int kOutputTrimKnobRef = 70;
+    const int kOutputTrimLabelRef = 25;
+    const int kRailKnobInsetRef = 40;
+    const int kGridGapRef = 15;
+    const int kGridRowsRef = 2;
+    const float kDelayColumnShare = 0.58f;
+    const int kSectionPadXRef = 14;
+    const int kSectionPadYRef = 45;
+    const int kSectionLabelRef = 22;
+    const int kSectionBypassRef = 20;
+    const int kSectionBypassGapRef = 8;
+    const int kSectionBypassWidthRef = 80;
+    const int kSectionMinGapRef = 4;
+    const int kSectionMaxGapRef = 14;
+    const int kSectionMinKnobRef = 40;
+    const int kDistortionMaxKnobRef = 120;
+    const int kChorusMaxKnobRef = 80;
+    const int kDelayMaxKnobRef = 70;
+    const int kReverbMaxKnobRef = 70;
+
     // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ Top: title + preset ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬
-    auto topSection = area.removeFromTop(sc(100));
-    titleLabel.setBounds(topSection.removeFromTop(sc(60)).reduced(sc(20), sc(5)));
-    auto presetArea = topSection.reduced(sc(160), sc(5));
-    presetLabel.setBounds(presetArea.removeFromTop(sc(15)));
+    auto topSection = area.removeFromTop(sc(kTopSectionRef));
+    titleLabel.setBounds(topSection.removeFromTop(sc(kTitleRef)).reduced(sc(20), sc(5)));
+    auto presetArea = topSection.reduced(sc(kPresetInsetXRef), sc(kPresetInsetYRef));
+    presetLabel.setBounds(presetArea.removeFromTop(sc(kPresetLabelRef)));
     auto presetRow = presetArea;
     // A/B compare buttons -- right of preset selector
-    auto abBtnArea = presetRow.removeFromRight(sc(290));
-    int abH = sc(22);
+    auto abBtnArea = presetRow.removeFromRight(sc(kPresetButtonRailRef));
+    int abH = juce::jlimit(sc(kPresetButtonMinHeightRef), sc(kPresetButtonHeightRef),
+                           topSection.getBottom() - presetRow.getY());
     int abW = sc(32);
-    int topOff = sc(3);
+    int topOff = 0;
     btnSlotA.setBounds(abBtnArea.removeFromLeft(abW).withHeight(abH).withTrimmedTop(topOff));
     abBtnArea.removeFromLeft(sc(4));
     btnSlotB.setBounds(abBtnArea.removeFromLeft(abW).withHeight(abH).withTrimmedTop(topOff));
@@ -477,39 +560,62 @@ void CorvusFXAudioProcessorEditor::resized()
     presetSelector.setBounds(presetRow);
 
     // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ Level Meter (between title/preset and overall knob) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬
-    auto meterArea = area.removeFromTop(sc(60)).reduced(area.getWidth() / 4, 0);
+    auto meterArea = area.removeFromTop(sc(kMeterRef)).reduced(area.getWidth() / 4, 0);
     levelMeter.setBounds(meterArea);
 
-    area.removeFromBottom(sc(20)); // version text space
-    area.reduce(sc(20), sc(10));
+    area.removeFromBottom(sc(kFooterRef)); // version text space
+    area.reduce(sc(kContentInsetXRef), sc(kContentInsetYRef));
+
+    // Carve the FX grid out of the right-hand side FIRST, then let the
+    // master controls stack in the remaining left rail. This is what keeps
+    // the 2x2 grid at its full available height instead of inheriting
+    // whatever is left after the master rows (the old 20px collapse).
+    const int railGap = sc(kRailGapRef);
+    const int railW = juce::jlimit(sc(kRailMinRef), area.getWidth() / 3,
+                                   sc(kRailMaxRef));
+    const int gridW = juce::jmax(1, area.getWidth() - railW - railGap);
+    auto gridArea = area.removeFromRight(gridW);
+    area.removeFromRight(railGap);
 
     // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ Overall knob (centered hero) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬
-    auto overallRow = area.removeFromTop(sc(180));
-    int oSize = sc(150);
-    auto oArea = overallRow.withSizeKeepingCentre(oSize, oSize + sc(30));
+    auto overallRow = area.removeFromTop(sc(kOverallRowRef));
+    int oSize = juce::jmin(sc(kOverallKnobRef), area.getWidth() - sc(kRailKnobInsetRef));
+    oSize = juce::jmin(oSize, overallRow.getHeight() - sc(kOverallLabelRef));
+    oSize = juce::jmax(1, oSize);
+    auto oArea = overallRow.withSizeKeepingCentre(oSize, oSize + sc(kOverallLabelRef));
     overallKnob.setBounds(oArea.removeFromTop(oSize));
     overallLabel.setBounds(oArea);
 
     // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ Master Drive knob (below Overall) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬
-    auto masterDriveRow = area.removeFromTop(sc(100));
-    int mSize = sc(100);
-    auto mArea = masterDriveRow.withSizeKeepingCentre(mSize, mSize + sc(25));
+    auto masterDriveRow = area.removeFromTop(sc(kMasterDriveRowRef));
+    auto mdrRow = masterDriveRow.reduced(sc(kRailKnobInsetRef), 0);
+    auto mbBypassArea = mdrRow.removeFromRight(
+        juce::jmin(sc(kMasterBypassWidthRef), mdrRow.getWidth() / 2));
+    int mSize = juce::jmin(sc(kMasterDriveKnobRef),
+                           masterDriveRow.getHeight() - sc(kMasterDriveLabelRef));
+    mSize = juce::jmin(mSize, mdrRow.getWidth() - sc(10));
+    mSize = juce::jmax(1, mSize);
+    auto mArea = mdrRow.withSizeKeepingCentre(mSize,
+                                              mSize + sc(kMasterDriveLabelRef));
     masterDriveKnob.setBounds(mArea.removeFromTop(mSize));
     masterDriveLabel.setBounds(mArea);
 
     // Master bypass button ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â right-aligned in the same row
-    auto mdrRow = masterDriveRow.reduced(sc(40), 0);
-    auto mbBypassArea = mdrRow.removeFromRight(sc(100));
-    masterBypassButton.setBounds(mbBypassArea.removeFromTop(sc(25)).withTrimmedLeft(0));
+    masterBypassButton.setBounds(mbBypassArea.removeFromTop(
+        juce::jmin(sc(kMasterBypassHeightRef), mbBypassArea.getHeight())));
 
     area.removeFromTop(sc(10));
 
     // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ Master Width / Mid Drive / Side Drive knobs (below Master Drive) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬
-    auto masterMSSRow = area.removeFromTop(sc(100));
-    int msSize = sc(80);
-    int msGap = sc(20);
+    auto masterMSSRow = area.removeFromTop(sc(kMasterSideRowRef));
+    int msGap = sc(kMasterSideGapRef);
+    int msSize = juce::jmin(sc(kMasterSideKnobRef),
+                            (masterMSSRow.getWidth() - msGap * 2) / 3);
+    msSize = juce::jmin(msSize, masterMSSRow.getHeight() - sc(kMasterSideLabelRef));
+    msSize = juce::jmax(1, msSize);
     int msTotalW = msSize * 3 + msGap * 2;
-    auto msStart = masterMSSRow.withSizeKeepingCentre(msTotalW, msSize + sc(25));
+    auto msStart = masterMSSRow.withSizeKeepingCentre(msTotalW,
+                                                      msSize + sc(kMasterSideLabelRef));
     
     // Width knob
     auto msWidthArea = msStart.removeFromLeft(msSize);
@@ -531,146 +637,114 @@ void CorvusFXAudioProcessorEditor::resized()
     masterSideDriveLabel.setBounds(msSideArea);
 
     // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ Output Trim knob (below Width/Mid/Side, centered)
-    auto trimRow = area.removeFromTop(sc(80));
-    int trimSize = sc(70);
-    auto trimArea = trimRow.withSizeKeepingCentre(trimSize, trimSize + sc(25));
+    auto trimRow = area;
+    int trimSize = juce::jmin(sc(kOutputTrimKnobRef),
+                              trimRow.getWidth() - sc(kRailKnobInsetRef));
+    trimSize = juce::jmin(trimSize, trimRow.getHeight() - sc(kOutputTrimLabelRef));
+    trimSize = juce::jmax(1, trimSize);
+    auto trimArea = trimRow.withSizeKeepingCentre(trimSize,
+                                                  trimSize + sc(kOutputTrimLabelRef));
     outputTrimKnob.setBounds(trimArea.removeFromTop(trimSize));
     outputTrimLabel.setBounds(trimArea);
 
-    area.removeFromTop(sc(10));
-
     // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ 2x2 grid of effect sections ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬
-    int totalW = area.getWidth();
-    int totalH = area.getHeight();
-    int gap = juce::jmax(1, sc(15));
-    int secW = juce::jmax(1, (totalW - gap) / 2);
-    int secH = juce::jmax(1, (totalH - gap) / 2);
-    int bottomY = area.getY() + secH + gap;
+    // The FX grid owns the full height of the right-hand area. Section
+    // rectangles are derived from that area, never from a fixed claim.
+    const int gap = juce::jmax(1, sc(kGridGapRef));
+    const int secH = juce::jmax(1, (gridArea.getHeight() - gap) / kGridRowsRef);
+    auto topFxRow = gridArea.removeFromTop(secH);
+    const int topW = juce::jmax(1, (topFxRow.getWidth() - gap) / 2);
 
-    // === TOP ROW ===
-    auto topFxRow = area.removeFromTop(secH);
+    // Explicit per-section layout: reserve the bypass strip first, then
+    // divide the remaining width/height among the knob columns. Knob sizes
+    // are clamped by the available rectangle so labels and bypass always
+    // retain positive, usable bounds.
+    auto reserveBypass = [&](juce::Rectangle<int> content,
+                             juce::Component& button)
+    {
+        const int bypH = juce::jmax(sc(kSectionBypassRef), 16);
+        auto byRow = content.removeFromBottom(bypH);
+        content.removeFromBottom(sc(kSectionBypassGapRef));
+        button.setBounds(byRow.withSizeKeepingCentre(
+            juce::jmin(byRow.getWidth(), sc(kSectionBypassWidthRef)), bypH));
+        return content;
+    };
+
+    auto layoutSection = [&](
+        juce::Rectangle<int> section, int maxKnob,
+        std::initializer_list<std::pair<AnimatedKnob*, juce::Label*>> columns,
+        juce::Component& bypass)
+    {
+        auto content = section.reduced(sc(kSectionPadXRef), sc(kSectionPadYRef));
+        content = reserveBypass(content, bypass);
+        const int labelH = juce::jmax(sc(kSectionLabelRef), 14);
+        const int n = static_cast<int>(columns.size());
+        int gapX = juce::jlimit(sc(kSectionMinGapRef), sc(kSectionMaxGapRef),
+            (content.getWidth() - n * sc(kSectionMinKnobRef))
+                / juce::jmax(1, n + 1));
+        int knobSize = juce::jmin(maxKnob,
+            (content.getWidth() - gapX * (n + 1)) / juce::jmax(1, n));
+        knobSize = juce::jmin(knobSize,
+            juce::jmax(1, content.getHeight() - labelH));
+        knobSize = juce::jmax(1, knobSize);
+        const int totalW = knobSize * n + gapX * (n + 1);
+        auto row = content.withSizeKeepingCentre(totalW, knobSize + labelH);
+        row.removeFromLeft(gapX);
+        for (auto& entry : columns)
+        {
+            auto col = row.removeFromLeft(knobSize);
+            entry.first->setBounds(col.removeFromTop(knobSize));
+            entry.second->setBounds(col.removeFromTop(labelH));
+            row.removeFromLeft(gapX);
+        }
+    };
 
     // Distortion (top-left)
-    auto distArea = topFxRow.removeFromLeft(secW);
+    auto distArea = topFxRow.removeFromLeft(topW);
     distortionSection.setBounds(distArea);
-    {
-        auto c = distArea.reduced(sc(15), sc(45));
-        int ks = juce::jmin(juce::jmin(c.getWidth(), c.getHeight()) - sc(20), sc(120));
-        ks = juce::jmax(ks, 60); // Minimum readable size
-        auto ka = c.withSizeKeepingCentre(ks, ks + sc(25));
-        fatnessKnob.setBounds(ka.removeFromTop(ks));
-        fatnessLabel.setBounds(ka);
-        // Bypass button below the knob
-        auto bypassArea = c.removeFromTop(sc(30)).withTrimmedTop(sc(10));
-        distortionBypassButton.setBounds(bypassArea.withSizeKeepingCentre(juce::jmin(bypassArea.getWidth(), sc(80)), sc(22)));
-    }
+    layoutSection(distArea, sc(kDistortionMaxKnobRef),
+                  { { &fatnessKnob, &fatnessLabel } },
+                  distortionBypassButton);
 
     topFxRow.removeFromLeft(gap);
 
     // Chorus (top-right) - 3 knobs horizontal
     auto chorArea = topFxRow;
     chorusSection.setBounds(chorArea);
-    {
-        auto c = chorArea.reduced(sc(15), sc(45));
-        int ks = juce::jmin(sc(80), c.getHeight() - sc(30));
-        ks = juce::jmax(ks, 50); // Minimum readable size
-        int sp = juce::jmax(sc(5), (c.getWidth() - ks * 3) / 4);
-
-        c.removeFromLeft(sp);
-        auto a1 = c.removeFromLeft(ks);
-        chorusDepthKnob.setBounds(a1.removeFromTop(ks));
-        chorusDepthLabel.setBounds(a1.removeFromTop(sc(25)));
-
-        c.removeFromLeft(sp);
-        auto a2 = c.removeFromLeft(ks);
-        chorusRateKnob.setBounds(a2.removeFromTop(ks));
-        chorusRateLabel.setBounds(a2.removeFromTop(sc(25)));
-
-        c.removeFromLeft(sp);
-        auto a3 = c.removeFromLeft(ks);
-        chorusMixKnob.setBounds(a3.removeFromTop(ks));
-        chorusMixLabel.setBounds(a3.removeFromTop(sc(25)));
-        c.removeFromTop(sc(5));
-        auto chBypArea = c.removeFromTop(sc(30));
-        chorusBypassButton.setBounds(chBypArea.withSizeKeepingCentre(juce::jmin(chBypArea.getWidth(), sc(80)), sc(22)));
-    }
+    layoutSection(chorArea, sc(kChorusMaxKnobRef),
+                  { { &chorusDepthKnob, &chorusDepthLabel },
+                    { &chorusRateKnob, &chorusRateLabel },
+                    { &chorusMixKnob, &chorusMixLabel } },
+                  chorusBypassButton);
 
     // === BOTTOM ROW ===
-    auto botRow = getLocalBounds();
-    botRow.removeFromTop(bottomY);
-    botRow.removeFromBottom(sc(20));
-    botRow.reduce(sc(20), 0);
+    auto botRow = gridArea;
+    botRow.removeFromTop(gap);
 
-    // Delay (bottom-left) - 4 knobs horizontal
-    auto delArea = botRow.removeFromLeft(secW);
+    // Delay (bottom-left) - 5 knobs horizontal. The bottom row gives delay
+    // more width than reverb because delay carries five columns plus its
+    // bypass strip.
+    const int delayW = juce::roundToInt(
+        (botRow.getWidth() - gap) * kDelayColumnShare);
+    auto delArea = botRow.removeFromLeft(delayW);
     delaySection.setBounds(delArea);
-    {
-        auto c = delArea.reduced(sc(12), sc(45));
-        int ks = juce::jmin(sc(70), c.getHeight() - sc(30));
-        ks = juce::jmax(ks, 50); // Minimum readable size
-        int sp = juce::jmax(sc(4), (c.getWidth() - ks * 5) / 6);
-
-        c.removeFromLeft(sp);
-        auto a1 = c.removeFromLeft(ks);
-        delayTimeKnob.setBounds(a1.removeFromTop(ks));
-        delayTimeLabel.setBounds(a1.removeFromTop(sc(25)));
-
-        c.removeFromLeft(sp);
-        auto a2 = c.removeFromLeft(ks);
-        delayFeedbackKnob.setBounds(a2.removeFromTop(ks));
-        delayFeedbackLabel.setBounds(a2.removeFromTop(sc(25)));
-
-        c.removeFromLeft(sp);
-        auto a3 = c.removeFromLeft(ks);
-        delayMixKnob.setBounds(a3.removeFromTop(ks));
-        delayMixLabel.setBounds(a3.removeFromTop(sc(25)));
-
-        c.removeFromLeft(sp);
-        auto a4 = c.removeFromLeft(ks);
-        delayDampingKnob.setBounds(a4.removeFromTop(ks));
-        delayDampingLabel.setBounds(a4.removeFromTop(sc(25)));
-
-        c.removeFromLeft(sp);
-        auto a5 = c.removeFromLeft(ks);
-        delayModKnob.setBounds(a5.removeFromTop(ks));
-        delayModLabel.setBounds(a5.removeFromTop(sc(25)));
-        c.removeFromTop(sc(5));
-        auto dlBypArea = c.removeFromTop(sc(30));
-        delayBypassButton.setBounds(dlBypArea.withSizeKeepingCentre(juce::jmin(dlBypArea.getWidth(), sc(80)), sc(22)));
-    }
+    layoutSection(delArea, sc(kDelayMaxKnobRef),
+                  { { &delayTimeKnob, &delayTimeLabel },
+                    { &delayFeedbackKnob, &delayFeedbackLabel },
+                    { &delayMixKnob, &delayMixLabel },
+                    { &delayDampingKnob, &delayDampingLabel },
+                    { &delayModKnob, &delayModLabel } },
+                  delayBypassButton);
 
     botRow.removeFromLeft(gap);
 
     // Reverb (bottom-right) - 4 knobs horizontal
     auto revArea = botRow;
     reverbSection.setBounds(revArea);
-    {
-        auto c = revArea.reduced(sc(12), sc(45));
-        int ks = juce::jmin(sc(70), c.getHeight() - sc(30));
-        ks = juce::jmax(ks, 50); // Minimum readable size
-        int sp = juce::jmax(sc(4), (c.getWidth() - ks * 4) / 5);
-
-        c.removeFromLeft(sp);
-        auto a1 = c.removeFromLeft(ks);
-        reverbSizeKnob.setBounds(a1.removeFromTop(ks));
-        reverbSizeLabel.setBounds(a1.removeFromTop(sc(25)));
-
-        c.removeFromLeft(sp);
-        auto a2 = c.removeFromLeft(ks);
-        reverbDampingKnob.setBounds(a2.removeFromTop(ks));
-        reverbDampingLabel.setBounds(a2.removeFromTop(sc(25)));
-
-        c.removeFromLeft(sp);
-        auto a3 = c.removeFromLeft(ks);
-        reverbMixKnob.setBounds(a3.removeFromTop(ks));
-        reverbMixLabel.setBounds(a3.removeFromTop(sc(25)));
-
-        c.removeFromLeft(sp);
-        auto a4 = c.removeFromLeft(ks);
-        reverbModKnob.setBounds(a4.removeFromTop(ks));
-        reverbModLabel.setBounds(a4.removeFromTop(sc(25)));
-        c.removeFromTop(sc(5));
-        auto rvBypArea = c.removeFromTop(sc(30));
-        reverbBypassButton.setBounds(rvBypArea.withSizeKeepingCentre(juce::jmin(rvBypArea.getWidth(), sc(80)), sc(22)));
-    }
+    layoutSection(revArea, sc(kReverbMaxKnobRef),
+                  { { &reverbSizeKnob, &reverbSizeLabel },
+                    { &reverbDampingKnob, &reverbDampingLabel },
+                    { &reverbMixKnob, &reverbMixLabel },
+                    { &reverbModKnob, &reverbModLabel } },
+                  reverbBypassButton);
 }

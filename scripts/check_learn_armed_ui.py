@@ -96,19 +96,16 @@ hd_text = hd.read_text(encoding="utf-8")
 
 # probe 1: strip the cancel menu item
 expect_reject("cancel item stripped", ed_text,
-              'menu.addItem("Cancel MIDI Learn", [&proc]() {\n'
-              '                    proc.stopMidiLearn();\n'
-              '                });', "", "ed")
+              'menu.addItem("Cancel MIDI Learn", [safeEditor]() {',
+              'menu.addItem("Cancel Item Removed", [safeEditor]() {', "ed")
 
 # probe 2: drop the armed-state gate (cancel always offered)
 expect_reject("isMidiLearnActive gate dropped", ed_text,
-              "if (proc.isMidiLearnActive())\n", "", "ed")
+              "if (audioProcessor.isMidiLearnActive())\n", "", "ed")
 
 # probe 3: remove ALL but one stopMidiLearn call site (cancel unwired)
 expect_reject("stopMidiLearn site stripped", ed_text,
-              'proc.stopMidiLearn();\n'
-              '                });', 'proc.stopMidiLearn_();\n'
-              '                });', "ed")
+              'proc->stopMidiLearn();', 'proc->stopMidiLearn_();', "ed")
 
 # probe 4: header accessor removed
 expect_reject("header accessor removed", hd_text,
