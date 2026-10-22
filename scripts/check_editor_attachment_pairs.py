@@ -8,7 +8,10 @@ PluginEditor.cpp hand-maintains the SAME 19 param ids in two places:
   - 19 `juce::AudioProcessorValueTreeState::SliderAttachment` declarations
     (:200-224 block) whose 2nd arg links the knob to apvts.
 Plus 5 ButtonAttachment ids (one per "<module>_bypass") and the single
-ComboBoxAttachment keeping "preset" (:225).
+PresetComboAttachment wiring "preset" to presetSelector. That attachment is
+deliberately NOT the stock ComboBoxAttachment: the preset parameter stores the
+combo item ID (1-42, separators included), not a zero-based list index, so an
+index-spreading attachment would shift every selection by one row.
 
 No other checker cross-checks the two lists (check_undo_wiring.py pins only
 setupKnob's onGestureStart lambda): editing a setupKnob 4th arg to a
@@ -25,7 +28,11 @@ Asserts (comment-stripped PluginEditor.cpp):
       SliderAttachment second-arg ids, in matching call/declaration ORDER;
   (c) the 5 "<module>_bypass" ids each appear in exactly one
       ButtonAttachment;
-  (d) the ComboBoxAttachment keeps "preset".
+  (d) exactly one PresetComboAttachment wires the "preset" parameter to
+      presetSelector through the processor's undo manager, and the stock
+      AudioProcessorValueTreeState::ComboBoxAttachment (whose zero-based item
+      INDEX mapping shifts every preset selection by one row) is gone from the
+      editor entirely.
 
 Self-probes (negative checks, sibling checker style) run on mutated
 in-memory TEMP texts — the real tree is never mutated. A no-op mutation
@@ -50,8 +57,11 @@ BUTTON_ATT_RE = re.compile(
     r'AudioProcessorValueTreeState::ButtonAttachment>\(\s*'
     r'audioProcessor\.apvts\s*,\s*"([^"]+)"')
 COMBO_ATT_RE = re.compile(
-    r'AudioProcessorValueTreeState::ComboBoxAttachment>\(\s*'
-    r'audioProcessor\.apvts\s*,\s*"([^"]+)"')
+    r'PresetComboAttachment>\(\s*\*\s*audioProcessor\.apvts\.getParameter'
+    r'\(\s*"([^"]+)"\s*\)\s*,\s*presetSelector\s*,\s*'
+    r'&audioProcessor\.undoManager\s*\)')
+STOCK_COMBO_ATT_RE = re.compile(
+    r'AudioProcessorValueTreeState::ComboBoxAttachment')
 
 EXPECTED_ORDER = [
     "overall", "fatness",
@@ -112,8 +122,13 @@ def check(txt_stripped):
         return "a bypass id appears in more than one ButtonAttachment"
     combo_ids = COMBO_ATT_RE.findall(txt_stripped)
     if combo_ids != ["preset"]:
-        return (f"ComboBoxAttachment must keep exactly one 'preset' "
-                f"attachment, got {combo_ids}")
+        return (f"PresetComboAttachment must wire exactly the 'preset' "
+                f"parameter to presetSelector via &audioProcessor.undoManager, "
+                f"got {combo_ids}")
+    if STOCK_COMBO_ATT_RE.search(txt_stripped):
+        return ("stock AudioProcessorValueTreeState::ComboBoxAttachment is "
+                "back in PluginEditor.cpp; it maps the combo item INDEX, not "
+                "the preset item id, shifting every selection by one row")
     return None
 
 
@@ -124,8 +139,9 @@ err = check(ed_txt)
 if err:
     fail(err + " (PluginEditor.cpp)")
 print("editor-attach-pairs: 19 setupKnob ids == 19 SliderAttachment ids "
-      "(same order), 5 ButtonAttachment bypass ids, ComboBoxAttachment "
-      "'preset' pinned in PluginEditor.cpp")
+      "(same order), 5 ButtonAttachment bypass ids, item-id "
+      "PresetComboAttachment 'preset' pinned (stock ComboBoxAttachment "
+      "banned) in PluginEditor.cpp")
 
 # ---------------------------------------------------------------------------
 # Self-probes on mutated in-memory texts (real tree never mutated)
@@ -165,7 +181,24 @@ probe('rMixAtt/rModAtt attachment ids swapped',
       'AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.'
       'apvts, "reverb_mod", rMixAtt'.replace("rMixAtt", "reverbMixKnob"))
 
-# 4. no-op guard: benign comment addition must stay accepted
+# 4. the preset attachment reverted to the stock index-spreading
+#    ComboBoxAttachment (the CV-021 defect: every selection shifts one row)
+probe("preset attachment reverted to stock ComboBoxAttachment",
+      'presetAtt = std::make_unique<PresetComboAttachment>('
+      '*audioProcessor.apvts.getParameter("preset"), presetSelector, '
+      '&audioProcessor.undoManager);',
+      'presetAtt = std::make_unique<juce::AudioProcessorValueTreeState'
+      '::ComboBoxAttachment>(audioProcessor.apvts, "preset", '
+      'presetSelector);')
+
+# 5. the pass-through attachment dropped entirely (combo silently unsynced
+#    from the "preset" parameter)
+probe("PresetComboAttachment wiring line deleted",
+      'presetAtt = std::make_unique<PresetComboAttachment>('
+      '*audioProcessor.apvts.getParameter("preset"), presetSelector, '
+      '&audioProcessor.undoManager);', '')
+
+# 6. no-op guard: benign comment addition must stay accepted
 tmp = ED.read_text(encoding="utf-8").replace(
     "// Attachments\n", "// Attachments\n// benign probe edit\n", 1)
 if tmp == ED.read_text(encoding="utf-8"):

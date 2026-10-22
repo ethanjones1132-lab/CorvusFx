@@ -778,6 +778,66 @@ private:
     bool themeDark = true;
 };
 
+// PRESET COMBO ATTACHMENT — verbatim item-id pass-through
+//
+// The stock juce::AudioProcessorValueTreeState::ComboBoxAttachment spreads the
+// combo's zero-based ITEM INDEX linearly across the parameter range. The
+// "preset" parameter does NOT store an index: it stores the combo item ID
+// (1-42, with 1/8/15/22/29/36 as disabled separators), which parameterChanged
+// resolves through idToPreset[]. An index-based attachment therefore shifts
+// every selection by one row — picking a preset loads its neighbour, or lands
+// on a separator id and loads nothing at all.
+//
+// This attachment passes the item ID through verbatim in both directions:
+// parameter -> combo via setSelectedId(), user selection -> parameter via
+// setValueAsCompleteGesture() so the change still arrives as a full host
+// gesture on the undo manager.
+class PresetComboAttachment : private juce::ComboBox::Listener
+{
+public:
+    PresetComboAttachment(juce::RangedAudioParameter& presetParameter,
+                          juce::ComboBox& combo,
+                          juce::UndoManager* undoManager)
+        : comboBox(combo),
+          attachment(presetParameter,
+                     [this](float rawItemId) { setComboFromParam(rawItemId); },
+                     undoManager)
+    {
+        comboBox.addListener(this);
+        attachment.sendInitialUpdate();
+    }
+
+    ~PresetComboAttachment() override
+    {
+        comboBox.removeListener(this);
+    }
+
+private:
+    void setComboFromParam(float rawItemId)
+    {
+        // sendNotificationSync keeps the combo's own listeners in step with
+        // host-driven preset changes; ignoreCallbacks stops that notification
+        // from being mistaken for a user gesture.
+        const juce::ScopedValueSetter<bool> svs(ignoreCallbacks, true);
+        comboBox.setSelectedId(juce::roundToInt(rawItemId), juce::sendNotificationSync);
+    }
+
+    void comboBoxChanged(juce::ComboBox*) override
+    {
+        if (ignoreCallbacks)
+            return;
+
+        // The item id IS the parameter value — never getSelectedItemIndex().
+        attachment.setValueAsCompleteGesture((float) comboBox.getSelectedId());
+    }
+
+    juce::ComboBox& comboBox;
+    juce::ParameterAttachment attachment;
+    bool ignoreCallbacks = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PresetComboAttachment)
+};
+
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // MAIN EDITOR
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -829,7 +889,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterMidDriveAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterSideDriveAtt;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputTrimAtt;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> presetAtt;
+    std::unique_ptr<PresetComboAttachment> presetAtt;
     LevelMeter levelMeter;
     // Activates hover tooltips for all knobs/buttons (JUCE renders no
     // tooltips without a TooltipWindow instance in the component tree).

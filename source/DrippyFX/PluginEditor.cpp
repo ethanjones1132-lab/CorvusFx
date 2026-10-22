@@ -276,7 +276,7 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     masterMidDriveAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "master_mid_drive", masterMidDriveKnob);
     masterSideDriveAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "master_side_drive", masterSideDriveKnob);
     outputTrimAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "output_trim", outputTrimKnob);
-    presetAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(audioProcessor.apvts, "preset", presetSelector);
+    presetAtt = std::make_unique<PresetComboAttachment>(*audioProcessor.apvts.getParameter("preset"), presetSelector, &audioProcessor.undoManager);
 
     // Preset A/B Compare buttons
     btnSlotA.setButtonText("A");
