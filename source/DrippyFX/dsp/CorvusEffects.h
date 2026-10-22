@@ -1169,6 +1169,16 @@ struct UpgradedReverb
     // Last roomSize applied to earlyL/earlyR tap delays; mute-on-change guard
     // in beginBlock() resets the tap buffers only when this actually moves.
     float lastRoomSize = 0.0f;
+    // Last mix handed to beginBlock() and whether one has been applied yet.
+    // A mix change arms the per-sample applied-gain ramp; the first block
+    // after prepare() snaps instead of ramping from the dry-only default.
+    float lastWetMix = 0.0f;
+    bool wetMixValid = false;
+    // Ramp length for the applied wet/dry balance. Matches the 20 ms
+    // LinearSmoothedValue the processor uses for reverb_mix (PluginProcessor.cpp
+    // smoothTime), so the applied balance moves over the same 20 ms the knob
+    // ramp does instead of stepping at the block boundary.
+    static constexpr float MIX_RAMP_SECONDS = 0.020f;
 
     // Block-level coefficient cache — avoids recomputing feedback/damp per sample
     // and hoists comb modulation calculations out of the hot loop.
@@ -1182,6 +1192,15 @@ struct UpgradedReverb
         float inputGain = 0.045f;
         float wetGain = 0.0f;
         float dryGain = 1.0f;     // Equal-power dry gain: cos(mix*pi/2)
+        // Applied wet/dry: processSample() uses these, not dryGain/wetGain
+        // directly. beginBlock() targets dryGain/wetGain and moves the applied
+        // pair toward them one step per sample, so the mix ramp is audible as a
+        // ramp and a settled mix lands exactly on the equal-power target.
+        float appliedDryGain = 1.0f;   // Dry gain actually multiplied this sample
+        float appliedWetGain = 0.0f;   // Wet gain actually multiplied this sample
+        float dryGainStep = 0.0f;      // Per-sample step toward dryGain
+        float wetGainStep = 0.0f;      // Per-sample step toward wetGain
+        int mixRampSamplesLeft = 0;    // 0 = settled; else samples left in the ramp
         float apFb = 0.6f;      // Allpass feedback: scales with room size
         float modPhaseIncrement = 0.0f;  // 0.37f / sr — cached for comb modulation LFO
         // Pre-delay in samples (cached per block)
@@ -1226,6 +1245,33 @@ struct UpgradedReverb
         // cos(mix*pi/2) for dry, sin(mix*pi/2) * 1.5 for wet (reverb level compensation)
         blockCoeffs.dryGain = std::cos(wetMix * juce::MathConstants<float>::halfPi);
         blockCoeffs.wetGain = std::sin(wetMix * juce::MathConstants<float>::halfPi) * 1.5f;
+        // The host smooths reverb_mix, but this block only receives the mix as a
+        // block-level value, so applying the two gains above as block constants
+        // froze the applied wet/dry on the block's mix for its whole length: the
+        // 20 ms ramp moved the smoothed mix, never the balance multiplied into
+        // the output. Apply the gains per sample instead: a mix change arms a
+        // linear ramp of the applied gains across MIX_RAMP_SECONDS, and an
+        // unchanged mix snaps them to the target (they are already there), so a
+        // static setting keeps exactly the former equal-power gain staging.
+        if (!wetMixValid || std::fabs(wetMix - lastWetMix) <= 1e-6f)
+        {
+            blockCoeffs.appliedDryGain = blockCoeffs.dryGain;
+            blockCoeffs.appliedWetGain = blockCoeffs.wetGain;
+            blockCoeffs.dryGainStep = 0.0f;
+            blockCoeffs.wetGainStep = 0.0f;
+            blockCoeffs.mixRampSamplesLeft = 0;
+        }
+        else
+        {
+            const int rampSamples = juce::jmax(1, (int)(MIX_RAMP_SECONDS * sampleRate));
+            blockCoeffs.mixRampSamplesLeft = rampSamples;
+            blockCoeffs.dryGainStep = (blockCoeffs.dryGain - blockCoeffs.appliedDryGain)
+                                    / static_cast<float>(rampSamples);
+            blockCoeffs.wetGainStep = (blockCoeffs.wetGain - blockCoeffs.appliedWetGain)
+                                    / static_cast<float>(rampSamples);
+        }
+        lastWetMix = wetMix;
+        wetMixValid = true;
         // Cache pre-delay and width per block
         blockCoeffs.preDelaySmp = juce::jlimit(0, PREDELAY_MAX - 1,
             (int)(preDelayMs * 0.001f * sampleRate));
@@ -1346,6 +1392,15 @@ struct UpgradedReverb
         // Initialize master modulation LFO state: sin(0)=0, cos(0)=1
         modSin = 0.0f;
         modCos = 1.0f;
+        // A freshly prepared reverb starts from the dry-only default and snaps to
+        // the first requested mix instead of ramping from stale gain state.
+        blockCoeffs.appliedDryGain = 1.0f;
+        blockCoeffs.appliedWetGain = 0.0f;
+        blockCoeffs.dryGainStep = 0.0f;
+        blockCoeffs.wetGainStep = 0.0f;
+        blockCoeffs.mixRampSamplesLeft = 0;
+        lastWetMix = 0.0f;
+        wetMixValid = false;
         dcL.reset(); dcR.reset();
     }
 
@@ -1429,10 +1484,23 @@ struct UpgradedReverb
         revL = mid + side;
         revR = mid - side;
 
-        // Equal-power wet/dry crossfade -- constant perceived level across mix range
-        // Uses cached equal-power gains from beginBlock()
-        outL = inL * blockCoeffs.dryGain + revL * blockCoeffs.wetGain;
-        outR = inR * blockCoeffs.dryGain + revR * blockCoeffs.wetGain;
+        // Equal-power wet/dry crossfade -- constant perceived level across mix range.
+        // The applied gains move per sample (armed in beginBlock()) so a
+        // reverb_mix change follows its ramp instead of stepping once per block.
+        if (blockCoeffs.mixRampSamplesLeft > 0)
+        {
+            blockCoeffs.appliedDryGain += blockCoeffs.dryGainStep;
+            blockCoeffs.appliedWetGain += blockCoeffs.wetGainStep;
+            if (--blockCoeffs.mixRampSamplesLeft == 0)
+            {
+                // Land exactly on the target: a settled mix must be bit-exact,
+                // with no residual interpolation drift left in the gain.
+                blockCoeffs.appliedDryGain = blockCoeffs.dryGain;
+                blockCoeffs.appliedWetGain = blockCoeffs.wetGain;
+            }
+        }
+        outL = inL * blockCoeffs.appliedDryGain + revL * blockCoeffs.appliedWetGain;
+        outR = inR * blockCoeffs.appliedDryGain + revR * blockCoeffs.appliedWetGain;
 
         outL = juce::jlimit(-4.0f, 4.0f, outL);
         outR = juce::jlimit(-4.0f, 4.0f, outR);
