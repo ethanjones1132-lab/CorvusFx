@@ -20,6 +20,11 @@ class WavetableOscillator
 public:
     void prepare(double newSampleRate)
     {
+        // Build (once, process-wide) and capture the wavetable bank here.
+        // prepare() runs from prepareToPlay on the message thread, so the
+        // table sums are never computed from the audio callback below.
+        tableBankPtr = &buildTableBankOnce();
+
         if (!std::isfinite(newSampleRate) || newSampleRate <= 0.0)
         {
             jassertfalse;
@@ -67,12 +72,14 @@ public:
 
     float process() noexcept
     {
-        if (phaseIncrement <= 0.0 || sampleRate <= 0.0)
+        // prepare() has not run: there is no bank to read, so stay silent
+        // rather than building one on the audio thread.
+        if (tableBankPtr == nullptr || phaseIncrement <= 0.0 || sampleRate <= 0.0)
             return 0.0f;
 
         const auto waveIndex = juce::jlimit<std::size_t>(
             0, waveCount - 1, static_cast<std::size_t>(wave));
-        const auto& table = tables()[waveIndex][selectMipLevel()];
+        const auto& table = (*tableBankPtr)[waveIndex][selectMipLevel()];
         const auto tablePosition = phase * static_cast<double>(tableSize);
         const auto index = static_cast<std::size_t>(tablePosition) & tableMask;
         const auto nextIndex = (index + 1) & tableMask;
@@ -167,8 +174,10 @@ private:
         return bank;
     }
 
-    static const TableBank& tables()
+    static const TableBank& buildTableBankOnce()
     {
+        // Function-local static initialisation happens on the first prepare()
+        // call, never from process(): the audio path only reads the pointer.
         static const auto bank = createTableBank();
         return bank;
     }
@@ -189,4 +198,7 @@ private:
     double phaseIncrement = 0.0;
     float frequencyHz = 0.0f;
     FactoryWave wave = FactoryWave::Sine;
+    // Assigned by prepare() only; null until then so process() cannot be the
+    // first toucher of the table bank.
+    const TableBank* tableBankPtr = nullptr;
 };
