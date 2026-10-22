@@ -21,10 +21,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = Path(os.environ.get("METER_TIMER_SRC", str(ROOT))) / "source" / "DrippyFX"
+FILES = ("PluginEditor.cpp", "PluginEditor.h", "PluginProcessor.h")
 
 
 class Violation(Exception):
     pass
+
+
+class SetupError(Violation):
+    """The fixture/source could not be read — not a behavioral assertion."""
 
 
 def check(srcdir: Path) -> list:
@@ -33,9 +38,10 @@ def check(srcdir: Path) -> list:
 
     def read(rel):
         p = srcdir / rel
-        if not p.exists():
-            fail(f"missing source file {p}")
-        return p.read_text(encoding="utf-8"), p
+        try:
+            return p.read_text(encoding="utf-8"), p
+        except OSError:
+            raise SetupError(f"missing source file {p}") from None
 
     edit_c, edit_c_path = read("PluginEditor.cpp")
     edit_h, _ = read("PluginEditor.h")
@@ -113,34 +119,85 @@ def check(srcdir: Path) -> list:
     return notes
 
 
+def fixture_root(tmp: str) -> Path:
+    """The checker resolves <root>/source/DrippyFX, so fixtures mirror that."""
+    return Path(tmp)
+
+
+def copy_fixture(root: Path) -> Path:
+    tmpsrc = root / "source" / "DrippyFX"
+    tmpsrc.mkdir(parents=True)
+    for f in FILES:
+        shutil.copy(SRC / f, tmpsrc / f)
+    return tmpsrc
+
+
+def run_child(root: Path):
+    env = dict(os.environ, METER_TIMER_SRC=str(root))
+    try:
+        res = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--no-negative"],
+            env=env, capture_output=True, text=True, encoding="utf-8",
+            errors="replace")
+    except OSError as e:
+        return -1, f"child startup error: {e}"
+    return res.returncode, (res.stdout or "") + (res.stderr or "")
+
+
 def main():
     try:
         notes = check(SRC)
+    except SetupError as v:
+        print(f"METER-TIMER SETUP FAIL: {v}")
+        return 2
     except Violation as v:
         print(f"METER-TIMER FAIL: {v}")
         return 1
     for n in notes:
         print(n)
 
-    # (d) negative check: temp copy with the editor startTimer site dropped
+    # (d) negative check: temp copy with the editor startTimer site dropped.
+    # The fixture uses the same <root>/source/DrippyFX layout as the real tree;
+    # a positive (unmutated) fixture must pass before the mutation is trusted.
     with tempfile.TemporaryDirectory() as tmp:
-        tmpsrc = Path(tmp) / "DrippyFX"
-        tmpsrc.mkdir()
-        for f in ("PluginEditor.cpp", "PluginEditor.h", "PluginProcessor.h"):
-            shutil.copy(SRC / f, tmpsrc / f)
+        root = fixture_root(tmp)
+        tmpsrc = copy_fixture(root)
+
+        code, out = run_child(root)
+        if code != 0:
+            print("METER-TIMER FAIL: positive fixture (unmutated copy under "
+                  "<tmp>/source/DrippyFX) did not pass — negative probe cannot "
+                  "be trusted")
+            print(out.strip())
+            return 1
+
         tmp_c = tmpsrc / "PluginEditor.cpp"
-        kept = [
-            ln for ln in tmp_c.read_text(encoding="utf-8").splitlines()
-            if not ("startTimer" in ln and not ln.strip().startswith("//"))
-        ]
-        tmp_c.write_text("\n".join(kept), encoding="utf-8")
-        env = dict(os.environ, METER_TIMER_SRC=str(tmp))
-        res = subprocess.run([sys.executable, str(Path(__file__).resolve()),
-                              "--no-negative"], env=env,
-                             capture_output=True, text=True)
-        if res.returncode == 0:
+        original = tmp_c.read_text(encoding="utf-8")
+        mutated = "\n".join(
+            ln for ln in original.splitlines()
+            if not ("startTimer" in ln and not ln.strip().startswith("//")))
+        if mutated == original:
+            print("METER-TIMER FAIL: negative mutation is a no-op (no editor "
+                  "startTimer site to drop) — probe cannot be trusted")
+            return 1
+        tmp_c.write_text(mutated, encoding="utf-8")
+
+        expected = "no startTimer call site in PluginEditor.cpp"
+        code, out = run_child(root)
+        if code == 0:
             print("METER-TIMER FAIL: negative check failed — checker passes "
                   "even without an editor startTimer call site")
+            return 1
+        if code != 1:
+            print(f"METER-TIMER FAIL: negative probe did not reach the "
+                  f"behavioral assertion (child exit {code}) — fixture "
+                  f"setup/read failure, not a rejected mutation")
+            print(out.strip())
+            return 1
+        if expected not in out:
+            print("METER-TIMER FAIL: negative probe failed for the wrong "
+                  f"reason; expected diagnostic {expected!r}")
+            print(out.strip())
             return 1
     print("meter-timer: negative check passes (missing startTimer is rejected)")
     print("METER-TIMER OK")
@@ -152,6 +209,9 @@ if __name__ == "__main__":
         try:
             check(SRC)
             sys.exit(0)
+        except SetupError as e:
+            print(f"METER-TIMER SETUP FAIL: {e}")
+            getattr(sys, "exit")(2)
         except Violation as v:
             print(f"METER-TIMER FAIL: {v}")
             sys.exit(1)

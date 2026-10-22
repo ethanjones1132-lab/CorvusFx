@@ -29,14 +29,19 @@ class Violation(Exception):
     pass
 
 
+class SetupError(Violation):
+    """The fixture/source could not be read — not a behavioral assertion."""
+
+
 def check(srcdir: Path) -> list:
     def fail(msg):
         raise Violation(msg)
 
     p = srcdir / "dsp" / "CorvusEffects.h"
-    if not p.exists():
-        fail(f"missing source file {p}")
-    text = p.read_text(encoding="utf-8")
+    try:
+        text = p.read_text(encoding="utf-8")
+    except OSError:
+        raise SetupError(f"missing source file {p}") from None
     lines = text.splitlines()
     notes = []
 
@@ -144,9 +149,36 @@ def check(srcdir: Path) -> list:
     return notes
 
 
+def fixture_root(tmp: str) -> Path:
+    """The checker resolves <root>/source/DrippyFX, so fixtures mirror that."""
+    return Path(tmp)
+
+
+def copy_fixture(root: Path) -> Path:
+    dest = root / "source" / "DrippyFX" / "dsp" / "CorvusEffects.h"
+    dest.parent.mkdir(parents=True)
+    shutil.copy(SRC / "dsp" / "CorvusEffects.h", dest)
+    return dest
+
+
+def run_child(root: Path):
+    env = dict(os.environ, EARLY_REFLECT_SRC=str(root))
+    try:
+        res = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--no-negative"],
+            env=env, capture_output=True, text=True, encoding="utf-8",
+            errors="replace")
+    except OSError as e:
+        return -1, f"child startup error: {e}"
+    return res.returncode, (res.stdout or "") + (res.stderr or "")
+
+
 def main():
     try:
         notes = check(SRC)
+    except SetupError as v:
+        print(f"EARLY-REFLECT SETUP FAIL: {v}")
+        return 2
     except Violation as v:
         print(f"EARLY-REFLECT FAIL: {v}")
         return 1
@@ -154,29 +186,50 @@ def main():
         print(n)
 
     # (d) negative check: temp copy where the guarded branch is replaced by an
-    # unguarded mute on every block (the defect this item fixes)
+    # unguarded mute on every block (the defect this item fixes). The fixture
+    # uses the same <root>/source/DrippyFX layout as the real tree; a positive
+    # (unmutated) fixture must pass before the mutation is trusted.
     with tempfile.TemporaryDirectory() as tmp:
-        tmpsrc = Path(tmp) / "DrippyFX"
-        tmpsrc.mkdir()
-        (tmpsrc / "dsp").mkdir()
-        shutil.copy(SRC / "dsp" / "CorvusEffects.h", tmpsrc / "dsp" / "CorvusEffects.h")
-        t = tmpsrc / "dsp" / "CorvusEffects.h"
+        root = fixture_root(tmp)
+        t = copy_fixture(root)
+
+        code, out = run_child(root)
+        if code != 0:
+            print("EARLY-REFLECT FAIL: positive fixture (unmutated copy under "
+                  "<tmp>/source/DrippyFX) did not pass — negative probe cannot "
+                  "be trusted")
+            print(out.strip())
+            return 1
+
         txt = t.read_text(encoding="utf-8")
-        # remove the guard condition line(s): collapse "if (... lastRoomSize
-        # ...)" block to unconditional mute — easiest reliable mutation:
-        # drop the lastRoomSize comparison so the guard check fails
-        mut = re.sub(r"\bfloat\s+lastRoomSize\b[^;]*;", "", txt, count=1)
-        # and strip the guard test, leaving mute() unconditional-ish:
-        mut = re.sub(r"if\s*\([^)]*lastRoomSize[^)]*\)\s*\{?", "", mut, count=1)
+        # remove the guard condition line, leaving the mute() calls to fire
+        # unconditionally on every block, and drop the guard state
+        mut = re.sub(r"^\s*if\s*\([^\n]*lastRoomSize[^\n]*\)\s*$", "", txt,
+                     count=1, flags=re.M)
+        mut = re.sub(r"\bfloat\s+lastRoomSize\b[^;]*;", "", mut, count=1)
         mut = mut.replace("lastRoomSize = roomSize;", "", 1)
+        if mut == txt:
+            print("EARLY-REFLECT FAIL: negative mutation is a no-op (no "
+                  "lastRoomSize guard to remove) — probe cannot be trusted")
+            return 1
         t.write_text(mut, encoding="utf-8")
-        env = dict(os.environ, EARLY_REFLECT_SRC=str(tmp))
-        res = subprocess.run([sys.executable, str(Path(__file__).resolve()),
-                              "--no-negative"], env=env,
-                             capture_output=True, text=True)
-        if res.returncode == 0:
+
+        expected = "mute() calls are not guarded by a lastRoomSize change test"
+        code, out = run_child(root)
+        if code == 0:
             print("EARLY-REFLECT FAIL: negative check failed — checker passes "
                   "even without the mute-on-change guard")
+            return 1
+        if code != 1:
+            print(f"EARLY-REFLECT FAIL: negative probe did not reach the "
+                  f"behavioral assertion (child exit {code}) — fixture "
+                  f"setup/read failure, not a rejected mutation")
+            print(out.strip())
+            return 1
+        if expected not in out:
+            print("EARLY-REFLECT FAIL: negative probe failed for the wrong "
+                  f"reason; expected diagnostic {expected!r}")
+            print(out.strip())
             return 1
     print("early-reflect: negative check passes (unguarded/absent mute guard "
           "is rejected)")
@@ -189,6 +242,9 @@ if __name__ == "__main__":
         try:
             check(SRC)
             sys.exit(0)
+        except SetupError as e:
+            print(f"EARLY-REFLECT SETUP FAIL: {e}")
+            getattr(sys, "exit")(2)
         except Violation as v:
             print(f"EARLY-REFLECT FAIL: {v}")
             sys.exit(1)
