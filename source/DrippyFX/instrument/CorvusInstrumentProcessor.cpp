@@ -82,6 +82,9 @@ void CorvusInstrumentProcessor::prepareToPlay(double sampleRate, int samplesPerB
     effects->delay.prepare(sampleRate);
     effects->reverb.prepare(sampleRate);
     effects->master.prepare(sampleRate);
+    // CV-020: retained as prepare-time storage only. processBlock captures the
+    // pristine synth output per sample, so no host block size (the prepared
+    // size is only a hint) resizes this buffer inside the audio callback.
     dryBuffer.setSize(2, samplesPerBlock, false, false, true);
 
     fxAmount.reset(sampleRate, 0.03);
@@ -158,11 +161,6 @@ void CorvusInstrumentProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     for (auto channel = 2; channel < buffer.getNumChannels(); ++channel)
         buffer.clear(channel, 0, buffer.getNumSamples());
 
-    if (dryBuffer.getNumSamples() < buffer.getNumSamples())
-        dryBuffer.setSize(2, buffer.getNumSamples(), false, false, true);
-    for (auto channel = 0; channel < 2; ++channel)
-        dryBuffer.copyFrom(channel, 0, buffer, channel, 0, buffer.getNumSamples());
-
     fxAmount.setTargetValue(apvts.getRawParameterValue("fx_amount")->load());
     flightAmount.setTargetValue(apvts.getRawParameterValue("flight")->load());
     const auto settings = settingsForFlight(flightAmount.getCurrentValue());
@@ -179,8 +177,16 @@ void CorvusInstrumentProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     for (auto sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
-        auto processedLeft = dryBuffer.getSample(0, sample);
-        auto processedRight = dryBuffer.getSample(1, sample);
+        // CV-020: capture the pristine synth-rendered channels once per sample,
+        // before any effect or overwrite touches `buffer`. A scalar capture is
+        // block-length independent, so a host block larger than the
+        // prepareToPlay hint never resizes (allocates) a dry scratch buffer on
+        // the audio thread. Both the DSP inputs and the dry/wet blend read
+        // these same captures.
+        const float dryLeft = buffer.getSample(0, sample);
+        const float dryRight = buffer.getSample(1, sample);
+        auto processedLeft = dryLeft;
+        auto processedRight = dryRight;
         float nextLeft = 0.0f;
         float nextRight = 0.0f;
 
@@ -215,10 +221,8 @@ void CorvusInstrumentProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
         const auto wet = fxAmount.getNextValue();
         const auto dry = 1.0f - wet;
-        buffer.setSample(0, sample,
-                         dryBuffer.getSample(0, sample) * dry + processedLeft * wet);
-        buffer.setSample(1, sample,
-                         dryBuffer.getSample(1, sample) * dry + processedRight * wet);
+        buffer.setSample(0, sample, dryLeft * dry + processedLeft * wet);
+        buffer.setSample(1, sample, dryRight * dry + processedRight * wet);
     }
 
     outputGain.setTargetValue(juce::Decibels::decibelsToGain(
