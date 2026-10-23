@@ -267,12 +267,17 @@ void CorvusInstrumentProcessor::setStateInformation(const void* data, int sizeIn
             != stateSchemaVersion)
         return;
 
-    const auto restoredProgram = static_cast<int>(candidate.getProperty("currentProgram", 0));
-    if (restoredProgram < 0 || restoredProgram >= getNumPrograms())
-        return;
-
     apvts.replaceState(candidate);
-    currentProgram = restoredProgram;
+
+    // CV-023: a stale or corrupt program index must never discard a schema-valid
+    // parameter tree. Clamp the index instead of failing the whole restore, and
+    // do not call setCurrentProgram here - loading a preset would overwrite the
+    // parameters we just restored.
+    const auto restoredProgram = static_cast<int>(candidate.getProperty("currentProgram", 0));
+    if (restoredProgram >= 0 && restoredProgram < getNumPrograms())
+        currentProgram = restoredProgram;
+    else
+        currentProgram = 0;
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout
