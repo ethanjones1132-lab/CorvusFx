@@ -773,6 +773,16 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         float smpL = juce::jlimit(-2.0f, 2.0f, chData[0][s]);
         float smpR = juce::jlimit(-2.0f, 2.0f, isMono ? smpL : chData[1][s]);
 
+        // CV-023 input sanitiser: jlimit is comparison-based and maps neither
+        // NaN nor infinity to a bound, so a single non-finite sample would
+        // otherwise pass straight into delay.processSample()/reverb writes and
+        // be stored in their feedback state, repeating for the rest of the
+        // session. Fold the chain input to 0 before any DSP sees it (the mono
+        // duplicate in smpR folds together with smpL), keeping the existing
+        // output guard below as the last line of defence.
+        smpL = std::isfinite(smpL) ? smpL : 0.0f;
+        smpR = std::isfinite(smpR) ? smpR : 0.0f;
+
         // 1. DISTORTION (click-free bypass crossfade)
         if (gDist > 0.001f && sFatness > 0.001f)
         {
