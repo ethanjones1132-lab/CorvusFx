@@ -12,6 +12,11 @@ namespace
 {
 constexpr auto stateRoot = "CorvusInstrumentState";
 constexpr auto stateSchemaVersion = 1;
+// CV-023: flight-derived FX settings are refreshed once per fixed sub-chunk
+// instead of once per host block. 32 samples is ~0.73 ms at 44.1 kHz, so a
+// modulated flight sweep ramps inside the block instead of stepping at the
+// block boundary (the smoother itself still moves per sample).
+constexpr int fxParameterChunkSize = 32;
 }
 
 struct CorvusInstrumentProcessor::EffectsCore
@@ -163,17 +168,16 @@ void CorvusInstrumentProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     fxAmount.setTargetValue(apvts.getRawParameterValue("fx_amount")->load());
     flightAmount.setTargetValue(apvts.getRawParameterValue("flight")->load());
-    const auto settings = settingsForFlight(flightAmount.getCurrentValue());
-    flightAmount.skip(buffer.getNumSamples());
 
-    effects->distortion.beginBlock(settings.distortionAmount);
-    effects->chorus.beginBlock(
-        settings.chorusDepth, settings.chorusMix, settings.chorusRate);
-    effects->delay.beginBlock(settings.delayDamping);
-    effects->reverb.beginBlock(
-        settings.reverbSize, settings.reverbDamping, settings.reverbMix,
-        settings.reverbModulation, 1.0f, 5.0f + settings.reverbSize * 40.0f);
-    effects->master.beginBlock();
+    // CV-023: refresh the flight-derived FX settings once per fixed sub-chunk
+    // (~0.73 ms at 44.1 kHz) instead of once per host block, so a modulated
+    // flight sweep ramps inside the block rather than stepping at the block
+    // boundary. `fxChunkRemaining` counts down to the next chunk head, so the
+    // chunk lengths sum to exactly the block length and `flightAmount` is
+    // advanced by exactly `buffer.getNumSamples()` per callback. Nothing else
+    // about the loop changed: no allocation, no per-sample parameter read.
+    auto fxChunkRemaining = 0;
+    InstrumentEffectsSettings settings {};
 
     for (auto sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
@@ -189,6 +193,24 @@ void CorvusInstrumentProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         auto processedRight = dryRight;
         float nextLeft = 0.0f;
         float nextRight = 0.0f;
+
+        if (fxChunkRemaining == 0)
+        {
+            fxChunkRemaining = juce::jmin(
+                fxParameterChunkSize, buffer.getNumSamples() - sample);
+            settings = settingsForFlight(flightAmount.getCurrentValue());
+            flightAmount.skip(fxChunkRemaining);
+
+            effects->distortion.beginBlock(settings.distortionAmount);
+            effects->chorus.beginBlock(
+                settings.chorusDepth, settings.chorusMix, settings.chorusRate);
+            effects->delay.beginBlock(settings.delayDamping);
+            effects->reverb.beginBlock(
+                settings.reverbSize, settings.reverbDamping, settings.reverbMix,
+                settings.reverbModulation, 1.0f, 5.0f + settings.reverbSize * 40.0f);
+            effects->master.beginBlock();
+        }
+        --fxChunkRemaining;
 
         effects->distortion.process(
             processedLeft, processedRight, nextLeft, nextRight);
