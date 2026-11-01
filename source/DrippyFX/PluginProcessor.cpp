@@ -436,6 +436,44 @@ void CorvusFXAudioProcessor::loadSlotB()
     abSlotIsA = false;
 }
 
+namespace
+{
+// CV-023: a NaN, an infinity, or an overflowed parameter mapping must never
+// become a smoothing target. `mapped` is the raw read carried through its
+// target units; a non-finite mapping falls back to the caller's declared
+// default, and a doubly-invalid pair lands on 0 rather than poisoning the
+// smoother (for delay_feedback that smoother also feeds the feedback curve).
+inline float finiteSmoothingTarget(float mapped, float fallback)
+{
+    if (std::isfinite(mapped))   return mapped;
+    if (std::isfinite(fallback)) return fallback;
+    return 0.0f;
+}
+
+// Declared default of an APVTS parameter in the parameter's own units (0..100
+// for the percentage knobs, Hz / ms for the native ones). Read-only: no APVTS
+// write, no lock, no allocation.
+inline float declaredTarget(juce::AudioProcessorValueTreeState& state, const char* paramId)
+{
+    auto* param = state.getParameter(paramId);
+    return param != nullptr ? param->convertFrom0to1(param->getDefaultValue()) : 0.0f;
+}
+
+// Declared default of a percentage knob, in smoothing-target units (0..1).
+inline float declaredPercentTarget(juce::AudioProcessorValueTreeState& state, const char* paramId)
+{
+    return declaredTarget(state, paramId) / 100.0f;
+}
+
+// Delay-feedback target curve. The coefficients are the same numbers as the
+// inline feedback curve at both call sites, applied here to the declared
+// default so a re-prepare fallback lands on the same curve as a live read.
+inline float feedbackTarget(float linearAmount)
+{
+    return linearAmount * linearAmount * 0.65f + linearAmount * 0.27f;
+}
+}
+
 
 void CorvusFXAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
@@ -480,29 +518,54 @@ void CorvusFXAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     smoothMasterSideDrive.reset(sampleRate, smoothTime);
     smoothOutputTrim.reset(sampleRate, smoothTime);
 
-    // Set initial target values from current parameter state
-    smoothOverall.setTargetValue(apvts.getRawParameterValue("overall")->load() / 100.0f);
-    smoothFatness.setTargetValue(apvts.getRawParameterValue("fatness")->load() / 100.0f);
-    smoothChorusDepth.setTargetValue(apvts.getRawParameterValue("chorus_depth")->load() / 100.0f);
-    smoothChorusRate.setTargetValue(apvts.getRawParameterValue("chorus_rate")->load());
-    smoothChorusMix.setTargetValue(apvts.getRawParameterValue("chorus_mix")->load() / 100.0f);
-    smoothDelayTime.setTargetValue(apvts.getRawParameterValue("delay_time")->load());
+    // Set initial target values from current parameter state.
+    // CV-023: each fallback is the parameter's declared default carried through
+    // the same units and mapping as the target — never the previous target and
+    // never a blanket zero. Every target is then routed through
+    // finiteSmoothingTarget, so a NaN, an infinity, or an overflowed mapping
+    // cannot seed a smoother (or the delay-feedback curve) at re-prepare time.
+    const float fallbackOverall = declaredPercentTarget(apvts, "overall");
+    const float fallbackFatness = declaredPercentTarget(apvts, "fatness");
+    const float fallbackChorusDepth = declaredPercentTarget(apvts, "chorus_depth");
+    const float fallbackChorusRate = declaredTarget(apvts, "chorus_rate");
+    const float fallbackChorusMix = declaredPercentTarget(apvts, "chorus_mix");
+    const float fallbackDelayTime = declaredTarget(apvts, "delay_time");
+    const float fallbackDelayFeedback = feedbackTarget(declaredPercentTarget(apvts, "delay_feedback"));
+    const float fallbackDelayMix = declaredPercentTarget(apvts, "delay_mix");
+    const float fallbackDelayDamping = declaredPercentTarget(apvts, "delay_damping");
+    const float fallbackDelayMod = declaredPercentTarget(apvts, "delay_mod");
+    const float fallbackReverbSize = declaredPercentTarget(apvts, "reverb_size");
+    const float fallbackReverbDamping = declaredPercentTarget(apvts, "reverb_damping");
+    const float fallbackReverbMix = declaredPercentTarget(apvts, "reverb_mix");
+    const float fallbackReverbMod = declaredPercentTarget(apvts, "reverb_mod");
+    const float fallbackMasterDrive = declaredPercentTarget(apvts, "master_drive");
+    const float fallbackMasterWidth = declaredPercentTarget(apvts, "master_width");
+    const float fallbackMasterMidDrive = declaredPercentTarget(apvts, "master_mid_drive");
+    const float fallbackMasterSideDrive = declaredPercentTarget(apvts, "master_side_drive");
+    const float fallbackOutputTrim = declaredPercentTarget(apvts, "output_trim");
+
+    smoothOverall.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("overall")->load() / 100.0f, fallbackOverall));
+    smoothFatness.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("fatness")->load() / 100.0f, fallbackFatness));
+    smoothChorusDepth.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("chorus_depth")->load() / 100.0f, fallbackChorusDepth));
+    smoothChorusRate.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("chorus_rate")->load(), fallbackChorusRate));
+    smoothChorusMix.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("chorus_mix")->load() / 100.0f, fallbackChorusMix));
+    smoothDelayTime.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("delay_time")->load(), fallbackDelayTime));
     {
         float fbRaw = apvts.getRawParameterValue("delay_feedback")->load() / 100.0f;
-        smoothDelayFeedback.setTargetValue(fbRaw * fbRaw * 0.65f + fbRaw * 0.27f);
+        smoothDelayFeedback.setTargetValue(finiteSmoothingTarget(fbRaw * fbRaw * 0.65f + fbRaw * 0.27f, fallbackDelayFeedback));
     }
-    smoothDelayMix.setTargetValue(apvts.getRawParameterValue("delay_mix")->load() / 100.0f);
-    smoothDelayDamping.setTargetValue(apvts.getRawParameterValue("delay_damping")->load() / 100.0f);
-    smoothDelayMod.setTargetValue(apvts.getRawParameterValue("delay_mod")->load() / 100.0f);
-    smoothReverbSize.setTargetValue(apvts.getRawParameterValue("reverb_size")->load() / 100.0f);
-    smoothReverbDamping.setTargetValue(apvts.getRawParameterValue("reverb_damping")->load() / 100.0f);
-    smoothReverbMix.setTargetValue(apvts.getRawParameterValue("reverb_mix")->load() / 100.0f);
-    smoothReverbMod.setTargetValue(apvts.getRawParameterValue("reverb_mod")->load() / 100.0f);
-    smoothMasterDrive.setTargetValue(apvts.getRawParameterValue("master_drive")->load() / 100.0f);
-    smoothMasterWidth.setTargetValue(apvts.getRawParameterValue("master_width")->load() / 100.0f);
-    smoothMasterMidDrive.setTargetValue(apvts.getRawParameterValue("master_mid_drive")->load() / 100.0f);
-    smoothMasterSideDrive.setTargetValue(apvts.getRawParameterValue("master_side_drive")->load() / 100.0f);
-    smoothOutputTrim.setTargetValue(apvts.getRawParameterValue("output_trim")->load() / 100.0f);
+    smoothDelayMix.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("delay_mix")->load() / 100.0f, fallbackDelayMix));
+    smoothDelayDamping.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("delay_damping")->load() / 100.0f, fallbackDelayDamping));
+    smoothDelayMod.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("delay_mod")->load() / 100.0f, fallbackDelayMod));
+    smoothReverbSize.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("reverb_size")->load() / 100.0f, fallbackReverbSize));
+    smoothReverbDamping.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("reverb_damping")->load() / 100.0f, fallbackReverbDamping));
+    smoothReverbMix.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("reverb_mix")->load() / 100.0f, fallbackReverbMix));
+    smoothReverbMod.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("reverb_mod")->load() / 100.0f, fallbackReverbMod));
+    smoothMasterDrive.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("master_drive")->load() / 100.0f, fallbackMasterDrive));
+    smoothMasterWidth.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("master_width")->load() / 100.0f, fallbackMasterWidth));
+    smoothMasterMidDrive.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("master_mid_drive")->load() / 100.0f, fallbackMasterMidDrive));
+    smoothMasterSideDrive.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("master_side_drive")->load() / 100.0f, fallbackMasterSideDrive));
+    smoothOutputTrim.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("output_trim")->load() / 100.0f, fallbackOutputTrim));
 
     // Bypass crossfade gain init (click-free): 1.0 active, 0.0 dry pass-through.
     const float bDist  = apvts.getRawParameterValue("distortion_bypass")->load() > 0.5f ? 0.0f : 1.0f;
@@ -550,30 +613,74 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // Raw parameter reads happen once per block (atomic load, thread-safe).
     // LinearSmoothedValue then interpolates across samples within the block,
     // eliminating zipper noise from knob movement and host automation.
-    smoothOverall.setTargetValue(apvts.getRawParameterValue("overall")->load() / 100.0f);
-    smoothFatness.setTargetValue(apvts.getRawParameterValue("fatness")->load() / 100.0f);
-    smoothChorusDepth.setTargetValue(apvts.getRawParameterValue("chorus_depth")->load() / 100.0f);
-    smoothChorusRate.setTargetValue(apvts.getRawParameterValue("chorus_rate")->load());
-    smoothChorusMix.setTargetValue(apvts.getRawParameterValue("chorus_mix")->load() / 100.0f);
-    smoothDelayTime.setTargetValue(apvts.getRawParameterValue("delay_time")->load());
+    //
+    // CV-023: the render fallback is the smoother's current target when that is
+    // finite, otherwise the same declared default the prepare path uses. The
+    // ternary is lazy, so the declared-default lookup runs only on a bad read;
+    // valid finite mappings pass through finiteSmoothingTarget unchanged.
+    const float fallbackOverall = std::isfinite(smoothOverall.getTargetValue())
+        ? smoothOverall.getTargetValue() : declaredPercentTarget(apvts, "overall");
+    const float fallbackFatness = std::isfinite(smoothFatness.getTargetValue())
+        ? smoothFatness.getTargetValue() : declaredPercentTarget(apvts, "fatness");
+    const float fallbackChorusDepth = std::isfinite(smoothChorusDepth.getTargetValue())
+        ? smoothChorusDepth.getTargetValue() : declaredPercentTarget(apvts, "chorus_depth");
+    const float fallbackChorusRate = std::isfinite(smoothChorusRate.getTargetValue())
+        ? smoothChorusRate.getTargetValue() : declaredTarget(apvts, "chorus_rate");
+    const float fallbackChorusMix = std::isfinite(smoothChorusMix.getTargetValue())
+        ? smoothChorusMix.getTargetValue() : declaredPercentTarget(apvts, "chorus_mix");
+    const float fallbackDelayTime = std::isfinite(smoothDelayTime.getTargetValue())
+        ? smoothDelayTime.getTargetValue() : declaredTarget(apvts, "delay_time");
+    const float fallbackDelayFeedback = std::isfinite(smoothDelayFeedback.getTargetValue())
+        ? smoothDelayFeedback.getTargetValue() : feedbackTarget(declaredPercentTarget(apvts, "delay_feedback"));
+    const float fallbackDelayMix = std::isfinite(smoothDelayMix.getTargetValue())
+        ? smoothDelayMix.getTargetValue() : declaredPercentTarget(apvts, "delay_mix");
+    const float fallbackDelayDamping = std::isfinite(smoothDelayDamping.getTargetValue())
+        ? smoothDelayDamping.getTargetValue() : declaredPercentTarget(apvts, "delay_damping");
+    const float fallbackDelayMod = std::isfinite(smoothDelayMod.getTargetValue())
+        ? smoothDelayMod.getTargetValue() : declaredPercentTarget(apvts, "delay_mod");
+    const float fallbackReverbSize = std::isfinite(smoothReverbSize.getTargetValue())
+        ? smoothReverbSize.getTargetValue() : declaredPercentTarget(apvts, "reverb_size");
+    const float fallbackReverbDamping = std::isfinite(smoothReverbDamping.getTargetValue())
+        ? smoothReverbDamping.getTargetValue() : declaredPercentTarget(apvts, "reverb_damping");
+    const float fallbackReverbMix = std::isfinite(smoothReverbMix.getTargetValue())
+        ? smoothReverbMix.getTargetValue() : declaredPercentTarget(apvts, "reverb_mix");
+    const float fallbackReverbMod = std::isfinite(smoothReverbMod.getTargetValue())
+        ? smoothReverbMod.getTargetValue() : declaredPercentTarget(apvts, "reverb_mod");
+    const float fallbackMasterDrive = std::isfinite(smoothMasterDrive.getTargetValue())
+        ? smoothMasterDrive.getTargetValue() : declaredPercentTarget(apvts, "master_drive");
+    const float fallbackMasterWidth = std::isfinite(smoothMasterWidth.getTargetValue())
+        ? smoothMasterWidth.getTargetValue() : declaredPercentTarget(apvts, "master_width");
+    const float fallbackMasterMidDrive = std::isfinite(smoothMasterMidDrive.getTargetValue())
+        ? smoothMasterMidDrive.getTargetValue() : declaredPercentTarget(apvts, "master_mid_drive");
+    const float fallbackMasterSideDrive = std::isfinite(smoothMasterSideDrive.getTargetValue())
+        ? smoothMasterSideDrive.getTargetValue() : declaredPercentTarget(apvts, "master_side_drive");
+    const float fallbackOutputTrim = std::isfinite(smoothOutputTrim.getTargetValue())
+        ? smoothOutputTrim.getTargetValue() : declaredPercentTarget(apvts, "output_trim");
+
+    smoothOverall.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("overall")->load() / 100.0f, fallbackOverall));
+    smoothFatness.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("fatness")->load() / 100.0f, fallbackFatness));
+    smoothChorusDepth.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("chorus_depth")->load() / 100.0f, fallbackChorusDepth));
+    smoothChorusRate.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("chorus_rate")->load(), fallbackChorusRate));
+    smoothChorusMix.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("chorus_mix")->load() / 100.0f, fallbackChorusMix));
+    smoothDelayTime.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("delay_time")->load(), fallbackDelayTime));
     {
         // Exponential mapping: linear knob → musical feedback response
         // Applied to the target value so the exponential curve is preserved through smoothing
         float fbRaw = apvts.getRawParameterValue("delay_feedback")->load() / 100.0f;
-        smoothDelayFeedback.setTargetValue(fbRaw * fbRaw * 0.65f + fbRaw * 0.27f);
+        smoothDelayFeedback.setTargetValue(finiteSmoothingTarget(fbRaw * fbRaw * 0.65f + fbRaw * 0.27f, fallbackDelayFeedback));
     }
-    smoothDelayMix.setTargetValue(apvts.getRawParameterValue("delay_mix")->load() / 100.0f);
-    smoothDelayDamping.setTargetValue(apvts.getRawParameterValue("delay_damping")->load() / 100.0f);
-    smoothDelayMod.setTargetValue(apvts.getRawParameterValue("delay_mod")->load() / 100.0f);
-    smoothReverbSize.setTargetValue(apvts.getRawParameterValue("reverb_size")->load() / 100.0f);
-    smoothReverbDamping.setTargetValue(apvts.getRawParameterValue("reverb_damping")->load() / 100.0f);
-    smoothReverbMix.setTargetValue(apvts.getRawParameterValue("reverb_mix")->load() / 100.0f);
-    smoothReverbMod.setTargetValue(apvts.getRawParameterValue("reverb_mod")->load() / 100.0f);
-    smoothMasterDrive.setTargetValue(apvts.getRawParameterValue("master_drive")->load() / 100.0f);
-    smoothMasterWidth.setTargetValue(apvts.getRawParameterValue("master_width")->load() / 100.0f);
-    smoothMasterMidDrive.setTargetValue(apvts.getRawParameterValue("master_mid_drive")->load() / 100.0f);
-    smoothMasterSideDrive.setTargetValue(apvts.getRawParameterValue("master_side_drive")->load() / 100.0f);
-    smoothOutputTrim.setTargetValue(apvts.getRawParameterValue("output_trim")->load() / 100.0f);
+    smoothDelayMix.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("delay_mix")->load() / 100.0f, fallbackDelayMix));
+    smoothDelayDamping.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("delay_damping")->load() / 100.0f, fallbackDelayDamping));
+    smoothDelayMod.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("delay_mod")->load() / 100.0f, fallbackDelayMod));
+    smoothReverbSize.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("reverb_size")->load() / 100.0f, fallbackReverbSize));
+    smoothReverbDamping.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("reverb_damping")->load() / 100.0f, fallbackReverbDamping));
+    smoothReverbMix.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("reverb_mix")->load() / 100.0f, fallbackReverbMix));
+    smoothReverbMod.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("reverb_mod")->load() / 100.0f, fallbackReverbMod));
+    smoothMasterDrive.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("master_drive")->load() / 100.0f, fallbackMasterDrive));
+    smoothMasterWidth.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("master_width")->load() / 100.0f, fallbackMasterWidth));
+    smoothMasterMidDrive.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("master_mid_drive")->load() / 100.0f, fallbackMasterMidDrive));
+    smoothMasterSideDrive.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("master_side_drive")->load() / 100.0f, fallbackMasterSideDrive));
+    smoothOutputTrim.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("output_trim")->load() / 100.0f, fallbackOutputTrim));
     const bool distortionBypass = apvts.getRawParameterValue("distortion_bypass")->load() > 0.5f;
     const bool chorusBypass = apvts.getRawParameterValue("chorus_bypass")->load() > 0.5f;
     const bool delayBypass = apvts.getRawParameterValue("delay_bypass")->load() > 0.5f;

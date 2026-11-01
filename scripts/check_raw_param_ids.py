@@ -233,9 +233,9 @@ def run_text(cpp_text):
     return None
 
 
-PM_BLOCK_ANCHOR = "    smoothOutputTrim.setTargetValue(apvts.getRawParameterValue(\"output_trim\")->load() / 100.0f);"
+PM_BLOCK_ANCHOR = "    smoothOutputTrim.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue(\"output_trim\")->load() / 100.0f, fallbackOutputTrim));"
 PB_REGION_ANCHOR = (
-    "    smoothMasterSideDrive.setTargetValue(apvts.getRawParameterValue(\"master_side_drive\")->load() / 100.0f);\n"
+    "    smoothMasterSideDrive.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue(\"master_side_drive\")->load() / 100.0f, fallbackMasterSideDrive));\n"
 )
 probes = [
     ("rename 'distortion_bypass' in one processBlock read",
@@ -252,7 +252,7 @@ probes = [
     ("drop smoothOutputTrim.setTargetValue from processBlock",
      lambda s: s.replace(
          PB_REGION_ANCHOR
-         + "    smoothOutputTrim.setTargetValue(apvts.getRawParameterValue(\"output_trim\")->load() / 100.0f);\n"
+         + PM_BLOCK_ANCHOR + "\n"
          + "    const bool distortionBypass",
          PB_REGION_ANCHOR + "    const bool distortionBypass"),
     ),
