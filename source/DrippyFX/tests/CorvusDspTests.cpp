@@ -400,6 +400,206 @@ public:
     }
 };
 
+//==============================================================================
+// MASTER STAGE UNITY (CV-035)
+// Master Drive is a saturation amount, not a gain: drive 0 must pass the
+// signal through, so a default instance keeps the audio instead of muting it.
+// The stage still applies its HF/LF shelves, smoothing and DC blocker by
+// design, so "passthrough" here means the saturator is unity at drive 0 and
+// the drive-0 stage matches the same stage with the saturator bypassed.
+//==============================================================================
+struct MasterStageRender
+{
+    std::vector<float> left;
+    std::vector<float> right;
+};
+
+MasterStageRender renderMasterStage(const std::vector<float>& leftIn,
+                                    const std::vector<float>& rightIn,
+                                    float midDrive, float sideDrive, float width)
+{
+    MasterOutputStage stage;
+    stage.prepare(48000.0);
+
+    MasterStageRender output;
+    output.left.resize(leftIn.size());
+    output.right.resize(rightIn.size());
+
+    for (std::size_t frame = 0; frame < leftIn.size(); ++frame)
+    {
+        float left = leftIn[frame];
+        float right = rightIn[frame];
+        stage.process(left, right, midDrive, sideDrive, width);
+        output.left[frame] = left;
+        output.right[frame] = right;
+    }
+
+    return output;
+}
+
+// Linear reference for the drive-0 stage. This calls MasterOutputStage::process
+// with the saturator disabled. A handwritten second copy of the shelves,
+// oversampler, smoother and DC blocker does not match that function under
+// MSVC /fp:fast: both copies calling pushPullSaturate(x, 0) still differed by
+// 8.732080e-6 (width 1) and 2.38419e-7 (width 2). The old mute failed the
+// centre-peak and primitive unity checks, which do not use this reference.
+MasterStageRender renderMasterStageDry(const std::vector<float>& leftIn,
+                                       const std::vector<float>& rightIn,
+                                       float width)
+{
+    MasterOutputStage stage;
+    stage.prepare(48000.0);
+
+    MasterStageRender output;
+    output.left.resize(leftIn.size());
+    output.right.resize(rightIn.size());
+
+    for (std::size_t frame = 0; frame < leftIn.size(); ++frame)
+    {
+        float left = leftIn[frame];
+        float right = rightIn[frame];
+        stage.process(left, right, 0.0f, 0.0f, width, false);
+        output.left[frame] = left;
+        output.right[frame] = right;
+    }
+
+    return output;
+}
+
+class CorvusMasterStageUnityTest final : public juce::UnitTest
+{
+public:
+    CorvusMasterStageUnityTest()
+        : juce::UnitTest("Corvus master stage unity")
+    {
+    }
+
+    void runTest() override
+    {
+        beginTest("master drive 0 saturator passes +/-0.5 through unchanged");
+        for (const auto value : { -0.5f, 0.5f })
+        {
+            const auto shaped = MasterOutputStage::pushPullSaturate(value, 0.0f);
+            expect(std::abs(shaped - value) <= 1.0e-9f,
+                   "master drive 0 must return the input sample unchanged; a zero "
+                   "here means the drive knob is still a mute/gain control");
+        }
+
+        beginTest("master drive 0 matches the dry linear path at width 1.0 (+/-0.5)");
+        std::vector<float> probeLeft(2048);
+        std::vector<float> probeRight(2048);
+        for (std::size_t frame = 0; frame < probeLeft.size(); ++frame)
+        {
+            probeLeft[frame] = (frame % 2 == 0) ? 0.5f : -0.5f;
+            probeRight[frame] = (frame % 4 < 2) ? 0.5f : -0.5f;
+        }
+        const auto unity = renderMasterStage(probeLeft, probeRight, 0.0f, 0.0f, 1.0f);
+        const auto dry = renderMasterStageDry(probeLeft, probeRight, 1.0f);
+        auto maximumDifference = 0.0f;
+        for (std::size_t frame = 0; frame < dry.left.size(); ++frame)
+        {
+            maximumDifference = std::max(maximumDifference,
+                std::abs(unity.left[frame] - dry.left[frame]));
+            maximumDifference = std::max(maximumDifference,
+                std::abs(unity.right[frame] - dry.right[frame]));
+        }
+        expect(maximumDifference <= 1.0e-9f,
+               "master drive 0 must equal the same stage with the saturator "
+               "bypassed; a large difference means drive 0 still silences the "
+               "mid/side paths; maximum difference = " + juce::String(maximumDifference, 12));
+
+        beginTest("master drive 0 keeps identical L/R centre intact at width 2.0");
+        std::vector<float> centre(2048);
+        for (std::size_t frame = 0; frame < centre.size(); ++frame)
+        {
+            const auto phase = static_cast<double>(frame) * 440.0
+                * juce::MathConstants<double>::twoPi / 48000.0;
+            centre[frame] = 0.5f * static_cast<float>(std::sin(phase));
+        }
+        const auto wide = renderMasterStage(centre, centre, 0.0f, 0.0f, 2.0f);
+        const auto wideDry = renderMasterStageDry(centre, centre, 2.0f);
+        auto centreDifference = 0.0f;
+        auto centrePeak = 0.0f;
+        auto centreMismatches = 0;
+        for (std::size_t frame = 0; frame < wide.left.size(); ++frame)
+        {
+            centreDifference = std::max(centreDifference,
+                std::abs(wide.left[frame] - wideDry.left[frame]));
+            centreDifference = std::max(centreDifference,
+                std::abs(wide.right[frame] - wideDry.right[frame]));
+            if (wide.left[frame] != wide.right[frame])
+                ++centreMismatches;
+            centrePeak = std::max(centrePeak, std::abs(wide.left[frame]));
+        }
+        expect(centreMismatches == 0,
+               "identical L/R input at width 2.0 must stay L == R; unequal "
+               "channels mean the mid path was zeroed and the centre cancelled");
+        expect(centrePeak > 0.05f,
+               "the centre content must survive drive 0; near-zero output means "
+               "the master stage is still muting a default instance");
+        expect(centreDifference <= 1.0e-9f,
+               "drive 0 must pass the centre through the saturator unchanged; maximum difference = "
+                   + juce::String(centreDifference, 12));
+
+        beginTest("master drive 0.2 is not a volume cut versus drive 0.9");
+        constexpr auto measureFrames = 48000;
+        std::vector<float> sine(measureFrames);
+        for (std::size_t frame = 0; frame < sine.size(); ++frame)
+        {
+            const auto phase = static_cast<double>(frame) * 440.0
+                * juce::MathConstants<double>::twoPi / 48000.0;
+            sine[frame] = 0.5f * static_cast<float>(std::sin(phase));
+        }
+        const auto soft = renderMasterStage(sine, sine, 0.2f, 0.2f, 1.0f);
+        const auto hot = renderMasterStage(sine, sine, 0.9f, 0.9f, 1.0f);
+        auto softEnergy = 0.0;
+        auto hotEnergy = 0.0;
+        for (std::size_t frame = 4800; frame < sine.size(); ++frame)
+        {
+            softEnergy += static_cast<double>(soft.left[frame]) * soft.left[frame];
+            hotEnergy += static_cast<double>(hot.left[frame]) * hot.left[frame];
+        }
+        const auto softRms = std::sqrt(softEnergy / static_cast<double>(sine.size() - 4800));
+        const auto hotRms = std::sqrt(hotEnergy / static_cast<double>(sine.size() - 4800));
+        const auto differenceDb = 20.0 * std::log10(softRms / hotRms);
+        logMessage(juce::String("Master drive 0.2 vs 0.9 RMS: ")
+                   + juce::String(differenceDb, 3) + juce::String(" dB"));
+        expect(differenceDb > -1.0,
+               "drive 0.2 must be within 1 dB of drive 0.9 for a 0.5 sine; a "
+               "larger drop means the drive knob is still a level/mute control "
+               "instead of a saturation amount");
+
+        beginTest("master drive 1.8 keeps today's fully-wet shaper output");
+        const auto todaysShaper = [](float value, float drive)
+        {
+            if (value >= 0.0f)
+            {
+                const auto driven = value * drive;
+                const auto shapedInput = driven * (1.0f + driven * 0.15f);
+                return padeTanh(shapedInput);
+            }
+            const auto driven = -value * drive;
+            const auto shapedInput = driven * (1.0f + driven * 0.25f);
+            return -padeTanh(shapedInput);
+        };
+        auto mismatch = 0;
+        for (auto value = -1.5f; value <= 1.5f; value += 0.0625f)
+        {
+            const auto shippedAtOnePointEight =
+                todaysShaper(value, 1.8f);
+            const auto shippedAtOne = todaysShaper(value, 1.0f);
+            if (std::abs(MasterOutputStage::pushPullSaturate(value, 1.8f)
+                         - shippedAtOnePointEight) > 1.0e-7f
+                || std::abs(MasterOutputStage::pushPullSaturate(value, 1.0f)
+                            - shippedAtOne) > 1.0e-7f)
+                ++mismatch;
+        }
+        expect(mismatch == 0,
+               "drive >= 1 must stay fully wet and keep the shipped push-pull "
+               "shaper output; a mismatch changes today's saturated sound");
+    }
+};
+
 class CorvusWavetableOscillatorTest final : public juce::UnitTest
 {
 public:
@@ -1018,6 +1218,7 @@ public:
 CorvusOversamplingTest corvusOversamplingTest;
 CorvusDelayChannelIsolationTest corvusDelayChannelIsolationTest;
 CorvusEffectsBaselineTest corvusEffectsBaselineTest;
+CorvusMasterStageUnityTest corvusMasterStageUnityTest;
 CorvusWavetableOscillatorTest corvusWavetableOscillatorTest;
 CorvusVoiceAndEngineTest corvusVoiceAndEngineTest;
 CorvusInstrumentProcessorTest corvusInstrumentProcessorTest;
@@ -1033,7 +1234,15 @@ int main()
     auto failures = 0;
     for (auto index = 0; index < runner.getNumResults(); ++index)
         if (const auto* result = runner.getResult(index))
+        {
             failures += result->failures;
+            if (result->failures > 0)
+            {
+                std::cout << result->unitTestName << " / " << result->subcategoryName << '\n';
+                for (const auto& message : result->messages)
+                    std::cout << message << '\n';
+            }
+        }
 
     std::cout << "Corvus DSP tests: " << failures << " failure(s)\n";
     return failures == 0 ? 0 : 1;

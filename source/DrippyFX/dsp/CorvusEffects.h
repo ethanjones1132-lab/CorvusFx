@@ -1576,29 +1576,54 @@ struct MasterOutputStage
             // for warmth and "tube-like" character. Unlike symmetric tanh() which only
             // produces odd harmonics, push-pull adds even-order content that our ears
             // perceive as musical richness and body.
+            //
+            // CV-035: `drive` is a saturation AMOUNT, unity at 0, not a gain.
+            // The shaper keeps its existing asymmetry and internal gain (k = drive),
+            // but its output is blended with the dry signal:
+            //
+            //     out = x + a * (shaped - x),   a = min(drive, 1)
+            //
+            // so drive 0 is an exact passthrough, 0 < drive < 1 adds saturation
+            // without a level cut, and drive >= 1 is fully wet (today's output).
             static inline float pushPullSaturate(float x, float drive)
             {
                 // Asymmetric waveshaping: positive and negative halves shaped differently
                 // This creates even harmonics (2nd, 4th) in addition to odd
                 // Drive controls intensity: 0 = clean, 1 = moderate coloration
+                const float amount = juce::jmin(drive, 1.0f);
+                float shaped;
                 if (x >= 0.0f)
                 {
                     // Positive half: softer knee, more 2nd harmonic
                     float d = x * drive;
                     float z = d * (1.0f + d * 0.15f);
-                    return padeTanh(z);
+                    shaped = padeTanh(z);
                 }
                 else
                 {
                     // Negative half: harder knee, different harmonic balance
                     float d = -x * drive;
                     float z = d * (1.0f + d * 0.25f);
-                    return -padeTanh(z);
+                    shaped = -padeTanh(z);
                 }
+                // Fully wet above 1.0 so drive >= 1 keeps today's samples exactly.
+                if (amount >= 1.0f)
+                    return shaped;
+                return x + amount * (shaped - x);
             }
 
-    // Mid/Side processing with independent saturation and width control
-    void process(float& L, float& R, float midDrive, float sideDrive, float width)
+    // Mid/Side processing with independent saturation and width control.
+    // applySaturator is false only for the linear reference. It has to run
+    // this same function: a second copy of the chain does not match under
+    // MSVC /fp:fast, even when both copies call pushPullSaturate(x, 0).
+    // noinline keeps the two call sites on one instruction stream.
+#if defined(_MSC_VER)
+    __declspec(noinline)
+#elif defined(__clang__) || defined(__GNUC__)
+    __attribute__((noinline))
+#endif
+    void process(float& L, float& R, float midDrive, float sideDrive, float width,
+                 bool applySaturator = true)
     {
         // ── Convert L/R to Mid/Side ──
         float mid = (L + R) * 0.5f;
@@ -1624,13 +1649,19 @@ struct MasterOutputStage
 
         // ── 3. Push-pull saturation on mid and side independently (2x oversampled) ──
         // Mid saturation (mono oversampling -- avoids 2x redundant processing)
-        oversampleMid.processSampleMono(mid, mid, [this, midDrive](float in, float& out) {
-            out = pushPullSaturate(in, midDrive);
+        oversampleMid.processSampleMono(mid, mid, [this, midDrive, applySaturator](float in, float& out) {
+            if (!applySaturator)
+                out = in;
+            else
+                out = pushPullSaturate(in, midDrive);
         });
 
         // Side saturation (mono oversampling -- avoids 2x redundant processing)
-        oversampleSide.processSampleMono(side, side, [this, sideDrive](float in, float& out) {
-            out = pushPullSaturate(in, sideDrive);
+        oversampleSide.processSampleMono(side, side, [this, sideDrive, applySaturator](float in, float& out) {
+            if (!applySaturator)
+                out = in;
+            else
+                out = pushPullSaturate(in, sideDrive);
         });
 
         // ── 4. Final ultra-gentle smoothing ──
