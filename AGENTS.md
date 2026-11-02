@@ -1,6 +1,6 @@
 # AGENTS.md — Corvus VST (DrippyFX) Agent Working Rules
 
-> **Last updated:** 2026-10-14 (integrated baseline and portable verification)
+> **Last updated:** 2026-11-02 (pre-build verification targets the in-repo source tree)
 
 ## Project Structure
 
@@ -21,22 +21,31 @@ Git history — never fork the content.
 - macOS ARM builds require an SSE compatibility include path; Windows builds
   use native SSE. Build tools and JUCE live outside the source checkout.
 
-### Windows build tree — build/deploy SoT
+### Windows build — in-repo source tree
 
-- **Git root:** `C:\Projects\Corvus VST`
-- **Build target:** `C:\Users\ethan\Downloads\DrippyFX_v1.0.0_Complete\DrippyFX\`
+- **Build source:** `source/DrippyFX/` in this checkout — run
+  `scripts/sync_corvus_source.ps1 -VerifyOnly` before any Windows build to
+  confirm every mapped file is present, readable and hashed in this tree.
 - **VST3 binary:** `C:\Projects\Corvus VST\drippy\NewProject.vst3\Contents\x86_64-win\DrippyMk1.vst3`
-- **VS solution:** `C:\Users\ethan\Downloads\DrippyFX_v1.0.0_Complete\NewProject\Builds\VisualStudio2026\NewProject.sln`
 - **JUCE SDK:** `C:\Users\ethan\Downloads\juce-8.0.12-windows\JUCE`
+- **Legacy Downloads project tree (not the build source, nothing to sync):**
+  `C:\Users\ethan\Downloads\DrippyFX_v1.0.0_Complete\` (including its
+  `NewProject\Builds\VisualStudio2026\NewProject.sln`) — read only when a
+  destination is passed explicitly with `-DestinationRoot`.
 
 ## Working Rules
 
-1. **Edit `source/DrippyFX/` first, then sync to Windows Downloads before
-   building there** — use `scripts/sync_corvus_source.ps1` for its explicit source map and hash verification.
+1. **Edit `source/DrippyFX/` first and verify it before any Windows build** —
+   run `scripts/sync_corvus_source.ps1 -VerifyOnly`; it hashes every mapped
+   file in the in-repo tree and fails on a missing mapped path. No Downloads
+   copy is involved unless you pass `-DestinationRoot` explicitly.
 2. **Keep integration changes focused** — preserve branch intent and verify the resulting source and binaries.
-3. **Always sync explicitly (Windows)** — use the sync script in copy mode,
-   then `-VerifyOnly`; its map includes shared DSP, Instrument, and test files.
-4. **Build: SharedCode gate first** (13s), then full .sln (3min) if gate passes (Windows).
+3. **Always verify explicitly before a Windows build** — `-VerifyOnly` proves
+   every mapped shared DSP, Instrument, and test file exists, is readable, and
+   hashes in the in-repo source tree. With `-DestinationRoot <path>` it hashes
+   that copy and fails on any difference or missing file; there is no implicit
+   sync target.
+4. **Build: SharedCode gate first** (13s), then the full build (3min) if the gate passes (Windows).
 5. **Verify binary changed vs previous commit** — MD5 the VST3 before/after each build (manual, no dedicated script in this repo).
 6. **Preset interop 4-way invariant** — On preset-count changes: getNumPrograms(), idToPreset[], presetToId[], presetFromId[] + guards must all stay in sync (`scripts/check_preset_tables.py` verifies this in the gate).
 7. **Conventional commits:** `type(scope): description` — what, why, impact.
@@ -52,7 +61,7 @@ Git history — never fork the content.
 
 ## Known Pitfalls
 
-- Git SoT / Windows Downloads desync causes silent build failures — sync before every Windows build
+- Build from the in-repo `source/DrippyFX/` tree and run `scripts/sync_corvus_source.ps1 -VerifyOnly` before every Windows build — a stale external copy is no longer the default verification target
 - MSBuild incremental misses header changes — verify MD5, force rebuild if needed
 - Preset array, idToPreset, presetToId, presetFromId must all grow together on expansion (machine-checked by `scripts/check_preset_tables.py`)
 - `patch` tool corrupts C++ on Windows — use binary-mode Python scripts for multi-line edits over there; on this Mac the built-in patch tool works fine
