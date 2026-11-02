@@ -219,3 +219,89 @@ add_custom_target(CorvusFXStateTestsRun
     COMMAND $<TARGET_FILE:CorvusFXStateTests>
     DEPENDS CorvusFXStateTests
 )
+
+# ── CV-033: offline demo renderers ───────────────────────────────────────────
+# Two console targets, one per product. Each links the real product processor
+# (including its createPluginFilter factory) and the same shared main. Keeping
+# the products in separate executables avoids duplicate createPluginFilter
+# symbols; nothing is copied into a synthetic DSP stand-in. The renderers use
+# no audio device, host, microphone, user input file, network or model.
+juce_add_console_app(CorvusRenderFX
+    PRODUCT_NAME "CorvusRenderFX"
+)
+
+juce_generate_juce_header(CorvusRenderFX)
+
+target_sources(CorvusRenderFX
+    PRIVATE
+        PluginProcessor.cpp
+        PluginEditor.cpp
+        tools/CorvusOfflineRender.cpp
+)
+
+target_include_directories(CorvusRenderFX
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_compile_definitions(CorvusRenderFX
+    PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0
+        CORVUS_RENDER_PRODUCT_FX=1
+)
+
+target_link_libraries(CorvusRenderFX
+    PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
+if(MSVC)
+    target_compile_options(CorvusRenderFX PRIVATE /W4 /fp:fast /arch:AVX2)
+else()
+    target_compile_options(CorvusRenderFX PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+juce_add_console_app(CorvusRenderInstrument
+    PRODUCT_NAME "CorvusRenderInstrument"
+)
+
+juce_generate_juce_header(CorvusRenderInstrument)
+
+target_sources(CorvusRenderInstrument
+    PRIVATE
+        instrument/CorvusInstrumentProcessor.cpp
+        instrument/CorvusInstrumentEditor.cpp
+        tools/CorvusOfflineRender.cpp
+)
+
+target_include_directories(CorvusRenderInstrument
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_compile_definitions(CorvusRenderInstrument
+    PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0
+        CORVUS_RENDER_PRODUCT_INSTRUMENT=1
+)
+
+target_link_libraries(CorvusRenderInstrument
+    PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
+if(MSVC)
+    target_compile_options(CorvusRenderInstrument PRIVATE /W4 /fp:fast /arch:AVX2)
+else()
+    target_compile_options(CorvusRenderInstrument PRIVATE -Wall -Wextra -Wpedantic)
+endif()
