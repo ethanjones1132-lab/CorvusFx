@@ -1,8 +1,10 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -325,7 +327,277 @@ public:
         expectWithinAbsoluteError(getFatness(*restored), 0.35f, 0.0001f);
     }
 };
+
+//==============================================================================
+// REVERB TAIL AUDIO (CV-039)
+// The modulated-delay history repair must be audible as a repaired reverb tail,
+// not hidden by the final limiter, a clamp or a gain change. These long-running
+// regressions render the real CorvusFXAudioProcessor through the public
+// programs whose published presets drive the reverb modulation hardest:
+// 13 = "Cosmic Wide" (reverb_mod 85%, reverb_size 80%, delay 160 ms) and
+// 21 = "Event Horizon" (reverb_mod 90%, reverb_size 95%, delay 800 ms with 65%
+// feedback). Both signs of the signed comb/allpass modulation therefore run
+// through the longest published tails with continuously non-silent input.
+//==============================================================================
+class CorvusFxReverbAudioTest final : public juce::UnitTest
+{
+public:
+    CorvusFxReverbAudioTest() : juce::UnitTest("Corvus FX reverb audio") {}
+
+    void runTest() override
+    {
+        const std::array<int, 2> programs { 13, 21 };
+        const std::array<const char*, 2> programNames { "Cosmic Wide", "Event Horizon" };
+        // The published reverb modulation / size / delay feedback of programs
+        // 13 and 21 (parameter values in their native percent units).
+        const std::array<float, 2> expectedReverbMod { 85.0f, 90.0f };
+        const std::array<float, 2> expectedReverbSize { 80.0f, 95.0f };
+        const std::array<float, 2> expectedDelayFeedback { 25.0f, 65.0f };
+
+        beginTest("deterministic drive input is continuously non-silent and bounded");
+        expectInputIsContinuous();
+
+        for (std::size_t index = 0; index < programs.size(); ++index)
+        {
+            const auto program = programs[index];
+            const juce::String name = programNames[index];
+
+            beginTest("program " + juce::String(program) + " (" + name
+                      + ") keeps a finite, unrailed, audible tail");
+
+            auto processor = std::make_unique<CorvusFXAudioProcessor>();
+            expectEquals(processor->getNumPrograms(), 36);
+            processor->setCurrentProgram(program);
+            expectEquals(processor->getCurrentProgram(), program);
+            expect(processor->getProgramName(program) == name,
+                   "public program " + juce::String(program) + " must be \"" + name + "\"");
+            // Apply the published preset through its public entry point as well,
+            // so the render never depends on the order in which a host-visible
+            // program change is fanned out to the parameter listeners.
+            processor->loadPreset(program);
+            expectWithinAbsoluteError(
+                processor->apvts.getRawParameterValue("reverb_mod")->load(),
+                expectedReverbMod[index], 1.0e-3f);
+            expectWithinAbsoluteError(
+                processor->apvts.getRawParameterValue("reverb_size")->load(),
+                expectedReverbSize[index], 1.0e-3f);
+            expectWithinAbsoluteError(
+                processor->apvts.getRawParameterValue("delay_feedback")->load(),
+                expectedDelayFeedback[index], 1.0e-3f);
+            processor->prepareToPlay(sampleRate, blockSize);
+
+            const auto rendered = renderProgram(*processor);
+            expectBoundedLiveOutput(rendered, name);
+
+            // Modulation must still move the tail: the same public program with
+            // reverb_mod at 0 has to render a different signal.
+            auto unmodulated = std::make_unique<CorvusFXAudioProcessor>();
+            unmodulated->setCurrentProgram(program);
+            unmodulated->loadPreset(program);
+            unmodulated->apvts.getParameter("reverb_mod")->setValueNotifyingHost(0.0f);
+            unmodulated->prepareToPlay(sampleRate, blockSize);
+            const auto unmodulatedRender = renderProgram(*unmodulated);
+
+            auto differenceEnergy = 0.0;
+            for (std::size_t sample = 0; sample < rendered.left.size(); ++sample)
+            {
+                const auto differenceLeft = static_cast<double>(rendered.left[sample])
+                                          - static_cast<double>(unmodulatedRender.left[sample]);
+                const auto differenceRight = static_cast<double>(rendered.right[sample])
+                                           - static_cast<double>(unmodulatedRender.right[sample]);
+                differenceEnergy += differenceLeft * differenceLeft
+                                  + differenceRight * differenceRight;
+            }
+            const auto differenceRms = std::sqrt(
+                differenceEnergy / (2.0 * static_cast<double>(rendered.left.size())));
+            expect(differenceRms > 1.0e-4,
+                   name + ": reverb modulation must still change the tail (difference RMS "
+                       + juce::String(differenceRms, 6) + ")");
+
+            // The tail assertions above are only meaningful if this program
+            // renders deterministically from the same public state and input.
+            auto repeat = std::make_unique<CorvusFXAudioProcessor>();
+            repeat->setCurrentProgram(program);
+            repeat->loadPreset(program);
+            repeat->prepareToPlay(sampleRate, blockSize);
+            const auto repeated = renderProgram(*repeat);
+            expect(repeated.left == rendered.left && repeated.right == rendered.right,
+                   name + ": the same public program and input must render bit-for-bit");
+        }
+    }
+
+private:
+    static constexpr double sampleRate = 48000.0;
+    static constexpr int blockSize = 512;
+    static constexpr int toneSamples = 6 * 48000;     // 6 s of continuous drive
+    static constexpr int silenceSamples = 2 * 48000;  // 2 s of released tail
+
+    struct ProgramRender
+    {
+        std::vector<float> left;
+        std::vector<float> right;
+    };
+
+    // Deterministic, always-on, bounded stereo drive: three incommensurate
+    // partials per channel, peak 0.30, so every block carries signal.
+    static float testInput(int channel, juce::int64 position)
+    {
+        const auto twoPi = juce::MathConstants<double>::twoPi;
+        const auto t = static_cast<double>(position) / sampleRate;
+        if (channel == 0)
+            return 0.18f * static_cast<float>(std::sin(twoPi * 173.0 * t))
+                 + 0.083f * static_cast<float>(std::sin(twoPi * 311.7 * t + 0.7))
+                 + 0.038f * static_cast<float>(std::sin(twoPi * 47.3 * t + 1.9));
+        return 0.165f * static_cast<float>(std::sin(twoPi * 181.3 * t + 0.4))
+             + 0.090f * static_cast<float>(std::sin(twoPi * 293.1 * t + 1.1))
+             + 0.045f * static_cast<float>(std::sin(twoPi * 53.9 * t + 2.6));
+    }
+
+    static ProgramRender renderProgram(CorvusFXAudioProcessor& processor)
+    {
+        ProgramRender rendered;
+        const auto total = toneSamples + silenceSamples;
+        rendered.left.assign(static_cast<std::size_t>(total), 0.0f);
+        rendered.right.assign(static_cast<std::size_t>(total), 0.0f);
+
+        juce::AudioBuffer<float> buffer(2, blockSize);
+        juce::MidiBuffer midi;
+        for (int start = 0; start < total; start += blockSize)
+        {
+            const auto samples = std::min(blockSize, total - start);
+            buffer.setSize(2, samples, false, false, true);
+            for (int i = 0; i < samples; ++i)
+            {
+                const auto position = start + i;
+                const auto live = position < toneSamples;
+                buffer.setSample(0, i, live ? testInput(0, position) : 0.0f);
+                buffer.setSample(1, i, live ? testInput(1, position) : 0.0f);
+            }
+            processor.processBlock(buffer, midi);
+            for (int i = 0; i < samples; ++i)
+            {
+                rendered.left[static_cast<std::size_t>(start + i)] =
+                    buffer.getSample(0, i);
+                rendered.right[static_cast<std::size_t>(start + i)] =
+                    buffer.getSample(1, i);
+            }
+        }
+        return rendered;
+    }
+
+    void expectInputIsContinuous()
+    {
+        auto peak = 0.0f;
+        auto quietestBlockRms = std::numeric_limits<double>::max();
+        for (int start = 0; start < toneSamples; start += blockSize)
+        {
+            auto energy = 0.0;
+            for (int i = 0; i < blockSize; ++i)
+            {
+                const auto left = testInput(0, start + i);
+                const auto right = testInput(1, start + i);
+                energy += static_cast<double>(left) * static_cast<double>(left)
+                        + static_cast<double>(right) * static_cast<double>(right);
+                peak = std::max(peak, std::max(std::abs(left), std::abs(right)));
+            }
+            quietestBlockRms = std::min(quietestBlockRms,
+                                        std::sqrt(energy / (2.0 * blockSize)));
+        }
+        expect(quietestBlockRms > 0.02,
+               "every drive block must carry signal (quietest RMS "
+                   + juce::String(quietestBlockRms, 6) + ")");
+        expect(peak > 0.1f && peak <= 0.35f,
+               "the drive must stay bounded below full scale (peak "
+                   + juce::String(peak, 6) + ")");
+    }
+
+    void expectBoundedLiveOutput(const ProgramRender& rendered, const juce::String& name)
+    {
+        auto peak = 0.0f;
+        auto railSamples = 0;
+        auto fullScaleSamples = 0;
+        auto nonFinite = 0;
+        auto longestSilence = 0;
+        auto silentRun = 0;
+        for (std::size_t sample = 0; sample < rendered.left.size(); ++sample)
+        {
+            const auto left = rendered.left[sample];
+            const auto right = rendered.right[sample];
+            if (!std::isfinite(left) || !std::isfinite(right))
+                ++nonFinite;
+            peak = std::max(peak, std::max(std::abs(left), std::abs(right)));
+            if (std::abs(left) >= 0.99f || std::abs(right) >= 0.99f)
+                ++railSamples;
+            if (std::abs(left) >= 1.0f || std::abs(right) >= 1.0f)
+                ++fullScaleSamples;
+            // A silent latch only counts while the drive is present; a released
+            // tail is allowed to decay to exact zero at the end of the run.
+            if (sample < static_cast<std::size_t>(toneSamples)
+                && std::abs(left) < 1.0e-6f && std::abs(right) < 1.0e-6f)
+            {
+                ++silentRun;
+                longestSilence = std::max(longestSilence, silentRun);
+            }
+            else
+                silentRun = 0;
+        }
+        expect(nonFinite == 0, name + ": output must stay finite");
+        expect(peak > 0.02f, name + ": the chain must produce audible output (peak "
+                                + juce::String(peak, 6) + ")");
+        // Product soft clip starts at 1.0 and the hard clamp is ±1.5
+        // (padeSoftClip threshold, then jlimit). Unity output trim does not
+        // pull a legal over back under 1. Sol's latch was peak 1.181579 and
+        // 699855/720000 samples above full scale, plus a silence latch on
+        // program 21. A hot preset may kiss full scale; it may not sit there.
+        // 5% of this render is 19200 samples. Measured 2026-11-02 Windows
+        // x64 Release: Cosmic Wide 47/384000, Event Horizon 2268/384000.
+        const auto fullScaleLimit = static_cast<int>(rendered.left.size() / 20);
+        expect(peak < 1.05f, name + ": output must not latch onto the limiter rail (peak "
+                                 + juce::String(peak, 6)
+                                 + " ge0.99=" + juce::String(railSamples)
+                                 + " ge1=" + juce::String(fullScaleSamples)
+                                 + "/" + juce::String(static_cast<int>(rendered.left.size())) + ")");
+        expect(fullScaleSamples < fullScaleLimit,
+               name + ": full-scale samples must stay rare (ge1="
+                   + juce::String(fullScaleSamples) + " limit="
+                   + juce::String(fullScaleLimit) + ")");
+        expect(longestSilence < 2048,
+               name + ": output must not silently latch (longest silent run "
+                   + juce::String(longestSilence) + ")");
+
+        const auto lastSecondStart = static_cast<std::size_t>(toneSamples - 48000);
+        auto toneEnergy = 0.0;
+        for (auto sample = lastSecondStart;
+             sample < static_cast<std::size_t>(toneSamples); ++sample)
+        {
+            toneEnergy += static_cast<double>(rendered.left[sample])
+                        * static_cast<double>(rendered.left[sample]);
+            toneEnergy += static_cast<double>(rendered.right[sample])
+                        * static_cast<double>(rendered.right[sample]);
+        }
+        const auto toneRms = std::sqrt(toneEnergy / (2.0 * 48000.0));
+        expect(toneRms > 0.01 && toneRms < 0.5,
+               name + ": the last second of drive must stay at a sensible level (RMS "
+                   + juce::String(toneRms, 6) + ")");
+
+        auto tailEnergy = 0.0;
+        for (auto sample = static_cast<std::size_t>(toneSamples);
+             sample < rendered.left.size(); ++sample)
+        {
+            tailEnergy += static_cast<double>(rendered.left[sample])
+                        * static_cast<double>(rendered.left[sample]);
+            tailEnergy += static_cast<double>(rendered.right[sample])
+                        * static_cast<double>(rendered.right[sample]);
+        }
+        const auto tailRms = std::sqrt(tailEnergy / (2.0 * silenceSamples));
+        expect(tailRms > 0.001,
+               name + ": the released tail must stay audible after the input stops (RMS "
+                   + juce::String(tailRms, 6) + ")");
+    }
+};
+
 CorvusFxStateTest corvusFxStateTest;
+CorvusFxReverbAudioTest corvusFxReverbAudioTest;
 }
 
 int main()
@@ -337,7 +609,13 @@ int main()
     auto failures = 0;
     for (auto index = 0; index < runner.getNumResults(); ++index)
         if (const auto* result = runner.getResult(index))
+        {
             failures += result->failures;
+            // The GUI logger swallows UnitTestRunner::logMessage on Windows,
+            // so a console run would otherwise print only this total.
+            for (const auto& message : result->messages)
+                std::cout << message << '\n';
+        }
     std::cout << "Corvus FX state tests: " << failures << " failure(s)\n";
     return failures == 0 ? 0 : 1;
 }

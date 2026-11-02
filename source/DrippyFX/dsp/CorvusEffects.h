@@ -1078,34 +1078,64 @@ struct UpgradedReverb
     struct CombFilter
     {
         static constexpr int MAX_SIZE = 8192;
-        float buf[MAX_SIZE] = {};
-        int size = 1, pos = 0;
+        // CV-039: history capacity is separate from the nominal delay.
+        // The nominal delay (`size`) is the echo time at zero modulation; the
+        // write cursor walks a history ring of `size + HISTORY_GUARD` samples so
+        // a signed modulation offset can reach older history instead of
+        // wrapping into the nominal delay window. The previous read
+        // (`pos - modOffset` wrapped in `size`) turned a positive offset into a
+        // read one sample behind the write head: a near-zero-length comb loop
+        // (audible short feedback tail, spurious energy at the first samples)
+        // rather than the intended modulated echo. The guard also keeps the
+        // four Hermite taps of a fractional read inside recorded history, so no
+        // tap crosses the write head.
+        static constexpr int HISTORY_GUARD = 8;
+        // Largest supported signed read offset. HISTORY_GUARD - 3 leaves room
+        // for the Hermite look-ahead and keeps every tap inside the ring.
+        static constexpr float MAX_MOD_OFFSET = 4.0f;
+        float buf[MAX_SIZE + HISTORY_GUARD] = {};
+        int size = 1;                        // Nominal delay in samples (zero-mod echo)
+        int ringLength = 1 + HISTORY_GUARD;  // History capacity in samples
+        int pos = 0;                         // Write position inside the history ring
         float filterState = 0.0f;
         float damp1 = 0.0f, damp2 = 1.0f, fb = 0.0f;
 
-        void setSize(int s) { size = juce::jlimit(1, MAX_SIZE - 1, s); }
+        void setSize(int s)
+        {
+            size = juce::jlimit(1, MAX_SIZE - 1, s);
+            ringLength = size + HISTORY_GUARD;
+            if (pos >= ringLength) pos = 0;
+        }
         void setDamp(float d) { damp1 = d; damp2 = 1.0f - d; }
         void setFeedback(float f) { fb = f; }
         void mute() { std::memset(buf, 0, sizeof(buf)); filterState = 0.0f; pos = 0; }
 
         // modOffset: sub-sample read offset for reverb tail modulation.
         // Positive = longer delay (reads older data), negative = shorter.
+        // The offset moves the read around the nominal delay inside the
+        // history ring, so the echo stays at its nominal time for both signs.
         // Hermite cubic interpolation (from hermiteInterp utility) eliminates
         // modulation artifacts and aliasing in the reverb tail that linear
         // interpolation introduces when reading at fractional sample positions.
         inline float process(float input, float modOffset = 0.0f)
         {
-            float readF = static_cast<float>(pos) - modOffset;
-            // Wrap into [0, size)
-            if (readF < 0.0f) readF += static_cast<float>(size);
-            else if (readF >= static_cast<float>(size)) readF -= static_cast<float>(size);
+            float delayF = static_cast<float>(size)
+                         + juce::jlimit(-MAX_MOD_OFFSET, MAX_MOD_OFFSET, modOffset);
+            // Keep the read (and its Hermite taps) inside retained history:
+            // at least two samples behind the write head, at most ringLength-3
+            // so the idx+2 look-ahead cannot wrap onto the write head.
+            delayF = juce::jlimit(2.0f, static_cast<float>(ringLength - 3), delayF);
+            float readF = static_cast<float>(pos) - delayF;
+            // Wrap into [0, ringLength) — one step suffices for the bounds above.
+            if (readF < 0.0f) readF += static_cast<float>(ringLength);
+            else if (readF >= static_cast<float>(ringLength)) readF -= static_cast<float>(ringLength);
 
             // Use Hermite cubic interpolation for artifact-free modulated reads
-            float output = hermiteInterp(buf, size, readF);
+            float output = hermiteInterp(buf, ringLength, readF);
 
             filterState = output * damp2 + filterState * damp1;
             buf[pos] = input + filterState * fb;
-            if (++pos >= size) pos = 0;
+            if (++pos >= ringLength) pos = 0;
             return output;
         }
     };
@@ -1113,11 +1143,25 @@ struct UpgradedReverb
     struct AllpassDiffuser
     {
         static constexpr int MAX_SIZE = 4096;
-        float buf[MAX_SIZE] = {};
-        int size = 1, pos = 0;
+        // CV-039: same nominal-delay / history-capacity split as CombFilter.
+        // The diffusion delay stays at its nominal `size` for both modulation
+        // signs; the extra guard retains the older history a positive offset
+        // reads and keeps fractional Hermite taps off the write head. The
+        // immediate -input feedthrough is unchanged: it never reads the ring.
+        static constexpr int HISTORY_GUARD = 8;
+        static constexpr float MAX_MOD_OFFSET = 4.0f;
+        float buf[MAX_SIZE + HISTORY_GUARD] = {};
+        int size = 1;                        // Nominal diffusion delay in samples
+        int ringLength = 1 + HISTORY_GUARD;  // History capacity in samples
+        int pos = 0;                         // Write position inside the history ring
         float fb = 0.5f;
 
-        void setSize(int s) { size = juce::jlimit(1, MAX_SIZE - 1, s); }
+        void setSize(int s)
+        {
+            size = juce::jlimit(1, MAX_SIZE - 1, s);
+            ringLength = size + HISTORY_GUARD;
+            if (pos >= ringLength) pos = 0;
+        }
         void setFeedback(float f) { fb = f; }
         void mute() { std::memset(buf, 0, sizeof(buf)); pos = 0; }
 
@@ -1126,17 +1170,22 @@ struct UpgradedReverb
         // Hermite cubic interpolation eliminates modulation artifacts and aliasing.
         inline float process(float input, float modOffset_ = 0.0f)
         {
-            float readF = static_cast<float>(pos) - modOffset_;
-            // Wrap into [0, size)
-            if (readF < 0.0f) readF += static_cast<float>(size);
-            else if (readF >= static_cast<float>(size)) readF -= static_cast<float>(size);
+            float delayF = static_cast<float>(size)
+                         + juce::jlimit(-MAX_MOD_OFFSET, MAX_MOD_OFFSET, modOffset_);
+            // Same history bounds as CombFilter: taps stay two samples behind
+            // the write head and clear of the idx+2 look-ahead wrap.
+            delayF = juce::jlimit(2.0f, static_cast<float>(ringLength - 3), delayF);
+            float readF = static_cast<float>(pos) - delayF;
+            // Wrap into [0, ringLength)
+            if (readF < 0.0f) readF += static_cast<float>(ringLength);
+            else if (readF >= static_cast<float>(ringLength)) readF -= static_cast<float>(ringLength);
 
             // Use Hermite cubic interpolation for artifact-free modulated reads
-            float delayed = hermiteInterp(buf, size, readF);
+            float delayed = hermiteInterp(buf, ringLength, readF);
 
             float output = -input + delayed;
             buf[pos] = input + delayed * fb;
-            if (++pos >= size) pos = 0;
+            if (++pos >= ringLength) pos = 0;
             return output;
         }
     };

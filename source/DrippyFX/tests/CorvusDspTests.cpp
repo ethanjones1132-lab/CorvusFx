@@ -12,6 +12,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace
@@ -336,6 +337,331 @@ private:
                 || actual.right[frame] != expected.right[frame])
                 ++mismatches;
         expect(mismatches == 0, what + " must reproduce the delay output bit-for-bit");
+    }
+};
+
+//==============================================================================
+// REVERB MODULATION HISTORY (CV-039)
+// The reverb's bounded comb/allpass filters must modulate around their nominal
+// delay while reading only recorded history. The previous read
+// (`pos - modOffset` wrapped inside the nominal delay) turned a positive
+// modulation offset into a read one sample behind the write head: a
+// near-zero-length feedback loop instead of a modulated echo. These regressions
+// drive the production UpgradedReverb::CombFilter / AllpassDiffuser classes
+// directly, at both modulation signs, at integer and fractional offsets
+// (including +1.275), at both ring-wrap phases and at the preset feedback and
+// damping extremes produced by UpgradedReverb::beginBlock().
+//==============================================================================
+class CorvusReverbModHistoryTest final : public juce::UnitTest
+{
+public:
+    CorvusReverbModHistoryTest()
+        : juce::UnitTest("Corvus reverb modulation history")
+    {
+    }
+
+    void runTest() override
+    {
+        using CombFilter = UpgradedReverb::CombFilter;
+        using AllpassDiffuser = UpgradedReverb::AllpassDiffuser;
+
+        const std::array<float, 5> offsets { 0.0f, 1.0f, -1.0f, 1.275f, -1.275f };
+        // Both wrap phases: 0 wraps every read at the end of the ring, 1197
+        // puts the impulse just before both ring wraps, and 1204 exercises the
+        // non-wrapping read/write window.
+        const std::array<int, 3> preRolls { 0, nominalDelay - 3, nominalDelay + 4 };
+        // Feedback/damping corners from beginBlock(): room 0 (0.70 / 0.70) and
+        // room 1 (0.97 / 0.20).
+        const std::array<std::pair<float, float>, 2> extremes {
+            std::pair<float, float> { 0.70f, 0.70f },
+            std::pair<float, float> { 0.97f, 0.20f } };
+
+        beginTest("default process(input) keeps the zero-mod echo at the nominal delay");
+        {
+            auto comb = std::make_unique<CombFilter>();
+            comb->setSize(nominalDelay);
+            comb->setFeedback(0.0f);
+            comb->setDamp(0.0f);
+
+            std::vector<float> output(analysisFrames, 0.0f);
+            for (int frame = 0; frame < analysisFrames; ++frame)
+                output[static_cast<std::size_t>(frame)] =
+                    comb->process(frame == 0 ? impulseLevel : 0.0f);
+
+            expectWithinAbsoluteError(output[nominalDelay], impulseLevel, 1.0e-9f);
+            auto strayPeak = 0.0f;
+            for (int frame = 0; frame < analysisFrames; ++frame)
+                if (frame != nominalDelay)
+                    strayPeak = std::max(strayPeak, std::abs(output[static_cast<std::size_t>(frame)]));
+            expect(strayPeak < 1.0e-9f,
+                   "a zero-mod impulse may only appear at the nominal delay");
+        }
+
+        beginTest("comb keeps its nominal echo time for signed integer and fractional offsets");
+        for (const auto& extreme : extremes)
+        {
+            for (const auto offset : offsets)
+            {
+                for (const auto preRoll : preRolls)
+                {
+                    auto comb = std::make_unique<CombFilter>();
+                    comb->setSize(nominalDelay);
+                    comb->setFeedback(extreme.first);
+                    comb->setDamp(extreme.second);
+
+                    const auto rendered = renderCombImpulse(*comb, offset, preRoll,
+                                                            analysisFrames);
+                    expectFiniteSamples(rendered, "comb");
+
+                    // Nothing may arrive before the shortest modulated echo.
+                    auto preEchoPeak = 0.0f;
+                    for (int frame = 0; frame < nominalDelay - 4; ++frame)
+                        preEchoPeak = std::max(
+                            preEchoPeak, std::abs(rendered[static_cast<std::size_t>(frame)]));
+
+                    auto peak = 0.0f;
+                    auto peakIndex = -1;
+                    for (int frame = 0; frame < analysisFrames; ++frame)
+                    {
+                        const auto magnitude =
+                            std::abs(rendered[static_cast<std::size_t>(frame)]);
+                        if (magnitude > peak)
+                        {
+                            peak = magnitude;
+                            peakIndex = frame;
+                        }
+                    }
+
+                    const auto expectedEcho = static_cast<float>(nominalDelay) + offset;
+                    const auto context = "offset " + juce::String(offset, 3)
+                                       + ", feedback " + juce::String(extreme.first, 2)
+                                       + ", damp " + juce::String(extreme.second, 2)
+                                       + ", pre-roll " + juce::String(preRoll);
+                    expect(preEchoPeak < 1.0e-6f,
+                           "modulated delayed audio must not appear before the echo ("
+                               + context + ")");
+                    expect(std::abs(rendered[1]) < 1.0e-6f,
+                           "the modulated tail must never appear at sample 1 (" + context + ")");
+                    expect(std::abs(static_cast<float>(peakIndex) - expectedEcho) <= 3.0f,
+                           "the echo must stay near the nominal delay (" + context
+                               + "), peak at " + juce::String(peakIndex));
+                    expect(peak > 0.004f && peak < 0.2f,
+                           "one bounded impulse must stay bounded (" + context
+                               + "), peak " + juce::String(peak, 6));
+                }
+            }
+        }
+
+        beginTest("comb clamps supported extreme sizes and survives a mid-flight resize");
+        {
+            auto comb = std::make_unique<CombFilter>();
+            comb->setFeedback(0.97f);
+            comb->setDamp(0.20f);
+
+            comb->setSize(0);
+            const auto tiny = renderCombImpulse(*comb, 3.9f, 0, 4096);
+            expectBoundedFiniteImpulse(tiny, "size below the supported minimum");
+
+            comb->setSize(CombFilter::MAX_SIZE + 4096);
+            const auto huge = renderCombImpulse(*comb, -3.9f, 0, analysisFrames);
+            expectBoundedFiniteImpulse(huge, "size above the supported maximum");
+
+            comb->setSize(64);
+            const auto resized = renderCombImpulse(*comb, 1.275f, 37, 4096);
+            expectBoundedFiniteImpulse(resized, "size shrunk while running");
+        }
+
+        beginTest("comb mute() restarts the history ring bit-exactly");
+        {
+            auto comb = std::make_unique<CombFilter>();
+            comb->setSize(nominalDelay);
+            comb->setFeedback(0.97f);
+            comb->setDamp(0.20f);
+
+            const auto first = renderCombImpulse(*comb, 1.275f, 0, analysisFrames);
+            comb->mute();
+            const auto second = renderCombImpulse(*comb, 1.275f, 0, analysisFrames);
+            expect(first == second, "mute() must reproduce the impulse response bit-for-bit");
+        }
+
+        beginTest("allpass keeps its immediate -input feedthrough and delays its tail");
+        for (const auto offset : offsets)
+        {
+            for (const auto preRoll : preRolls)
+            {
+                auto allpass = std::make_unique<AllpassDiffuser>();
+                allpass->setSize(nominalDelay);
+                allpass->setFeedback(0.60f);
+
+                const auto rendered = renderAllpassImpulse(*allpass, offset, preRoll,
+                                                           analysisFrames);
+                expectFiniteSamples(rendered, "allpass");
+
+                expectWithinAbsoluteError(rendered[0], -impulseLevel, 1.0e-7f);
+
+                auto preTailPeak = 0.0f;
+                for (int frame = 1; frame < nominalDelay - 4; ++frame)
+                    preTailPeak = std::max(
+                        preTailPeak, std::abs(rendered[static_cast<std::size_t>(frame)]));
+
+                auto peak = 0.0f;
+                auto peakIndex = -1;
+                // The immediate -input feedthrough lives at frame 0; the
+                // delayed tail is measured separately from frame 1 onward.
+                for (int frame = 1; frame < analysisFrames; ++frame)
+                {
+                    const auto magnitude =
+                        std::abs(rendered[static_cast<std::size_t>(frame)]);
+                    if (magnitude > peak)
+                    {
+                        peak = magnitude;
+                        peakIndex = frame;
+                    }
+                }
+
+                const auto expectedTail = static_cast<float>(nominalDelay) + offset;
+                const auto context = "offset " + juce::String(offset, 3)
+                                   + ", pre-roll " + juce::String(preRoll);
+                expect(preTailPeak < 1.0e-6f,
+                       "the delayed allpass tail must not appear early (" + context + ")");
+                expect(std::abs(rendered[1]) < 1.0e-6f,
+                       "the allpass tail must never appear at sample 1 (" + context + ")");
+                expect(std::abs(static_cast<float>(peakIndex) - expectedTail) <= 3.0f,
+                       "the allpass tail must stay near the nominal delay (" + context
+                           + "), peak at " + juce::String(peakIndex));
+                expect(peak > 0.004f && peak < 0.2f,
+                       "the allpass tail must stay bounded (" + context
+                           + "), peak " + juce::String(peak, 6));
+            }
+        }
+
+        beginTest("allpass clamps supported extreme sizes and survives a mid-flight resize");
+        {
+            auto allpass = std::make_unique<AllpassDiffuser>();
+            allpass->setFeedback(0.60f);
+
+            allpass->setSize(-17);
+            const auto tiny = renderAllpassImpulse(*allpass, -3.9f, 0, 2048);
+            expectBoundedFiniteImpulse(tiny, "size below the supported minimum");
+
+            allpass->setSize(UpgradedReverb::AllpassDiffuser::MAX_SIZE + 1024);
+            const auto huge = renderAllpassImpulse(*allpass, 3.9f, 0, 2048);
+            expectBoundedFiniteImpulse(huge, "size above the supported maximum");
+
+            allpass->setSize(64);
+            const auto resized = renderAllpassImpulse(*allpass, 1.275f, 37, 2048);
+            expectBoundedFiniteImpulse(resized, "size shrunk while running");
+        }
+
+        beginTest("allpass mute() restarts the history ring bit-exactly");
+        {
+            auto allpass = std::make_unique<AllpassDiffuser>();
+            allpass->setSize(nominalDelay);
+            allpass->setFeedback(0.60f);
+
+            const auto first = renderAllpassImpulse(*allpass, -1.275f, 0, analysisFrames);
+            allpass->mute();
+            const auto second = renderAllpassImpulse(*allpass, -1.275f, 0, analysisFrames);
+            expect(first == second, "mute() must reproduce the allpass response bit-for-bit");
+        }
+
+        beginTest("the reverb keeps an audible, bounded modulated tail");
+        {
+            auto reverb = std::make_unique<UpgradedReverb>();
+            reverb->prepare(48000.0);
+            reverb->beginBlock(0.85f, 0.25f, 1.0f, 0.90f, 1.0f, 8.0f);
+
+            auto peak = 0.0f;
+            auto earlyPeak = 0.0f;
+            auto tailEnergy = 0.0;
+            auto nonFinite = 0;
+            for (int frame = 0; frame < reverbFrames; ++frame)
+            {
+                float outL = 0.0f, outR = 0.0f;
+                const auto input = frame == 0 ? 0.1f : 0.0f;
+                reverb->processSample(input, input, outL, outR);
+
+                if (!std::isfinite(outL) || !std::isfinite(outR))
+                    ++nonFinite;
+                peak = std::max(peak, std::max(std::abs(outL), std::abs(outR)));
+                if (frame > 0 && frame < 480)
+                    earlyPeak = std::max(earlyPeak, std::max(std::abs(outL), std::abs(outR)));
+                if (frame >= 4800)
+                    tailEnergy += static_cast<double>(outL) * static_cast<double>(outL)
+                                + static_cast<double>(outR) * static_cast<double>(outR);
+            }
+
+            expect(nonFinite == 0, "reverb output must stay finite");
+
+            // The first legitimate wet energy is pre-delay (8 ms = 384 samples)
+            // plus the shortest early-reflection tap (~141 samples at this room
+            // size), so nothing may appear before ~525.
+            expect(earlyPeak < 1.0e-4f,
+                   "no wet energy may appear before the pre-delay and early reflections");
+            expect(tailEnergy > 1.0e-3,
+                   "a single impulse must still produce an audible late tail");
+            expect(peak > 0.01f && peak <= 4.0f,
+                   "the reverb tail must stay bounded by the documented output clamp");
+        }
+    }
+
+private:
+    static constexpr int nominalDelay = 1200;   // A published comb delay, in samples
+    static constexpr int analysisFrames = 4 * nominalDelay;
+    static constexpr int reverbFrames = 96000;  // 2 s at 48 kHz
+    static constexpr float impulseLevel = 0.05f;
+
+    static std::vector<float> renderCombImpulse(UpgradedReverb::CombFilter& comb,
+                                                float modOffset,
+                                                int preRoll,
+                                                int frames)
+    {
+        std::vector<float> rendered(static_cast<std::size_t>(frames), 0.0f);
+        for (int frame = 0; frame < preRoll; ++frame)
+            comb.process(0.0f, modOffset);
+        for (int frame = 0; frame < frames; ++frame)
+            rendered[static_cast<std::size_t>(frame)] =
+                comb.process(frame == 0 ? impulseLevel : 0.0f, modOffset);
+        return rendered;
+    }
+
+    static std::vector<float> renderAllpassImpulse(UpgradedReverb::AllpassDiffuser& allpass,
+                                                   float modOffset,
+                                                   int preRoll,
+                                                   int frames)
+    {
+        std::vector<float> rendered(static_cast<std::size_t>(frames), 0.0f);
+        for (int frame = 0; frame < preRoll; ++frame)
+            allpass.process(0.0f, modOffset);
+        for (int frame = 0; frame < frames; ++frame)
+            rendered[static_cast<std::size_t>(frame)] =
+                allpass.process(frame == 0 ? impulseLevel : 0.0f, modOffset);
+        return rendered;
+    }
+
+    void expectFiniteSamples(const std::vector<float>& rendered, const juce::String& what)
+    {
+        auto nonFinite = 0;
+        for (const auto sample : rendered)
+            if (!std::isfinite(sample))
+                ++nonFinite;
+        expect(nonFinite == 0, what + " output must stay finite");
+    }
+
+    void expectBoundedFiniteImpulse(const std::vector<float>& rendered,
+                                    const juce::String& what)
+    {
+        auto peak = 0.0f;
+        auto nonFinite = 0;
+        for (const auto sample : rendered)
+        {
+            if (!std::isfinite(sample))
+                ++nonFinite;
+            peak = std::max(peak, std::abs(sample));
+        }
+        expect(nonFinite == 0, what + ": output must stay finite");
+        expect(peak < 0.5f, what + ": a 0.05 impulse must stay bounded "
+                                "(stable-loop limit for one 0.05 impulse)");
     }
 };
 
@@ -1183,8 +1509,18 @@ public:
             expect(wetEnergy > 1.0e-4);
             expect(programDifferenceEnergy > 1.0e-3);
             const auto programRms = std::sqrt(wetEnergy / dryFixture.size());
-            expect(programRms >= 0.07 && programRms <= 0.13,
-                   "signature patch RMS must stay inside the measured level window");
+            // CV-039 re-measure, Windows x64 Release, MSVC 19.50, 2026-11-02.
+            // The shared 0.07..0.13 band was taken while CombFilter's positive
+            // modulation read a one-sample feedback loop, so the first 8192
+            // samples contained illegal early energy. The repaired nominal
+            // delay moves that energy out of this window. These per-program
+            // bands are the repaired levels; Ashen Sky and Cathedral Drift
+            // sit under 0.05, so restoring the short loop fails them.
+            static constexpr float kRmsMin[5] = { 0.080f, 0.105f, 0.030f, 0.090f, 0.007f };
+            static constexpr float kRmsMax[5] = { 0.095f, 0.125f, 0.046f, 0.110f, 0.014f };
+            expect(programRms >= kRmsMin[program] && programRms <= kRmsMax[program],
+                   "signature patch RMS must stay inside the measured level window (rms "
+                       + juce::String(programRms, 6) + ")");
             std::cout << "Corvus patch metric: "
                       << expectedProgramNames[static_cast<std::size_t>(program)]
                       << " peak=" << programPeak
@@ -1217,6 +1553,7 @@ public:
 
 CorvusOversamplingTest corvusOversamplingTest;
 CorvusDelayChannelIsolationTest corvusDelayChannelIsolationTest;
+CorvusReverbModHistoryTest corvusReverbModHistoryTest;
 CorvusEffectsBaselineTest corvusEffectsBaselineTest;
 CorvusMasterStageUnityTest corvusMasterStageUnityTest;
 CorvusWavetableOscillatorTest corvusWavetableOscillatorTest;
