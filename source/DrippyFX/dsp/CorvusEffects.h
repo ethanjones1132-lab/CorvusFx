@@ -7,6 +7,7 @@
 #include <xmmintrin.h>  // SSE intrinsics for oversampling FIR optimization
 #include <array>
 #include <map>
+#include <vector>
 
 //==============================================================================
 // UTILITY: Hermite cubic interpolation — artifact-free delay reads
@@ -818,11 +819,22 @@ struct EnhancedChorus
 //==============================================================================
 struct EnhancedDelay
 {
-    static constexpr int MAX_DELAY = 192000;
+    // The delay ring is sized from the rate prepare() is handed, not from a
+    // fixed 192000-sample array. 192000 samples only hold 2000 ms up to 96 kHz,
+    // so at 192 kHz a 2000 ms request clamped to ~1000 ms and the top of the
+    // delay-time knob (0..2000 ms) was dead. MAX_DELAY_SECONDS covers the whole
+    // knob range plus the right channel's deliberate 2.7% stereo stretch, the
+    // modulation depth and the existing 4-sample read guard, so 44.1/48 kHz
+    // sessions keep the delay math they already had inside 192000 samples.
+    static constexpr double MAX_DELAY_SECONDS = 2.06;
+    static constexpr int MIN_RING_SAMPLES = 64;   // floor for a sane ring
+    static constexpr int RING_GUARD_SAMPLES = 4;  // existing read/write guard
+    static constexpr double DEFAULT_SAMPLE_RATE = 44100.0;
 
-    float buffer[2][MAX_DELAY] = {};
+    std::vector<float> buffer[2];
+    int ringLength = 0;           // allocated length of each channel's ring
     int writePos[2] = {};
-    double sampleRate = 44100.0;
+    double sampleRate = DEFAULT_SAMPLE_RATE;
 
     OnePole fbLP[2], fbHP[2];
     float smoothedDelay[2] = {};
@@ -874,22 +886,53 @@ struct EnhancedDelay
         blockCoeffs.lfo2Sin *= inv; blockCoeffs.lfo2Cos *= inv;
     }
 
+    // Give an unprepared instance a usable ring so a processSample() before the
+    // first prepare() never reads an empty vector; prepare() re-sizes it from
+    // the rate it is handed.
+    EnhancedDelay()
+    {
+        resizeRing(ringLengthFor(DEFAULT_SAMPLE_RATE));
+    }
+
+    // Ring length, in samples, that holds MAX_DELAY_SECONDS at this rate.
+    static int ringLengthFor(double sr)
+    {
+        const double rate = sr > 0.0 ? sr : DEFAULT_SAMPLE_RATE;
+        return juce::jmax(MIN_RING_SAMPLES,
+                          static_cast<int>(std::ceil(rate * MAX_DELAY_SECONDS)));
+    }
+
+    // Size both channel rings and restart the write heads at 0 so no index can
+    // point past the new end after a re-prepare. This allocates: call it from
+    // prepare() (off the audio thread), never from processSample().
+    void resizeRing(int samples)
+    {
+        ringLength = juce::jmax(MIN_RING_SAMPLES, samples);
+        for (int ch = 0; ch < 2; ++ch)
+            buffer[ch].assign(static_cast<std::size_t>(ringLength), 0.0f);
+        writePos[0] = writePos[1] = 0;
+    }
+
     void prepare(double sr)
     {
-        sampleRate = sr;
+        sampleRate = sr > 0.0 ? sr : DEFAULT_SAMPLE_RATE;
+        // Size the ring from THIS rate before any coefficient is derived from
+        // it, so a 2000 ms request still fits at 192 kHz (and 44.1/48 kHz keep
+        // their 2000 ms inside the ring, as they already did at 192000).
+        resizeRing(ringLengthFor(sampleRate));
         // Stage the SSE coefficient vectors and clear both channel histories.
-        oversample[0].prepare(sr);
-        oversample[1].prepare(sr);
+        oversample[0].prepare(sampleRate);
+        oversample[1].prepare(sampleRate);
         reset();
         // Feedback low-cut: fixed at 80Hz (cached in prepare(), not on every block)
-        blockCoeffs.fbHPCoeff = static_cast<float>(std::exp(-6.2832f * 80.0f / sr));
+        blockCoeffs.fbHPCoeff = static_cast<float>(std::exp(-6.2832f * 80.0f / static_cast<float>(sampleRate)));
         // Precompute sr-only constants (not on every block)
-        blockCoeffs.invSr = 1.0f / static_cast<float>(sr);
+        blockCoeffs.invSr = 1.0f / static_cast<float>(sampleRate);
         blockCoeffs.modPhaseInc = 0.55f * blockCoeffs.invSr;
         blockCoeffs.lfoCoeff = 6.2832f * blockCoeffs.invSr;
-        blockCoeffs.sampleRateK = static_cast<float>(sr) * 0.0006f;
-        blockCoeffs.maxDelayF = static_cast<float>(MAX_DELAY - 4);
-        blockCoeffs.msToSamples = static_cast<float>(sr) * 0.001f;
+        blockCoeffs.sampleRateK = static_cast<float>(sampleRate) * 0.0006f;
+        blockCoeffs.maxDelayF = static_cast<float>(ringLength - RING_GUARD_SAMPLES);
+        blockCoeffs.msToSamples = static_cast<float>(sampleRate) * 0.001f;
         blockCoeffs.smooth = 0.9997f;
     }
 
@@ -899,7 +942,8 @@ struct EnhancedDelay
     // behind would bleed the previous take into the next one.
     void reset()
     {
-        std::memset(buffer, 0, sizeof(buffer));
+        for (int ch = 0; ch < 2; ++ch)
+            std::fill(buffer[ch].begin(), buffer[ch].end(), 0.0f);
         writePos[0] = writePos[1] = 0;
         smoothedDelay[0] = smoothedDelay[1] = 0.0f;
         for (int ch = 0; ch < 2; ++ch)
@@ -976,12 +1020,12 @@ struct EnhancedDelay
 
         // Read with Hermite interpolation
         float readL = static_cast<float>(writePos[0]) - smoothedDelay[0];
-        if (readL < 0.0f) readL += static_cast<float>(MAX_DELAY);
-        float delayedL = hermiteInterp(buffer[0], MAX_DELAY, readL);
+        if (readL < 0.0f) readL += static_cast<float>(ringLength);
+        float delayedL = hermiteInterp(buffer[0].data(), ringLength, readL);
 
         float readR = static_cast<float>(writePos[1]) - smoothedDelay[1];
-        if (readR < 0.0f) readR += static_cast<float>(MAX_DELAY);
-        float delayedR = hermiteInterp(buffer[1], MAX_DELAY, readR);
+        if (readR < 0.0f) readR += static_cast<float>(ringLength);
+        float delayedR = hermiteInterp(buffer[1].data(), ringLength, readR);
 
         // Feedback with ping-pong cross-feed
         float fbL = delayedL * (1.0f - pingPong) + delayedR * pingPong;
@@ -1014,8 +1058,8 @@ struct EnhancedDelay
         buffer[0][writePos[0]] = juce::jlimit(-4.0f, 4.0f, inL + fbL * feedback);
         buffer[1][writePos[1]] = juce::jlimit(-4.0f, 4.0f, inR + fbR * feedback);
 
-        if (++writePos[0] >= MAX_DELAY) writePos[0] = 0;
-        if (++writePos[1] >= MAX_DELAY) writePos[1] = 0;
+        if (++writePos[0] >= ringLength) writePos[0] = 0;
+        if (++writePos[1] >= ringLength) writePos[1] = 0;
 
         outL = juce::jlimit(-4.0f, 4.0f, inL * (1.0f - mix) + delayedL * mix);
         outR = juce::jlimit(-4.0f, 4.0f, inR * (1.0f - mix) + delayedR * mix);
