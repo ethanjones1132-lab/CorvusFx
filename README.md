@@ -374,15 +374,24 @@ Copy the whole bundle; do not extract or rename the inner files.
 
 ### Windows VST3 Paths
 
-| Plugin | Repo path (build/deploy checkout) | Installed path |
-|--------|-----------------------------------|----------------|
-| **Corvus FX** | `drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3` | `C:\Program Files\Common Files\VST3\DrippyMk1.vst3` |
+| Plugin | v1.0.0 build artifact (CMake) | Installed path |
+|--------|-------------------------------|----------------|
+| **Corvus FX** | CMake target `DrippyFX_VST3` → `Corvus FX.vst3` | `C:\Program Files\Common Files\VST3\Corvus FX.vst3` |
 | **Corvus Instrument** | CMake target `CorvusInstrument_VST3` → `CorvusInstrument.vst3` | `C:\Program Files\Common Files\VST3\CorvusInstrument.vst3` |
 | **Corvus Instrument (Standalone)** | CMake target `CorvusInstrument_Standalone` → `.zip` | unzipped `.exe`, any folder |
 
-`DrippyMk1.vst3` is the mainline Corvus FX binary; its name is preserved so
-existing DAW references keep resolving. `DrippyMk2` is an experimental
-alternative build and is **not** part of the v1.0.0 artifact set.
+The v1.0.0 Corvus FX bundle is named `Corvus FX.vst3` and reports to hosts as
+"Corvus FX". The internal CMake target (`DrippyFX`) and the plugin identity
+codes (`Drip` / `Dfx1`) are unchanged; with no explicit `BUNDLE_ID`, JUCE
+derives the bundle ID from `COMPANY_NAME` plus the CMake target name (see
+JUCE `docs/CMake API.md`), and the VST3 class IDs derive from the plugin
+codes — so the rename introduces no second plugin identity.
+
+`drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3` is a **historical
+legacy prebuilt** binary from the original NewProject project; the v1.0.0
+release does **not** rebuild, rename, install, or re-verify it.
+`DrippyMk2` is an experimental alternative build and is **not** part of the
+v1.0.0 artifact set.
 
 > 📦 **v1.0.0 binaries are not published yet.** See
 > [`docs/release/v1.0.0-notes.md`](docs/release/v1.0.0-notes.md) for the draft
@@ -394,7 +403,7 @@ alternative build and is **not** part of the v1.0.0 artifact set.
 2. **Delete** the plugin bundle(s) you installed from
    `C:\Program Files\Common Files\VST3\`:
    ```
-   C:\Program Files\Common Files\VST3\DrippyMk1.vst3
+   C:\Program Files\Common Files\VST3\Corvus FX.vst3
    C:\Program Files\Common Files\VST3\CorvusInstrument.vst3
    ```
 3. **Delete** the unzipped Standalone folder, if you installed one.
@@ -420,9 +429,14 @@ dark/light theme; delete it if you want to reset the theme to its default.
 MSBuild.exe "path/to/NewProject_VST3.vcxproj" -p:Configuration=Release -p:Platform=x64 -m
 ```
 
+> ⚠️ **Historical path.** The legacy VS solution builds the old
+> `DrippyMk1.vst3` binary from the original NewProject project; it is kept here
+> as a historical convenience and is not the v1.0.0 release artifact. The
+> buyer-facing `Corvus FX.vst3` naming comes from the CMake build below.
+
 ### CMake Build (Alternative)
 
-The CMake project defines four targets: **`DrippyFX`** (VST3/AU/Standalone), **`CorvusInstrument`** (VST3/Standalone), and **`CorvusDSPTests`** (shared DSP/instrument regression harness), and **`CorvusFXStateTests`** (FX session state regression harness).
+The CMake project defines four targets: **`DrippyFX`** (VST3/AU/Standalone), **`CorvusInstrument`** (VST3/Standalone), and **`CorvusDSPTests`** (shared DSP/instrument regression harness), and **`CorvusFXStateTests`** (FX session state regression harness). The Corvus FX build artifacts are named **`Corvus FX.vst3`** and report to hosts as **"Corvus FX"**; the internal CMake target stays `DrippyFX` for stable identity (see [Windows VST3 Paths](#windows-vst3-paths)).
 
 Run the portable source gate with `bash scripts/verify_corvus_source.sh` from the repository root. After configuring CMake, build and run `CorvusDSPTestsRun` and `CorvusFXStateTestsRun` to verify the shared effects, instrument behavior, and FX A/B/MIDI/lock session recall. Keep `CORVUS_COPY_PLUGIN_AFTER_BUILD=OFF` while validating a baseline.
 
@@ -442,7 +456,7 @@ cmake -G "Visual Studio 18 2026" -A x64 -DJUCE_PATH="%JUCE_PATH%" -DCORVUS_ENABL
 cmake --build build-pgo --config Release
 ```
 
-Source code is located in the `source/DrippyFX/` directory of this repo, alongside deployed binaries under `drippy/` and `DrippyMk2/`.
+Source code is located in the `source/DrippyFX/` directory of this repo, alongside the historical legacy prebuilt binaries under `drippy/` and `DrippyMk2/` (not part of the v1.0.0 artifact set).
 
 | Path | Contents |
 |------|----------|
@@ -594,7 +608,7 @@ A: Open an [issue](https://github.com/ethanjones1132-lab/CorvusFx/issues) or sta
 
 Contributions are welcome! Whether it's bug fixes, DSP improvements, new presets, or documentation — every bit helps.
 
-**Source layout:** Edit JUCE code under `source/DrippyFX/`. Shared DSP lives in `source/DrippyFX/dsp/CorvusEffects.h`; the synth target is under `source/DrippyFX/instrument/`. Shipped Windows binaries live at `drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3`. Any commit that updates the `.vst3` for a code-level fix must include the matching `source/DrippyFX/` diffs (see `AGENTS.md`).
+**Source layout:** Edit JUCE code under `source/DrippyFX/`. Shared DSP lives in `source/DrippyFX/dsp/CorvusEffects.h`; the synth target is under `source/DrippyFX/instrument/`. Binary history: the historical legacy prebuilt Corvus FX binary lives at `drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3` (not rebuilt or renamed by the current CMake build, which instead produces `Corvus FX.vst3` from `source/DrippyFX/`). Any commit that updates the `.vst3` for a code-level fix must include the matching `source/DrippyFX/` diffs (see `AGENTS.md`).
 
 1. Fork the repo
 2. Create a feature branch (`git checkout -b feature/amazing-idea`)

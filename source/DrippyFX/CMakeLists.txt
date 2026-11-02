@@ -46,7 +46,15 @@ juce_add_plugin(DrippyFX
     PLUGIN_MANUFACTURER_CODE Drip
     PLUGIN_CODE Dfx1
     FORMATS VST3 AU Standalone
-    PRODUCT_NAME "DrippyFX"
+    # v1.0.0 buyer-facing product name (CV-034): the built Windows bundle is
+    # "Corvus FX.vst3" and hosts see "Corvus FX" via the JUCE-generated
+    # JucePlugin_Name. Bundle identity is unaffected by this rename: with no
+    # explicit BUNDLE_ID here, JUCE derives the bundle ID from COMPANY_NAME
+    # plus the CMake target name (see JUCE docs/CMake API.md), both still
+    # "DrippyFX", and the VST3 class IDs come from the stable
+    # PLUGIN_MANUFACTURER_CODE/PLUGIN_CODE below. Do not add a BUNDLE_ID here
+    # without an approved identity decision; do not rename the target.
+    PRODUCT_NAME "Corvus FX"
     VST3_CATEGORIES "Fx" "Dynamics" "Modulation" "Reverb" "Delay"
 )
 
