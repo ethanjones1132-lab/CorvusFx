@@ -106,7 +106,7 @@ def verify(cpp_stripped, hdr_stripped=None):
     e = brace_span(cpp_stripped, o)
     layout_body = cpp_stripped[o + 1:e]
     ids = set(re.findall(r'\b(?:pctParam|hzParam|msParam)\s*\(\s*"([A-Za-z0-9_]+)"', layout_body))
-    ids |= set(re.findall(r'make_unique<juce::AudioParameter(?:Bool|Int)>\s*\(\s*"([A-Za-z0-9_]+)"', layout_body))
+    ids |= set(re.findall(r'make_unique<juce::AudioParameter(?:Bool|Int|Float)>\s*\(\s*"([A-Za-z0-9_]+)"', layout_body))
     if not ids:
         raise _Rejected("layout body parsed empty — extraction regex drifted")
     if "preset" not in ids:

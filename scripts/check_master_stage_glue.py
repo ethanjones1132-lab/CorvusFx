@@ -3,15 +3,16 @@
 
 The composition lines feeding the master output stage
 (source/DrippyFX/PluginProcessor.cpp per-sample "5. MASTER OUTPUT STAGE"
-gate) carry the mid/side drive scaling and width expansion —
+gate) carry the mid/side drive scaling and the identity width —
 `midDrive = sMasterDrive * 1.8f + sMasterMidDrive * 1.8f`,
 `sideDrive = sMasterDrive * 1.8f + sMasterSideDrive * 1.8f`,
-`width = 0.5f + sMasterWidth * 1.5f` — and the
+`width = sMasterWidth` — and the
 masterOutput.process(ml, mr, midDrive, sideDrive, width) call followed by
 the two crossfades. Nothing pins these: an edit dropping the
 sMasterMidDrive or sMasterSideDrive term (that knob silently stops
-driving), halving a knob's effective range (width 1.5f -> 0.75f), or
-swapping mid/side inside the call compiles clean behind an otherwise-green
+driving), restoring the retired `0.5f + sMasterWidth * 1.5f` expansion
+(100% no longer means the original stereo image, and 0% is no longer mono),
+or swapping mid/side inside the call compiles clean behind an otherwise-green
 gate.
 
 Asserts (comment-stripped, brace-matched MASTER gate body inside
@@ -19,15 +20,16 @@ processBlock):
   (a) midDrive line keeps sMasterDrive * 1.8f + sMasterMidDrive * 1.8f
       (side-halving probe: 1.8f count per line exactly 2);
   (b) sideDrive line keeps sMasterDrive * 1.8f + sMasterSideDrive * 1.8f;
-  (c) width keeps 0.5f + sMasterWidth * 1.5f;
+  (c) width is the identity `sMasterWidth` (0% = mono, 100% = original
+      stereo, >100% = widened) — no offset, no scale factor;
   (d) masterOutput.process(ml, mr, midDrive, sideDrive, width) follows
       with mid before side;
   (e) both crossfades (smpL/smpR via 1.0f - gMaster) stay after the
       process call inside the gate.
 
 Self-probes (negative checks, sibling checker style) run on mutated
-in-memory TEMP texts — the real tree is never mutated. A no-op mutation
-guard skips probes whose mutation didn't apply.
+in-memory TEMP texts — the real tree is never mutated. A stale/no-op
+mutation is a failure, never a silently skipped probe.
 
 Exit 0 = ok, 1 = violation with line-cited diagnostics.
 """
@@ -125,10 +127,11 @@ def check(body):
             return (f"drive line {i} has {line.count('* 1.8f')} `* 1.8f` "
                     f"terms, expected exactly 2: `{collapse_ws(line)}`")
 
-    # (c) width scaling stays 0.5f + sMasterWidth * 1.5f
-    if "float width = 0.5f + sMasterWidth * 1.5f;" not in collapse_ws(gb):
-        return ("width scaling must stay `0.5f + sMasterWidth * 1.5f` "
-                "(a rewrite halves/widens the knob's effective range)")
+    # (c) width is the identity: 0% mono, 100% original stereo, >100% widened
+    if "float width = sMasterWidth;" not in collapse_ws(gb):
+        return ("width must stay the identity `float width = sMasterWidth;` "
+                "(the retired `0.5f + sMasterWidth * 1.5f` expansion makes 100% "
+                "mean double-wide and 0% mean half-wide)")
 
     # (d) process call with mid before side
     cm = re.search(
@@ -160,8 +163,8 @@ body = extract_body(proc_c, "processBlock")
 err = check(body)
 if err:
     fail(err + " (PluginProcessor.cpp processBlock master stage)")
-print("master-stage-glue: mid/side drive (2x * 1.8f terms), width "
-      "(0.5f + w * 1.5f), process order (ml, mr, mid, side) and "
+print("master-stage-glue: mid/side drive (2x * 1.8f terms), identity width "
+      "(sMasterWidth), process order (ml, mr, mid, side) and "
       "crossfades pinned inside the master gate")
 
 # ---------------------------------------------------------------------------
@@ -171,9 +174,8 @@ print("master-stage-glue: mid/side drive (2x * 1.8f terms), width "
 def probe(description, old, new, count=1):
     tmp = proc_c.replace(old, new, count)
     if tmp == proc_c:
-        print(f"master-stage-glue: no-op mutation guard -> skipping invalid "
-              f"probe ({description})")
-        return
+        fail(f"stale probe '{description}': mutation did not change the "
+             f"source — the negative check is vacuous")
     err = check(extract_body(tmp, "processBlock"))
     if err is None:
         print(f"master-stage-glue: SELF-PROBE FAIL (checker should reject): "
@@ -192,12 +194,18 @@ probe("mid/side args swapped in masterOutput.process call",
       "masterOutput.process(ml, mr, midDrive, sideDrive, width);",
       "masterOutput.process(ml, mr, sideDrive, midDrive, width);")
 
-# 3. width scaling halved-halved: 1.5f -> 0.0f
-probe("width scale 1.5f -> 0.0f",
-      "float width = 0.5f + sMasterWidth * 1.5f;",
-      "float width = 0.5f + sMasterWidth * 0.0f;")
+# 3. restore the retired 0.5 + 1.5w expansion (a return to the original
+#    CV-036 identity bug: 100% renders double-wide, 0% half-wide)
+probe("retired width formula 0.5f + sMasterWidth * 1.5f restored",
+      "float width = sMasterWidth;",
+      "float width = 0.5f + sMasterWidth * 1.5f;")
 
-# 3b. halve a drive range but keep the term-count edge: single 1.8f term
+# 3b. zero the width (every setting collapses to mono)
+probe("identity width zeroed",
+      "float width = sMasterWidth;",
+      "float width = 0.0f;")
+
+# 3c. halve a drive range but keep the term-count edge: single 1.8f term
 #     (term-count assert catches the dropped scaling even with shape intact)
 probe("midDrive halved to a single 1.8f term (term-count assert)",
       "float midDrive = sMasterDrive * 1.8f + sMasterMidDrive * 1.8f;",
@@ -211,15 +219,15 @@ probe("L master crossfade hoisted above the process call",
       "            masterOutput.process(ml, mr, midDrive, sideDrive, width);")
 
 # 5. no-op guard: benign edit outside the pinned shapes must stay accepted
-anchor = "float width = 0.5f + sMasterWidth * 1.5f; // 0.5 to 2.0 range"
+anchor = "float width = sMasterWidth; // identity: 0% = mono, 100% = original stereo, >100% = widened"
 if anchor not in proc_c:
-    print("master-stage-glue: no-op probe anchor missing -> skipping")
-else:
-    tmp5 = proc_c.replace(anchor, anchor + " // benign probe edit", 1)
-    if tmp5 == proc_c:
-        print("master-stage-glue: no-op probe skipped")
-    elif check(extract_body(tmp5, "processBlock")) is not None:
-        fail("no-op guard: benign edit was wrongly rejected")
-    print("master-stage-glue: no-op guard passed (benign edit accepted)")
+    fail("benign no-op probe anchor missing from PluginProcessor.cpp — "
+         "the identity width line drifted; cannot trust the specificity probe")
+tmp5 = proc_c.replace(anchor, anchor + " // benign probe edit", 1)
+if tmp5 == proc_c:
+    fail("benign no-op probe did not change the source")
+if check(extract_body(tmp5, "processBlock")) is not None:
+    fail("no-op guard: benign edit was wrongly rejected")
+print("master-stage-glue: no-op guard passed (benign edit accepted)")
 
 print("MASTER-STAGE-GLUE OK")

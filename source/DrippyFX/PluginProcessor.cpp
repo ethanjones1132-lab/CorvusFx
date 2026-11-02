@@ -268,7 +268,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::crea
     params.push_back(pctParam("reverb_mod", "Reverb Mod", 30));
     params.push_back(std::make_unique<juce::AudioParameterBool>("reverb_bypass", "Reverb Bypass", false));
     params.push_back(pctParam("master_drive", "Master Drive", 0));
-    params.push_back(pctParam("master_width", "Master Width", 100));
+    // CV-036: master_width owns a 0..200% range so the stored preset widths
+    // through 140% are not clamped to 100%. Every other percentage knob keeps
+    // the shared pctParam helper's 0..100 range and formatting.
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "master_width", "Master Width",
+        juce::NormalisableRange<float>(0.0f, 200.0f, 0.1f), 100.0f,
+        juce::AudioParameterFloatAttributes()
+            .withLabel("%")
+            .withStringFromValueFunction([](float value, int) { return juce::String(value, 1) + " %"; })
+            .withValueFromStringFunction([](const juce::String& text) { return text.replace("%", "").getFloatValue(); })));
     params.push_back(pctParam("master_mid_drive", "Master Mid Drive", 0));
     params.push_back(pctParam("master_side_drive", "Master Side Drive", 0));
     params.push_back(std::make_unique<juce::AudioParameterBool>("master_bypass", "Master Bypass", false));
@@ -451,8 +460,8 @@ inline float finiteSmoothingTarget(float mapped, float fallback)
 }
 
 // Declared default of an APVTS parameter in the parameter's own units (0..100
-// for the percentage knobs, Hz / ms for the native ones). Read-only: no APVTS
-// write, no lock, no allocation.
+// for the percentage knobs, 0..200 for master_width, Hz / ms for the native
+// ones). Read-only: no APVTS write, no lock, no allocation.
 inline float declaredTarget(juce::AudioProcessorValueTreeState& state, const char* paramId)
 {
     auto* param = state.getParameter(paramId);
@@ -939,7 +948,7 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         {
             float midDrive = sMasterDrive * 1.8f + sMasterMidDrive * 1.8f;
             float sideDrive = sMasterDrive * 1.8f + sMasterSideDrive * 1.8f;
-            float width = 0.5f + sMasterWidth * 1.5f; // 0.5 to 2.0 range
+            float width = sMasterWidth; // identity: 0% = mono, 100% = original stereo, >100% = widened
             float ml = smpL, mr = smpR;
             masterOutput.process(ml, mr, midDrive, sideDrive, width);
             smpL = smpL * (1.0f - gMaster) + ml * gMaster;

@@ -10,12 +10,14 @@ toggle with no error.
 Asserts (comment-stripped):
   (a) abParamIds[] extracted by regex is unique and equals the layout id set
       (pctParam/msParam/hzParam first-string args + direct
-      make_unique<juce::AudioParameterBool/Int> first args, minus "preset").
+      make_unique<juce::AudioParameterBool/Int/Float> first args, minus
+      "preset").
   (b) NUM_AB_PARAMS in PluginProcessor.h equals len(abParamIds).
 
 Negative self-probes on mutated copies (real tree never mutated, no-op
 mutation aborts as a stale alarm): drop "overall" from abParamIds; add
-"preset" to abParamIds; rename a layout id without the table.
+"preset" to abParamIds; rename a layout id without the table; rename the
+direct master_width declaration so the Float branch cannot drop it silently.
 Exit 0 = ok, 1 = violation.
 """
 import re
@@ -93,7 +95,7 @@ while j < len(cpp):
     j += 1
 layout_body = cpp[i:j + 1]
 layout_ids = set(re.findall(r'\b(?:pctParam|hzParam|msParam)\s*\(\s*"([A-Za-z0-9_]+)"', layout_body))
-layout_ids |= set(re.findall(r'make_unique<juce::AudioParameter(?:Bool|Int)>\s*\(\s*"([A-Za-z0-9_]+)"', layout_body))
+layout_ids |= set(re.findall(r'make_unique<juce::AudioParameter(?:Bool|Int|Float)>\s*\(\s*"([A-Za-z0-9_]+)"', layout_body))
 layout_ids.discard("preset")  # preset is the combo box selector, never A/B'd
 if not layout_ids:
     fail("createParameterLayout body parsed to an empty helper/id set — extraction regex drifted?")
@@ -173,7 +175,7 @@ def _verify(cpp_text, hdr_text):
         j2 += 1
     lb = stripped[i2:j2 + 1]
     lids = set(re.findall(r'\b(?:pctParam|hzParam|msParam)\s*\(\s*"([A-Za-z0-9_]+)"', lb))
-    lids |= set(re.findall(r'make_unique<juce::AudioParameter(?:Bool|Int)>\s*\(\s*"([A-Za-z0-9_]+)"', lb))
+    lids |= set(re.findall(r'make_unique<juce::AudioParameter(?:Bool|Int|Float)>\s*\(\s*"([A-Za-z0-9_]+)"', lb))
     lids.discard("preset")
     if len(set(ab)) != len(ab):
         raise _Rejected("duplicate ab ids accepted")
@@ -196,6 +198,13 @@ probes = [
     ("rename layout id without the table",
      lambda s: s.replace('pctParam("delay_mod", "Delay Mod", 30)',
                          'pctParam("delay_modx", "Delay Mod", 30)')),
+    # master_width is registered with its own direct AudioParameterFloat (its
+    # 0..200% range cannot come from the shared pctParam helper). Renaming that
+    # standalone declaration must still be rejected: the Float branch of the
+    # layout-id extraction may not silently drop the knob.
+    ("rename the direct master_width declaration",
+     lambda s: s.replace('"master_width", "Master Width"',
+                         '"master_widthx", "Master Width"')),
     # no-op guard probe mutates UNPINNED text and must still pass
 ]
 for label, mutate in probes:
