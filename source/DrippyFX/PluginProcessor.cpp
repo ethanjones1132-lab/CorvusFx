@@ -790,15 +790,25 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // beginBlock() calls use these block-level snapshots since their
     // coefficient caches don't need per-sample ramping (the cached
     // exp() values are ~constant over a 64-sample block).
-    const float fatness     = smoothFatness.getTargetValue();
-    const float chorusDepth = smoothChorusDepth.getTargetValue();
-    const float chorusRate  = smoothChorusRate.getTargetValue();
-    const float chorusMix   = smoothChorusMix.getTargetValue();
-    const float delayDamping = smoothDelayDamping.getTargetValue();
-    const float reverbSize  = smoothReverbSize.getTargetValue();
-    const float reverbDamping = smoothReverbDamping.getTargetValue();
-    const float reverbMix   = smoothReverbMix.getTargetValue();
-    const float sReverbMod   = smoothReverbMod.getTargetValue();
+    //
+    // CV-030: read getCurrentValue() — the value the smoother has actually
+    // reached, i.e. what the previous block rendered — not
+    // getTargetValue(), which reports the far end of an in-flight ramp a
+    // block early: a block that begins mid-ramp would then seed its
+    // coefficient cache with a value the audio path has not reached yet,
+    // and percussive material jumps when the next block lands on the real
+    // value. getCurrentValue() is a pure read and does NOT advance the ramp
+    // — it must never be getNextValue() here, which would consume one ramp
+    // step per block and desync the per-sample getNextValue() loop below.
+    const float fatness     = smoothFatness.getCurrentValue();
+    const float chorusDepth = smoothChorusDepth.getCurrentValue();
+    const float chorusRate  = smoothChorusRate.getCurrentValue();
+    const float chorusMix   = smoothChorusMix.getCurrentValue();
+    const float delayDamping = smoothDelayDamping.getCurrentValue();
+    const float reverbSize  = smoothReverbSize.getCurrentValue();
+    const float reverbDamping = smoothReverbDamping.getCurrentValue();
+    const float reverbMix   = smoothReverbMix.getCurrentValue();
+    const float sReverbMod   = smoothReverbMod.getCurrentValue();
 
     const float pingPong = 0.35f;
     const float reverbPreDelay = 5.0f + reverbSize * 40.0f;
