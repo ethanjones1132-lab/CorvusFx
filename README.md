@@ -31,17 +31,9 @@ Whether you're a producer looking for analog-style warmth, a sound designer chas
 
 ## Screenshots
 
-<!-- TODO: Add a UI screenshot once the UI is finalized. Suggested location:
-     assets/screenshot.png
+![Corvus FX editor — Windows Standalone build, with the safety input-mute banner visible](assets/screenshot.png)
 
-     ![Corvus FX UI](assets/screenshot.png)
-
-     The plugin features a dark space-themed interface with animated nebula
-     background, glass rotary knobs with purple glow effects, and a clean
-     2×2 module layout with preset, A/B and Randomize controls.
--->
-
-> 🎨 **Screenshot coming soon.** The plugin features a dark space-themed UI with animated nebula background, glass knobs with specular highlights and purple glow effects, organized in a clean 2×2 module grid layout.
+*Windows Standalone editor, shown with its safety input-mute banner.*
 
 ---
 
