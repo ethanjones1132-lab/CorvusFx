@@ -61,6 +61,7 @@ public:
 
     juce::UndoManager undoManager;
     juce::AudioProcessorValueTreeState apvts;
+    float getLastPreClampPeak() const noexcept { return lastPreClampPeak; }
 
 private:
     struct EffectsCore;
@@ -74,6 +75,7 @@ private:
     juce::LinearSmoothedValue<float> fxAmount;
     juce::LinearSmoothedValue<float> flightAmount;
     juce::LinearSmoothedValue<float> outputGain;
+    float lastPreClampPeak = 0.0f;
     int currentProgram = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CorvusInstrumentProcessor)

@@ -17,6 +17,9 @@ constexpr auto stateSchemaVersion = 1;
 // modulated flight sweep ramps inside the block instead of stepping at the
 // block boundary (the smoother itself still moves per sample).
 constexpr int fxParameterChunkSize = 32;
+// Measured peak emitted activity over the 8,192-sample 0.8-velocity Dawn
+// Choir signature window.
+constexpr float dawnTriadUnityActivity = 1.17023f;
 }
 
 struct CorvusInstrumentProcessor::EffectsCore
@@ -156,13 +159,18 @@ void CorvusInstrumentProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                                              juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
+    lastPreClampPeak = 0.0f;
     if (buffer.getNumChannels() < 2)
     {
         buffer.clear();
         return;
     }
 
-    synthEngine.render(buffer, midi, currentVoiceParameters());
+    if (currentProgram == 0)
+        synthEngine.renderWithDawnActivityGain(
+            buffer, midi, currentVoiceParameters(), dawnTriadUnityActivity);
+    else
+        synthEngine.render(buffer, midi, currentVoiceParameters());
     for (auto channel = 2; channel < buffer.getNumChannels(); ++channel)
         buffer.clear(channel, 0, buffer.getNumSamples());
 
@@ -257,6 +265,7 @@ void CorvusInstrumentProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             auto value = buffer.getSample(channel, sample) * gain;
             if (!std::isfinite(value))
                 value = 0.0f;
+            lastPreClampPeak = juce::jmax(lastPreClampPeak, std::abs(value));
             buffer.setSample(channel, sample, juce::jlimit(-1.0f, 1.0f, value));
         }
     }

@@ -84,6 +84,31 @@ public:
         updateFrequency();
     }
 
+    float renderSample(float& emittedEnvelopeLevel)
+    {
+        if (!active)
+            return 0.0f;
+
+        constexpr auto centrePanGain = 0.7071067811865475f;
+        const auto envelopeValue = envelope.getNextSample();
+        auto gain = envelopeValue * velocity;
+        if (declickSamplesRemaining > 0)
+        {
+            gain *= static_cast<float>(declickLength - declickSamplesRemaining)
+                / static_cast<float>(declickLength);
+            --declickSamplesRemaining;
+        }
+
+        emittedEnvelopeLevel += gain;
+        return oscillator.process() * gain * centrePanGain;
+    }
+
+    void finishRenderSpan() noexcept
+    {
+        if (active && !envelope.isActive())
+            resetImmediately();
+    }
+
     void render(float* left, float* right, int start, int count)
     {
         if (!active || left == nullptr || right == nullptr || count <= 0)

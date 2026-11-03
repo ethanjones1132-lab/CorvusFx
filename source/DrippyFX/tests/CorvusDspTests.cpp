@@ -1527,11 +1527,106 @@ public:
                       << " rms=" << programRms << '\n';
         }
 
+        beginTest("Dawn Choir unity activity matches the measured 0.8-velocity triad window");
+        {
+            VoiceParameters dawnParameters;
+            dawnParameters.attackSeconds = 0.35f;
+            dawnParameters.decaySeconds = 1.20f;
+            dawnParameters.sustainLevel = 0.82f;
+            dawnParameters.releaseSeconds = 4.50f;
+            dawnParameters.wave = FactoryWave::Triangle;
+            std::array<CorvusVoice, 3> triad;
+            constexpr int notes[] = { 57, 60, 64 };
+            for (std::size_t voice = 0; voice < triad.size(); ++voice)
+            {
+                triad[voice].prepare(48000.0);
+                triad[voice].startNote(notes[voice], 0.8f, dawnParameters,
+                                       voice + 1);
+            }
+
+            auto measuredActivity = 0.0f;
+            for (auto sample = 0; sample < 8192; ++sample)
+            {
+                float emittedActivity = 0.0f;
+                for (auto& voice : triad)
+                    juce::ignoreUnused(voice.renderSample(emittedActivity));
+                measuredActivity = std::max(measuredActivity, emittedActivity);
+            }
+            std::cout << "Dawn Choir single-triad activity: "
+                      << measuredActivity << '\n';
+            expectWithinAbsoluteError(measuredActivity, 1.17023f, 2.0e-5f);
+        }
+
+        beginTest("repeated Dawn Choir triads stay below the final hard clamp");
+        {
+            constexpr auto passageSamples = 9 * 48000;
+            constexpr auto blockSize = 512;
+            constexpr auto triadPeriod = 192000;
+            constexpr auto triadDuration = 24000;
+            constexpr int triadNotes[] = { 57, 60, 64 };
+            CorvusInstrumentProcessor repeatedTriads;
+            repeatedTriads.setCurrentProgram(0);
+            repeatedTriads.prepareToPlay(48000.0, blockSize);
+            juce::AudioBuffer<float> blockBuffer(2, blockSize);
+            auto clampedFrames = 0;
+            auto preClampPeak = 0.0f;
+            for (auto blockStart = 0; blockStart < passageSamples;
+                 blockStart += blockSize)
+            {
+                const auto blockSamples = juce::jmin(blockSize,
+                                                     passageSamples - blockStart);
+                juce::MidiBuffer passageMidi;
+                for (auto triadStart = 0; triadStart < passageSamples;
+                     triadStart += triadPeriod)
+                {
+                    for (const auto note : triadNotes)
+                    {
+                        const auto noteOnSample = triadStart;
+                        if (noteOnSample >= blockStart
+                            && noteOnSample < blockStart + blockSamples)
+                            passageMidi.addEvent(
+                                juce::MidiMessage::noteOn(1, note, 0.8f),
+                                noteOnSample - blockStart);
+
+                        const auto noteOffSample = triadStart + triadDuration;
+                        if (noteOffSample >= blockStart
+                            && noteOffSample < blockStart + blockSamples)
+                            passageMidi.addEvent(
+                                juce::MidiMessage::noteOff(1, note),
+                                noteOffSample - blockStart);
+                    }
+                }
+
+                repeatedTriads.processBlock(blockBuffer, passageMidi);
+                const auto blockPeak = repeatedTriads.getLastPreClampPeak();
+                if (blockPeak > preClampPeak)
+                    preClampPeak = blockPeak;
+                for (auto sample = 0; sample < blockSamples; ++sample)
+                    if (std::abs(blockBuffer.getSample(0, sample)) >= 1.0f
+                        || std::abs(blockBuffer.getSample(1, sample)) >= 1.0f)
+                        ++clampedFrames;
+            }
+
+            std::cout << "Dawn Choir repeated-triad metric: pre_clamp_peak="
+                      << preClampPeak << " clamped_frames=" << clampedFrames
+                      << " frames=" << passageSamples << '\n';
+            expect(preClampPeak < 0.95f,
+                   "the repeated Dawn Choir peak must stay below 0.95 before the final clamp");
+            expectEquals(clampedFrames, 0,
+                         "the repeated Dawn Choir passage must not reach the final clamp rail");
+        }
+
         beginTest("signature patches render distinct deterministic fixtures");
         const auto dawnChoirAgain = renderProgram(0, false);
         for (std::size_t sample = 0; sample < dawnChoirAgain.size(); ++sample)
             expectWithinAbsoluteError(dawnChoirAgain[sample], wetFixtures[0][sample],
                                       1.0e-7f);
+        for (std::size_t program = 1; program < wetFixtures.size(); ++program)
+        {
+            const auto signatureAgain = renderProgram(static_cast<int>(program), false);
+            expect(signatureAgain == wetFixtures[program],
+                   "non-Dawn signature fixtures must stay bit-identical");
+        }
         for (std::size_t firstProgram = 0; firstProgram < wetFixtures.size(); ++firstProgram)
         {
             for (std::size_t secondProgram = firstProgram + 1;

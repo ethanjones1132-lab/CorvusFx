@@ -5,6 +5,7 @@
 #include <JuceHeader.h>
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
@@ -21,11 +22,18 @@ public:
         nextAge = 1;
         sustainDown = false;
         pitchBendSemitones = 0.0f;
+        dawnSmoothedGain = 1.0f;
+        const auto safeSampleRate = juce::jmax(1.0, sampleRate);
+        dawnAttackCoefficient = static_cast<float>(
+            1.0 - std::exp(-1.0 / (0.010 * safeSampleRate)));
+        dawnReleaseCoefficient = static_cast<float>(
+            1.0 - std::exp(-1.0 / (3.0 * safeSampleRate)));
     }
 
     void render(juce::AudioBuffer<float>& buffer, const juce::MidiBuffer& midi,
                 const VoiceParameters& parameters)
     {
+        dawnSmoothedGain = 1.0f;
         buffer.clear();
         if (buffer.getNumChannels() < 2 || buffer.getNumSamples() <= 0)
             return;
@@ -41,6 +49,30 @@ public:
         }
 
         renderSpan(buffer, renderedUntil, buffer.getNumSamples() - renderedUntil);
+    }
+
+    void renderWithDawnActivityGain(juce::AudioBuffer<float>& buffer,
+                                   const juce::MidiBuffer& midi,
+                                   const VoiceParameters& parameters,
+                                   float dawnActivityUnity)
+    {
+        buffer.clear();
+        if (buffer.getNumChannels() < 2 || buffer.getNumSamples() <= 0)
+            return;
+
+        auto renderedUntil = 0;
+        for (const auto metadata : midi)
+        {
+            const auto eventPosition = juce::jlimit(
+                renderedUntil, buffer.getNumSamples(), metadata.samplePosition);
+            renderDawnSpan(buffer, renderedUntil, eventPosition - renderedUntil,
+                           dawnActivityUnity);
+            handleMidiMessage(metadata.getMessage(), parameters);
+            renderedUntil = eventPosition;
+        }
+
+        renderDawnSpan(buffer, renderedUntil,
+                       buffer.getNumSamples() - renderedUntil, dawnActivityUnity);
     }
 
     void panic() noexcept
@@ -186,7 +218,51 @@ private:
             voice.render(left, right, start, count);
     }
 
+    void renderDawnSpan(juce::AudioBuffer<float>& buffer, int start, int count,
+                        float dawnActivityUnity)
+    {
+        if (count <= 0)
+            return;
+
+        auto* left = buffer.getWritePointer(0);
+        auto* right = buffer.getWritePointer(1);
+        for (auto sample = start; sample < start + count; ++sample)
+        {
+            float emittedEnvelopeLevel = 0.0f;
+            float mixedLeft = 0.0f;
+            float mixedRight = 0.0f;
+            for (auto& voice : voices)
+            {
+                const auto voiceSample = voice.renderSample(emittedEnvelopeLevel);
+                mixedLeft += voiceSample;
+                mixedRight += voiceSample;
+            }
+
+            left[sample] = mixedLeft;
+            right[sample] = mixedRight;
+            auto activityGain = 1.0f;
+            if (emittedEnvelopeLevel > dawnActivityUnity)
+            {
+                const auto unityRatio
+                    = dawnActivityUnity / emittedEnvelopeLevel;
+                activityGain = unityRatio * unityRatio * unityRatio;
+            }
+
+            const auto coefficient = activityGain < dawnSmoothedGain
+                ? dawnAttackCoefficient : dawnReleaseCoefficient;
+            dawnSmoothedGain += coefficient * (activityGain - dawnSmoothedGain);
+            left[sample] *= dawnSmoothedGain;
+            right[sample] *= dawnSmoothedGain;
+        }
+
+        for (auto& voice : voices)
+            voice.finishRenderSpan();
+    }
+
     std::array<CorvusVoice, voiceCount> voices;
+    float dawnSmoothedGain = 1.0f;
+    float dawnAttackCoefficient = 1.0f;
+    float dawnReleaseCoefficient = 1.0f;
     std::uint64_t nextAge = 1;
     float pitchBendSemitones = 0.0f;
     bool sustainDown = false;
