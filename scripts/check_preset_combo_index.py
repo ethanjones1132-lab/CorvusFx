@@ -62,7 +62,8 @@ CLASS_RE = re.compile(
     r'\s*\{(.*?)\n\};', re.S)
 PRESET_PARAM_RE = re.compile(
     r'AudioParameterInt>\s*\(\s*"preset"\s*,\s*"Preset"\s*,\s*'
-    r'(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*\)')
+    r'(-?\d+)\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*'
+    r'(?:,[^;]*?)?\s*\)+\s*;', re.S)
 ID_TO_PRESET_RE = re.compile(
     r'static\s+const\s+int\s+idToPreset\s*\[\s*(\d+)\s*\]\s*=\s*\{(.*?)\}\s*;',
     re.S)
@@ -206,6 +207,10 @@ def check_processor(txt, errors):
             errors.append(
                 f"\"preset\" default {default} is outside the item-id range "
                 f"[{lo},{hi}]")
+        if default != 2:
+            errors.append(
+                f"\"preset\" default is {default}, expected 2 — the "
+                f"parameter identity (and saved-session default) changed")
 
     m = ID_TO_PRESET_RE.search(txt)
     if not m:

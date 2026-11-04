@@ -59,6 +59,10 @@ void CorvusFXAudioProcessor::parameterChanged(const juce::String& parameterID, f
 {
     if (parameterID == "preset")
     {
+        // CV-041: "preset" is registered non-automatable, so a plain host
+        // automation write can no longer reach this branch. Recall still
+        // arrives from the editor combo, a host program change
+        // (setCurrentProgram) and state restore, which must keep working.
         if (restoringPresetState.load())
             return;
         // ComboBoxAttachment maps the parameter value to combo box item ID.
@@ -307,7 +311,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::crea
     params.push_back(pctParam("master_side_drive", "Master Side Drive", 0));
     params.push_back(std::make_unique<juce::AudioParameterBool>("master_bypass", "Master Bypass", false));
     params.push_back(pctParam("output_trim", "Output Trim", 100));
-    params.push_back(std::make_unique<juce::AudioParameterInt>("preset", "Preset", 0, 42, 2));
+    // CV-041: "preset" is a recall trigger, not a mix parameter. Registering it
+    // non-automatable keeps hosts from exposing/recording an automation lane
+    // for it, so a plain automation write can no longer reach parameterChanged()
+    // -> loadPreset() and stamp the whole parameter set mid-playback. ID, name,
+    // range [0,42] and default 2 stay byte-for-byte so saved sessions and host
+    // parameter identity survive; the value still round-trips through
+    // get/setStateInformation, the editor's PresetComboAttachment and
+    // setCurrentProgram().
+    params.push_back(std::make_unique<juce::AudioParameterInt>(
+        "preset", "Preset", 0, 42, 2,
+        juce::AudioParameterIntAttributes().withAutomatable(false)));
     return { params.begin(), params.end() };
 }
 

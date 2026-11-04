@@ -14,6 +14,10 @@ CORVUS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # this explicit assertion keeps the registration from being lost silently if the
 # glob pattern is ever changed.
 test -f "$CORVUS_ROOT/scripts/check_cv029_no_host_notify.py"
+# CV-041: "preset" stays non-automatable
+# (scripts/check_cv041_preset_automation.py). Same auto-registration applies;
+# this explicit assertion keeps it from being lost silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv041_preset_automation.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"
