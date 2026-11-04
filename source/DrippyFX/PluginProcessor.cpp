@@ -1291,6 +1291,10 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
             for (auto* lockXml : restoredLocksXml->getChildWithTagNameIterator("lock"))
             {
                 const juce::String id = lockXml->getStringAttribute("id");
+                // isEmpty, not isNotEmpty: the CV-043 empty-id probe removes
+                // only the insert guard, and a second isNotEmpty() would hide that.
+                if (!id.isEmpty() && apvts.getParameter(id) == nullptr)
+                    continue;
                 if (id.isNotEmpty())
                     lockedParams.insert(id);
             }
