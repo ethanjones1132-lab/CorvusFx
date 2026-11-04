@@ -1276,11 +1276,18 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
             }
         }
 
-        // Restore locked parameter list
-        if (auto* restoredLocksXml = xml->getChildByName("paramLocks"))
+        // Clear locked parameters unconditionally: a saved state from an
+        // older build (without a "paramLocks" child) must not silently keep
+        // the previous session's locks armed.
         {
             const juce::ScopedLock lock(lockedParamsLock);
             lockedParams.clear();
+        }
+
+        // Restore locked parameter list (only when the state carries them)
+        if (auto* restoredLocksXml = xml->getChildByName("paramLocks"))
+        {
+            const juce::ScopedLock lock(lockedParamsLock);
             for (auto* lockXml : restoredLocksXml->getChildWithTagNameIterator("lock"))
             {
                 const juce::String id = lockXml->getStringAttribute("id");
