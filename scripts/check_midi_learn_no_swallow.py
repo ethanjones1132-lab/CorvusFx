@@ -9,6 +9,11 @@ Asserts the MIDI-learn capture branch in the processBlock CC loop:
   3. capture skips only its own iteration (a `continue` is present in the
      capture branch), keeping the mapping path active for other CCs.
 
+CV-029: the audio thread itself never notifies the host any more. The apply
+path stages the newest value per parameter (stageMidiHostNotify) and the
+message-thread drain (drainPendingMidiHostNotifications) notifies the host, so
+this checker requires BOTH halves to exist.
+
 Negatives (proven in iter-027): re-adding the bare break -> FAIL exit 1;
 re-adding the capture jump -> FAIL exit 1; removing the continue -> FAIL 1.
 Restore the original file to pass again.
@@ -80,10 +85,26 @@ if cap_body is not None and "setValueNotifyingHost" in cap_body:
 if cap_body is not None and "midiMap[" not in cap_body:
     failures.append("capture branch no longer writes midiMap[...]")
 
-# sanity: the loop still applies mappings for non-captured CCs
+# sanity: the loop still applies mappings for non-captured CCs.
+# CV-029: the audio thread no longer notifies the host directly — it stages the
+# newest normalised value in the pending slot (stageMidiHostNotify), and the
+# message-thread drain (drainPendingMidiHostNotifications) performs the host
+# notification. Both halves are required so a staged CC is never dropped.
 apply_region = no_comments[cap_start:] if cap_start is not None else no_comments
-if "setValueNotifyingHost" not in apply_region:
-    failures.append("the CC apply path (setValueNotifyingHost) has vanished")
+if re.search(r"stageMidiHostNotify\s*\(", apply_region) is None:
+    failures.append(
+        "the CC apply path no longer stages a mapped CC for host notification "
+        "(stageMidiHostNotify) — non-captured CCs would stop reaching the "
+        "parameter"
+    )
+elif re.search(
+        r"int\s+(?:\w+::)?drainPendingMidiHostNotifications\s*\(",
+        no_comments) is None:
+    failures.append(
+        "the message-thread pending-slot drain "
+        "(drainPendingMidiHostNotifications) has vanished — a staged CC would "
+        "never notify the host"
+    )
 
 # ---------------------------------------------------------------- report
 if failures:

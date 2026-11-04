@@ -389,6 +389,13 @@ CorvusFXAudioProcessorEditor::~CorvusFXAudioProcessorEditor()
 
 void CorvusFXAudioProcessorEditor::timerCallback()
 {
+    // CV-029: drain the audio-thread MIDI-CC mailbox here, on the message
+    // thread. processBlock only stages the newest normalised value per
+    // parameter, so this tick is the single place a mapped CC reaches
+    // setValueNotifyingHost — at most one notification per parameter per tick,
+    // and never inside a render callback.
+    audioProcessor.drainPendingMidiHostNotifications();
+
     // Update level meter from processor (audio thread -> message thread via atomics).
     // Decay the processor-side atomics FIRST so the copies below are the
     // authoritative displayed values (a stale peak can't resurrect after silence).

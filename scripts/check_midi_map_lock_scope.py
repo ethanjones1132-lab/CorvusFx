@@ -9,11 +9,15 @@ Pins the audio-thread CC apply path in processBlock:
      happen under the lock, locking discipline retained);
   3. the capture branch still writes under the lock (midiMap[...] inside
      the locked region) and clears midiLearnActive;
-  4. no `setValueNotifyingHost` inside the ScopedLock block.
+  4. no `setValueNotifyingHost` inside the ScopedLock block;
+  5. CV-029: after the lock the apply path only STAGES the mapped value
+     (stageMidiHostNotify) for the message-thread drain — no
+     setValueNotifyingHost anywhere in the post-lock apply region.
 
 Negative (proven): temp-reverting the apply path to `midiMap.find(cc)`
 inside the hold-locked ScopedLock region -> FAIL exit 1; removing the
-ScopedLock entirely -> FAIL exit 1; restoring the source -> EXIT 0.
+ScopedLock entirely -> FAIL exit 1; re-adding a direct host notification
+after the lock -> FAIL exit 1; restoring the source -> EXIT 0.
 """
 import re
 import sys
@@ -73,26 +77,53 @@ for i in range(brace_start, len(no_comments)):
             lock_block_end = i + 1
             break
 
-region = no_comments[lock_block_end:]
-apply_end = region.find("setValueNotifyingHost")
+# CV-029: bound the apply region to the enclosing MIDI block, then require the
+# staging hand-off (stageMidiHostNotify). The audio thread must never perform
+# the host notification itself: that moved to the message-thread drain.
+def _block_end(text, lb):
+    depth = 0
+    for i in range(lb, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+    return len(text)
+
+
+enclosing = no_comments.rfind("{", 0, brace_start)
+region_end = _block_end(no_comments, enclosing) if enclosing != -1 \
+    else len(no_comments)
+region = no_comments[lock_block_end:region_end]
+apply_end = region.find("stageMidiHostNotify")
 if apply_end == -1:
-    failures.append("the CC apply path (setValueNotifyingHost) has vanished")
+    failures.append(
+        "the CC apply path no longer stages the mapped value "
+        "(stageMidiHostNotify) — it must hand the newest value to the "
+        "message-thread drain instead of notifying the host from processBlock"
+    )
 else:
     # The statement that dereferences the mapping must NOT be midiMap.find
     # after the lock (it must be the snapshot).
-    window = region[max(0, apply_end - 600):apply_end]
+    window = region[max(0, apply_end - 800):apply_end]
     if re.search(r"midiMap\s*\.\s*find", window):
         failures.append(
             "the apply path still dereferences the live `midiMap.find(cc)` "
             "outside/around the lock — it must read from a snapshot copy so "
-            "setValueNotifyingHost never contends midiMapLock with the "
-            "message thread"
+            "no host-facing work contends midiMapLock with the message thread"
         )
     if "mapSnapshot" not in window:
         failures.append(
             "the apply path does not use a snapshot copy (mapSnapshot); the "
-            "lock must be released before host notification"
+            "lock must be released before any staging/notification"
         )
+if "setValueNotifyingHost" in region:
+    failures.append(
+        "setValueNotifyingHost still runs in the post-lock apply region of "
+        "processBlock — the audio thread must only stage the newest value for "
+        "the message-thread drain (CV-029)"
+    )
 
 # No setValueNotifyingHost inside the locked block (host notification must
 # never run while midiMapLock is held).
@@ -115,7 +146,8 @@ if failures:
         print("FAIL:", f)
     sys.exit(1)
 
-print("OK: CC apply path runs on a snapshot after midiMapLock release; "
-      "capture+snapshot still under the lock; no host notification inside "
-      "the critical section")
+print("OK: CC apply path stages the mapped value from a snapshot after "
+      "midiMapLock release (CV-029: no host notification on the audio "
+      "thread); capture+snapshot still under the lock; no host notification "
+      "inside the critical section")
 sys.exit(0)

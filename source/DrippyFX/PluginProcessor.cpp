@@ -23,10 +23,35 @@ apvts(*this, &undoManager, "Parameters", createParameterLayout())
     // CV-017: reserve the audio-thread MIDI apply snapshot storage before
     // any audio runs, so processBlock's clear-and-refill never allocates.
     mapSnapshot.reserve(128);
+
+    // CV-029: build the CC → host-notification roster once, off the audio
+    // thread. One slot per automatable parameter; the program parameter
+    // ("preset") is deliberately excluded (a CC must never fan out into a
+    // whole preset change), so a stale or restored CC→preset mapping can never
+    // reach the host from the apply path and no preset slot can ever be
+    // staged. It is excluded by identity, which needs no id string compare on
+    // this construction path.
+    auto* programParam = apvts.getParameter("preset");
+    for (auto* param : getParameters())
+    {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(param);
+        if (ranged == nullptr || ranged == programParam)
+            continue;
+        if (numMidiHostNotifySlots >= MAX_MIDI_HOST_NOTIFY_PARAMS)
+            break;
+        midiHostNotifySlots[(size_t) numMidiHostNotifySlots].param = ranged;
+        ++numMidiHostNotifySlots;
+    }
+
+    // CV-029: the message-thread drain runs from the processor's own timer so a
+    // mapped CC reaches the host whether or not the editor window is open.
+    startTimerHz(30);
 }
 
 CorvusFXAudioProcessor::~CorvusFXAudioProcessor()
 {
+    // Stop the drain timer before any member it touches is torn down.
+    stopTimer();
     apvts.removeParameterListener("preset", this);
 }
 
@@ -372,6 +397,56 @@ void CorvusFXAudioProcessor::clearAllMidiMappings()
 {
     const juce::ScopedLock lock(midiMapLock);
     midiMap.clear();
+}
+
+// ── CV-029: audio-thread → message-thread host-notification mailbox ──
+void CorvusFXAudioProcessor::stageMidiHostNotify(juce::RangedAudioParameter* param,
+                                                 float normValue)
+{
+    // Audio thread (processBlock). Pointer match against the constructor-built
+    // roster only: no lock, no allocation, no juce::String work, no host call.
+    // The value store happens-before the release store of `pending`, and the
+    // drain's acquire exchange peers with it, so the message thread always
+    // observes a value written before the flag it consumed.
+    if (param == nullptr)
+        return;
+    for (int i = 0; i < numMidiHostNotifySlots; ++i)
+    {
+        auto& slot = midiHostNotifySlots[(size_t) i];
+        if (slot.param != param)
+            continue;
+        // Newest request wins: an older pending value is simply overwritten.
+        slot.value.store(normValue, std::memory_order_relaxed);
+        slot.pending.store(true, std::memory_order_release);
+        return;
+    }
+}
+
+void CorvusFXAudioProcessor::timerCallback()
+{
+    drainPendingMidiHostNotifications();
+}
+
+int CorvusFXAudioProcessor::drainPendingMidiHostNotifications()
+{
+    // Message thread only (editor timer). This is the single place a MIDI CC
+    // reachable from processBlock notifies the host, so the render callback
+    // never calls setValueNotifyingHost, a gesture or an undo transaction.
+    // Each parameter is drained at most once per tick: the exchange consumes
+    // the newest staged value and nothing re-notifies until the audio thread
+    // stages again.
+    int notified = 0;
+    for (int i = 0; i < numMidiHostNotifySlots; ++i)
+    {
+        auto& slot = midiHostNotifySlots[(size_t) i];
+        if (! slot.pending.exchange(false, std::memory_order_acquire))
+            continue;
+        if (slot.param == nullptr)
+            continue;
+        slot.param->setValueNotifyingHost(slot.value.load(std::memory_order_relaxed));
+        ++notified;
+    }
+    return notified;
 }
 
 // Preset A/B Compare
@@ -735,6 +810,13 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                     if (msg.isController() && capturedCc == -1)
                     {
                         const int cc = msg.getControllerNumber();
+                        // CV-029: "preset" is never a legal CC target, so the
+                        // capture path can never create one. The same gate
+                        // exists when learn is armed (startMidiLearn), when
+                        // saved mappings are restored, and in the apply path
+                        // below — a CC can never fan out into loadPreset().
+                        if (midiLearnParamID == "preset")
+                            continue;
                         // Refuse to steal: if this CC is already mapped to a
                         // DIFFERENT parameter, leave the mapping (and the
                         // learn armed) untouched so the user can move a knob
@@ -763,6 +845,15 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
         // Lock released — apply mappings from the snapshot. The captured CC
         // skips its own mapping step (skip-only-this-CC semantics).
+        //
+        // CV-029: the audio thread NEVER notifies the host. A mapped CC only
+        // stages the newest normalised value (the raw cc/127, unchanged, so
+        // the parameter's own rounding is exactly what it is today) in that
+        // parameter's pending slot. drainPendingMidiHostNotifications() runs
+        // on the message-thread timer and performs the single
+        // setValueNotifyingHost per parameter per tick, so no mapped knob can
+        // run host-facing work, an undo transaction or APVTS listener work
+        // inside this render callback.
         for (const auto& metadata : midiMessages)
         {
             auto msg = metadata.getMessage();
@@ -773,14 +864,21 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 continue;
             float normValue = msg.getControllerValue() / 127.0f;
             // The snapshot is a flat vector of (cc, paramID) pairs in
-            // ascending CC order. Scan it and notify through that entry.
+            // ascending CC order. Scan it and stage through that entry.
             for (const auto& entry : mapSnapshot)
             {
                 if (entry.first == cc)
                 {
+                    // CV-029: refuse "preset" at the apply site too. Mapping
+                    // creation and restore already reject it; this gate means
+                    // even a stale/restored CC→preset row can never fan a CC
+                    // out into a whole preset change (undo transaction plus a
+                    // full parameter rewrite) on the audio thread.
+                    if (entry.second == "preset")
+                        break;
                     auto* p = apvts.getParameter(entry.second);
-                    if (p)
-                        p->setValueNotifyingHost(normValue);
+                    if (p != nullptr)
+                        stageMidiHostNotify(p, normValue);
                     break;
                 }
             }
@@ -1153,7 +1251,13 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
             {
                 int cc = mapXml->getIntAttribute("cc");
                 juce::String paramID = mapXml->getStringAttribute("param");
-                if (paramID.isNotEmpty() && apvts.getParameter(paramID) != nullptr)
+                // CV-029: never restore a CC→preset mapping. Mapping creation
+                // (startMidiLearn / learn capture) and the audio-thread apply
+                // path reject "preset" too, so a saved or hand-edited state
+                // can never re-arm a CC that fans out into a whole preset
+                // change (undo transaction + full parameter rewrite).
+                if (paramID != "preset" && paramID.isNotEmpty()
+                    && apvts.getParameter(paramID) != nullptr)
                     midiMap[cc] = paramID;
             }
         }

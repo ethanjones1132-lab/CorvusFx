@@ -9,6 +9,11 @@ set -euo pipefail
 # exported so nested python interpreters the checkers spawn inherit it too.
 export PYTHONUTF8=1
 CORVUS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# CV-029: no host-facing work on the audio thread (scripts/check_cv029_no_host_notify.py).
+# The loop below auto-registers every scripts/check_*.py, including that one;
+# this explicit assertion keeps the registration from being lost silently if the
+# glob pattern is ever changed.
+test -f "$CORVUS_ROOT/scripts/check_cv029_no_host_notify.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"

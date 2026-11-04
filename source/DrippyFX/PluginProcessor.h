@@ -13,7 +13,8 @@
 
 //==============================================================================
 class CorvusFXAudioProcessor : public juce::AudioProcessor,
-    public juce::AudioProcessorValueTreeState::Listener
+    public juce::AudioProcessorValueTreeState::Listener,
+    private juce::Timer
 {
 public:
     CorvusFXAudioProcessor();
@@ -61,6 +62,13 @@ public:
     // MIDI Learn
     void startMidiLearn(const juce::String& paramID)
     {
+        // CV-029: "preset" is not a legal MIDI-learn target. A CC bound to the
+        // program parameter has no knob-level meaning and would fan a raw CC
+        // out into loadPreset() (an undo transaction plus a full parameter
+        // rewrite), so arming is refused here as well as in the audio-thread
+        // capture branch and the apply path.
+        if (paramID == "preset")
+            return;
         // Armed-learn state is read by the audio thread under midiMapLock;
         // write under the same lock so the capture branch can never see a
         // torn juce::String parameter ID.
@@ -84,6 +92,22 @@ public:
         const juce::ScopedLock lock(mapLock);
         return midiMap;
     }
+
+    // CV-029: message-thread drain for the audio-thread CC mailbox.
+    //
+    // processBlock never notifies the host for a MIDI CC. It only records the
+    // newest requested normalised value in that parameter's pending slot
+    // (relaxed atomics, no lock, no allocation, no host call). This drain runs
+    // on the editor timer (message thread) and performs the single
+    // setValueNotifyingHost per parameter per tick, so a mapped knob can never
+    // run host-facing work, an undo transaction or APVTS listener work inside
+    // a render callback. Returns the number of parameters notified.
+    int drainPendingMidiHostNotifications();
+
+    // Message-thread driver for the drain (CV-029 review fix). The editor only
+    // exists while its window is open, and a DAW plays with it closed, so the
+    // drain cannot depend on it: the processor ticks its own timer.
+    void timerCallback() override;
 
 
 private:
@@ -149,6 +173,31 @@ private:
     // table is at most 128 entries — capping the refill at that width makes
     // growth impossible. Only the audio thread touches this member.
     std::vector<std::pair<int, juce::String>> mapSnapshot;
+
+    // ── CV-029: audio-thread → message-thread host-notification mailbox ──
+    // One slot per automatable parameter, populated ONCE in the constructor
+    // from the fixed parameter layout, so the audio thread only ever performs
+    // a pointer match. The "preset" program parameter is deliberately absent:
+    // a CC can never fan out into a whole preset change. processBlock stores
+    // value + pending (relaxed/release atomics only — no lock, no allocation,
+    // no host call, no APVTS listener work); the message thread drains the
+    // mailbox from the editor timer and is the only place a MIDI CC reaches
+    // setValueNotifyingHost. 64 slots comfortably cover the 24-parameter
+    // layout plus any future addition.
+    static constexpr int MAX_MIDI_HOST_NOTIFY_PARAMS = 64;
+    struct MidiHostNotifySlot
+    {
+        juce::RangedAudioParameter* param = nullptr; // fixed off the audio thread
+        std::atomic<float> value { 0.0f };           // newest requested value
+        std::atomic<bool> pending { false };         // set by the audio thread
+    };
+    std::array<MidiHostNotifySlot, MAX_MIDI_HOST_NOTIFY_PARAMS> midiHostNotifySlots;
+    int numMidiHostNotifySlots = 0;
+
+    // Audio thread: record the newest requested normalised value for `param`
+    // (CC value / 127, unchanged, so the parameter's own rounding is exactly
+    // what it is today). Unknown parameters are dropped, never queued.
+    void stageMidiHostNotify(juce::RangedAudioParameter* param, float normValue);
 
     std::set<juce::String> lockedParams;
     juce::CriticalSection lockedParamsLock;

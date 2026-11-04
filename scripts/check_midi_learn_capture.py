@@ -56,7 +56,10 @@ Member-vector-only assertions (vacuous for the local-map shape):
       and appends only entries guarded by 0 <= cc <= 127 — a bounded
       refill of at most the reserved capacity,
   (i) the post-lock apply path scans the vector for entry.first == cc and
-      notifies the host through that entry's parameter id (mapping->second).
+      hands that entry's parameter id (mapping->second) off for host
+      notification — either directly (legacy setValueNotifyingHost) or, on
+      the CV-029 tree, via the audio-thread staging call
+      (stageMidiHostNotify) whose value the message-thread drain notifies.
 
 Self-tests (all in memory — the real C++ tree is never written):
   * positive fixtures for BOTH shapes, including the member header;
@@ -308,14 +311,19 @@ def _check_member_vector(code, body, header, lock, apply_region):
             "the off-thread mapSnapshot capacity is smaller than the refill "
             "domain — a full legal CC map would reallocate on the audio thread")
 
-    # (i) post-lock apply path scans the vector and notifies via .second
+    # (i) post-lock apply path scans the vector and hands the mapped entry off
+    #     for host notification. CV-029: on the live tree the hand-off is the
+    #     staging call (stageMidiHostNotify) — the audio thread no longer
+    #     notifies the host itself — so both the staging call and the legacy
+    #     direct setValueNotifyingHost satisfy this shape check; CV-029's own
+    #     gate (scripts/check_cv029_no_host_notify.py) forbids the latter.
     applied = False
     for m in re.finditer(
             r"for\s*\(\s*(?:const\s+)?auto\s*(?:&&|&|\*)?\s*(\w+)\s*:\s*"
             r"mapSnapshot\s*\)", apply_region):
         var = re.escape(m.group(1))
         seg = apply_region[m.end():m.end() + 2000]
-        notify = re.search(r"setValueNotifyingHost", seg)
+        notify = re.search(r"setValueNotifyingHost|stageMidiHostNotify", seg)
         if not notify:
             continue
         seg = seg[:notify.end()]
