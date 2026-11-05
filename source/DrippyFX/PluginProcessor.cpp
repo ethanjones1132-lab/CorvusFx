@@ -1217,13 +1217,21 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
         apvts.replaceState(juce::ValueTree::fromXml(parameterState));
         restoringPresetState.store(false);
 
+        // Clear A/B-compare snapshots unconditionally so an absent or partial
+        // pair in the restored state cannot inherit the previous session.
+        {
+            snapshotA.fill(0.0f);
+            snapshotB.fill(0.0f);
+            abSlotIsA = true;
+            abSnapshotsPersisted = false;
+        }
+
         // Restore A/B-compare snapshots only when the state carries them.
         // Older states (no "abSlots" child) leave abSnapshotsPersisted
         // false so the editor constructor reseed keeps its legacy role:
         // initialising both slots with the recall's parameter values.
         // Restored slots reopen a saved A/B compare instead of leaving both
         // slots in a state where a mere editor reopen destroys them.
-        abSnapshotsPersisted = false;
         if (auto* abXml = xml->getChildByName("abSlots"))
         {
             juce::MemoryOutputStream aMB;
