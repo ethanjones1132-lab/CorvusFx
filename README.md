@@ -6,8 +6,7 @@
 
 Built with [JUCE 8](https://juce.com) for Windows (x64). Free and open-source.
 
-[![Release](https://img.shields.io/github/v/release/ethanjones1132-lab/CorvusFx?color=8A2BE2&label=version)](https://github.com/ethanjones1132-lab/CorvusFx/releases)
-[![Downloads](https://img.shields.io/github/downloads/ethanjones1132-lab/CorvusFx/total?color=blue)](https://github.com/ethanjones1132-lab/CorvusFx/releases)
+[![Release status](https://img.shields.io/badge/release-not%20published-lightgrey)](docs/release/v1.0.0-notes.md)
 [![JUCE](https://img.shields.io/badge/JUCE-8.0.12-00B4D8)](https://juce.com)
 [![C++](https://img.shields.io/badge/C%2B%2B-17-00599C)](https://isocpp.org)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -25,7 +24,7 @@ Beyond the signal chain, the plugin ships a full performance workflow: **MIDI Le
 
 Whether you're a producer looking for analog-style warmth, a sound designer chasing otherworldly modulation, or a mixing engineer wanting a cohesive channel strip, Corvus FX delivers transparent, musical processing with **zero compromise on audio quality**.
 
-> 🆕 **Corvus Instrument** — a companion synth that reuses the Corvus DSP core — is in active development. See [Corvus Instrument](#corvus-instrument-companion-synth).
+> 🆕 **Corvus Instrument** — a separate companion synth target that reuses the Corvus DSP core. Its source/build target exists, but no distributable package is published. See [Corvus Instrument](#corvus-instrument-companion-synth).
 
 ---
 
@@ -45,7 +44,7 @@ Whether you're a producer looking for analog-style warmth, a sound designer chas
      - [Thick Sauce guitar riff on YouTube](https://youtube.com/...)
 -->
 
-> 🎵 **Audio demos coming soon.** Listen to Corvus FX in action across all 36 factory presets.
+> 🎵 **No audio demos are currently available.**
 
 ---
 
@@ -315,7 +314,7 @@ The effects DSP (distortion, chorus, delay, reverb, master output, oversampling,
 
 ## Corvus Instrument (Companion Synth)
 
-> 🚧 **In development — Phase 2 "playable vertical slice".** Shipped as a separate plugin target, not part of the Corvus FX effect.
+> **Separate product/build target; not currently distributed.** It is not part of the Corvus FX effect.
 
 **Corvus Instrument** is a new JUCE instrument target (`IS_SYNTH TRUE`, MIDI note input, stereo output with no required audio input) with its own plugin identifier (`Crvs` / `Cvi1`), state format, presets, and editor. It routes polyphonic voices through the **shared Corvus effects chain** after the voice mix, so patches arrive mix-ready rather than dry.
 
@@ -333,78 +332,37 @@ The full design (second oscillator, sub/noise, filter, modulation matrix, additi
 
 ---
 
-## Installation
+## Build targets and availability
 
 ### Requirements
 - **Host**: Any DAW that supports VST3 (Reaper, Ableton Live, FL Studio, Cubase, etc.)
 - **OS**: Windows 10 or 11 (x64)
 - **CPU**: Intel/AMD processor (SSE2 or later, AVX2 recommended)
 
-### What Ships
+The CMake project defines these plugin formats; these are build configurations, not
+claims that binaries or packages have been built or published:
 
-| Plugin | Format | Notes |
-|--------|--------|-------|
-| **Corvus FX** | VST3 (Windows x64) | 5-module multi-effects, 36 presets |
-| **Corvus Instrument** | VST3 (Windows x64) | Synth, 5 patches, shares the Corvus DSP core |
-| **Corvus Instrument** | Standalone (Windows x64) | Shipped as a `.zip`; runs without a DAW |
+| Product | Configured CMake target(s) | Formats |
+|--------|---------------------------|---------|
+| **Corvus FX** | `DrippyFX` / `DrippyFX_VST3` | VST3, AU, Standalone |
+| **Corvus Instrument** | `CorvusInstrument` / `CorvusInstrument_VST3`, `CorvusInstrument_Standalone` | VST3, Standalone |
 
-### Install (Windows)
+**No v1.0.0 binaries, installers, or standalone archives are currently
+available.** No installation path or package filename is being advertised.
 
-VST3 plugins install as **bundles** — folders whose name ends in `.vst3`.
-Copy the whole bundle; do not extract or rename the inner files.
-
-1. **Download** the release artifacts from the [Releases](https://github.com/ethanjones1132-lab/CorvusFx/releases) page
-2. **Copy** each wanted `*.vst3` bundle into the standard VST3 plugin directory:
-   ```
-   C:\Program Files\Common Files\VST3\
-   ```
-   (Windows may ask for administrator rights when writing here.)
-3. **Rescan** plugins in your DAW. If a plugin does not appear, add
-   `C:\Program Files\Common Files\VST3\` to the host's VST3 scan paths.
-4. **Standalone** (Corvus Instrument): unzip and run the `.exe` directly — no
-   install step and no DAW required.
-
-### Windows VST3 Paths
-
-| Plugin | v1.0.0 build artifact (CMake) | Installed path |
-|--------|-------------------------------|----------------|
-| **Corvus FX** | CMake target `DrippyFX_VST3` → `Corvus FX.vst3` | `C:\Program Files\Common Files\VST3\Corvus FX.vst3` |
-| **Corvus Instrument** | CMake target `CorvusInstrument_VST3` → `CorvusInstrument.vst3` | `C:\Program Files\Common Files\VST3\CorvusInstrument.vst3` |
-| **Corvus Instrument (Standalone)** | CMake target `CorvusInstrument_Standalone` → `.zip` | unzipped `.exe`, any folder |
-
-The v1.0.0 Corvus FX bundle is named `Corvus FX.vst3` and reports to hosts as
-"Corvus FX". The internal CMake target (`DrippyFX`) and the plugin identity
-codes (`Drip` / `Dfx1`) are unchanged; with no explicit `BUNDLE_ID`, JUCE
-derives the bundle ID from `COMPANY_NAME` plus the CMake target name (see
-JUCE `docs/CMake API.md`), and the VST3 class IDs derive from the plugin
-codes — so the rename introduces no second plugin identity.
+The CMake configuration sets the Corvus FX VST3 product name to "Corvus FX";
+it does not establish that a bundle has been built. The internal CMake target
+(`DrippyFX`) and plugin identity codes (`Drip` / `Dfx1`) remain unchanged.
 
 `drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3` is a **historical
-legacy prebuilt** binary from the original NewProject project; the v1.0.0
-release does **not** rebuild, rename, install, or re-verify it.
+legacy prebuilt** binary from the original NewProject project; it is not an
+output of the current CMake configuration and is not a v1.0.0 artifact.
 `DrippyMk2` is an experimental alternative build and is **not** part of the
 v1.0.0 artifact set.
 
-> 📦 **v1.0.0 binaries are not published yet.** See
+> 📦 **No release artifacts are available.** See
 > [`docs/release/v1.0.0-notes.md`](docs/release/v1.0.0-notes.md) for the draft
-> release notes, the artifact list, and the pending Windows verification.
-
-### Uninstall (Windows)
-
-1. **Close** your DAW (and any running standalone instance).
-2. **Delete** the plugin bundle(s) you installed from
-   `C:\Program Files\Common Files\VST3\`:
-   ```
-   C:\Program Files\Common Files\VST3\Corvus FX.vst3
-   C:\Program Files\Common Files\VST3\CorvusInstrument.vst3
-   ```
-3. **Delete** the unzipped Standalone folder, if you installed one.
-4. **Rescan** plugins in your DAW — the removed plugins disappear from the list.
-
-Uninstalling the plugin does not touch your saved DAW projects or their plugin
-state. The editor also keeps a small per-user preference file
-(`CorvusFX.settings`, in your Windows user settings folder) that remembers the
-dark/light theme; delete it if you want to reset the theme to its default.
+> notes and outstanding verification/artifact work.
 
 ---
 
@@ -428,7 +386,7 @@ MSBuild.exe "path/to/NewProject_VST3.vcxproj" -p:Configuration=Release -p:Platfo
 
 ### CMake Build (Alternative)
 
-The CMake project defines four targets: **`DrippyFX`** (VST3/AU/Standalone), **`CorvusInstrument`** (VST3/Standalone), and **`CorvusDSPTests`** (shared DSP/instrument regression harness), and **`CorvusFXStateTests`** (FX session state regression harness). The Corvus FX build artifacts are named **`Corvus FX.vst3`** and report to hosts as **"Corvus FX"**; the internal CMake target stays `DrippyFX` for stable identity (see [Windows VST3 Paths](#windows-vst3-paths)).
+The CMake project configures the **`DrippyFX`** plugin (VST3/AU/Standalone), **`CorvusInstrument`** plugin (VST3/Standalone), regression-test executables (`CorvusDSPTests`, `CorvusFXStateTests`), and offline-render executables (`CorvusRenderFX`, `CorvusRenderInstrument`). The FX VST3 uses product name **"Corvus FX"** and target `DrippyFX`; the Instrument product name is **"Corvus Instrument"**. Configured targets do not imply that their outputs have been built or packaged.
 
 Run the portable source gate with `bash scripts/verify_corvus_source.sh` from the repository root. After configuring CMake, build and run `CorvusDSPTestsRun` and `CorvusFXStateTestsRun` to verify the shared effects, instrument behavior, and FX A/B/MIDI/lock session recall. Keep `CORVUS_COPY_PLUGIN_AFTER_BUILD=OFF` while validating a baseline.
 
@@ -614,7 +572,7 @@ See `AGENTS.md` for the engineering workflow used by autonomous coding agents on
 
 ---
 
-This project is distributed as pre-built binaries for evaluation. The source code is available under the MIT License (see `LICENSE`).
+No v1.0.0 release package is published. The source code is available under the MIT License (see `LICENSE`). A historical prebuilt remains in the tree and is not that release.
 
 ---
 
