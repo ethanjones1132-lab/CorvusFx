@@ -182,7 +182,20 @@ void CorvusFXAudioProcessor::loadPreset(int index)
     const auto& p = presets[index];
     auto set = [this](const juce::String& id, float v) {
         auto* param = apvts.getParameter(id);
-        if (param) param->setValueNotifyingHost(param->convertTo0to1(v));
+        if (param)
+        {
+            param->beginChangeGesture();
+            try
+            {
+                param->setValueNotifyingHost(param->convertTo0to1(v));
+            }
+            catch (...)
+            {
+                param->endChangeGesture();
+                throw;
+            }
+            param->endChangeGesture();
+        }
         };
     set("fatness", p.fat); set("chorus_depth", p.cD); set("chorus_rate", p.cR);
     set("chorus_mix", p.cM); set("delay_time", p.dT); set("delay_feedback", p.dFb);
@@ -219,10 +232,20 @@ void CorvusFXAudioProcessor::randomizePreset()
         }
 
         bool isBool = dynamic_cast<juce::AudioParameterBool*>(ranged) != nullptr;
+        ranged->beginChangeGesture();
+        try
+        {
         if (isBool)
             ranged->setValueNotifyingHost(rng.nextFloat() < 0.15f ? 1.0f : 0.0f);
         else
             ranged->setValueNotifyingHost(rng.nextFloat());
+        }
+        catch (...)
+        {
+            ranged->endChangeGesture();
+            throw;
+        }
+        ranged->endChangeGesture();
     }
 }
 
@@ -369,7 +392,17 @@ void CorvusFXAudioProcessor::setCurrentProgram(int i) {
     };
     if (i >= 0 && i < 36) {
         auto* p = apvts.getParameter("preset");
-        if (p) p->setValueNotifyingHost(p->convertTo0to1((float)presetToId[i]));
+        if (p) p->beginChangeGesture();
+        try
+        {
+            if (p) p->setValueNotifyingHost(p->convertTo0to1((float)presetToId[i]));
+        }
+        catch (...)
+        {
+            if (p) p->endChangeGesture();
+            throw;
+        }
+        if (p) p->endChangeGesture();
     }
 }
 const juce::String CorvusFXAudioProcessor::getProgramName(int i) {
@@ -457,7 +490,17 @@ int CorvusFXAudioProcessor::drainPendingMidiHostNotifications()
             continue;
         if (slot.param == nullptr)
             continue;
-        slot.param->setValueNotifyingHost(slot.value.load(std::memory_order_relaxed));
+        slot.param->beginChangeGesture();
+        try
+        {
+            slot.param->setValueNotifyingHost(slot.value.load(std::memory_order_relaxed));
+        }
+        catch (...)
+        {
+            slot.param->endChangeGesture();
+            throw;
+        }
+        slot.param->endChangeGesture();
         ++notified;
     }
     return notified;
@@ -502,7 +545,17 @@ void CorvusFXAudioProcessor::loadSlotA()
     for (int i = 0; i < NUM_AB_PARAMS; ++i)
     {
         auto* p = apvts.getParameter(abParamIds[i]);
-        if (p) p->setValueNotifyingHost(snapshotA[i]);
+        if (p) p->beginChangeGesture();
+        try
+        {
+            if (p) p->setValueNotifyingHost(snapshotA[i]);
+        }
+        catch (...)
+        {
+            if (p) p->endChangeGesture();
+            throw;
+        }
+        if (p) p->endChangeGesture();
     }
     // A/B preset choice INTENTIONALLY STALE: loadSlotA restores the 24
     // knob-level snapshot values only. Writing the "preset" id too would
@@ -521,7 +574,17 @@ void CorvusFXAudioProcessor::loadSlotB()
     for (int i = 0; i < NUM_AB_PARAMS; ++i)
     {
         auto* p = apvts.getParameter(abParamIds[i]);
-        if (p) p->setValueNotifyingHost(snapshotB[i]);
+        if (p) p->beginChangeGesture();
+        try
+        {
+            if (p) p->setValueNotifyingHost(snapshotB[i]);
+        }
+        catch (...)
+        {
+            if (p) p->endChangeGesture();
+            throw;
+        }
+        if (p) p->endChangeGesture();
     }
     // A/B preset choice INTENTIONALLY STALE: loadSlotB restores the 24
     // knob-level snapshot values only. Writing the "preset" id too would
