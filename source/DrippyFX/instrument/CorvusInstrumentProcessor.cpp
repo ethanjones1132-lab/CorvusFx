@@ -49,7 +49,7 @@ int CorvusInstrumentProcessor::getNumPrograms()
 
 int CorvusInstrumentProcessor::getCurrentProgram()
 {
-    return currentProgram;
+    return currentProgram.load(std::memory_order_relaxed);
 }
 
 void CorvusInstrumentProcessor::setCurrentProgram(int index)
@@ -72,7 +72,7 @@ void CorvusInstrumentProcessor::setCurrentProgram(int index)
     setPhysicalValue("fx_amount", preset.fxAmount);
     setPhysicalValue("flight", preset.flight);
     setPhysicalValue("output", preset.outputDb);
-    currentProgram = index;
+    currentProgram.store(index, std::memory_order_relaxed);
 }
 
 const juce::String CorvusInstrumentProcessor::getProgramName(int index)
@@ -166,7 +166,7 @@ void CorvusInstrumentProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         return;
     }
 
-    if (currentProgram == 0)
+    if (currentProgram.load(std::memory_order_relaxed) == 0)
         synthEngine.renderWithDawnActivityGain(
             buffer, midi, currentVoiceParameters(), dawnTriadUnityActivity);
     else
@@ -280,7 +280,8 @@ void CorvusInstrumentProcessor::getStateInformation(juce::MemoryBlock& destinati
 {
     auto state = apvts.copyState();
     state.setProperty("schemaVersion", stateSchemaVersion, nullptr);
-    state.setProperty("currentProgram", currentProgram, nullptr);
+    state.setProperty("currentProgram",
+                      currentProgram.load(std::memory_order_relaxed), nullptr);
     juce::MemoryOutputStream stream(destination, false);
     state.writeToStream(stream);
 }
@@ -306,9 +307,9 @@ void CorvusInstrumentProcessor::setStateInformation(const void* data, int sizeIn
     // parameters we just restored.
     const auto restoredProgram = static_cast<int>(candidate.getProperty("currentProgram", 0));
     if (restoredProgram >= 0 && restoredProgram < getNumPrograms())
-        currentProgram = restoredProgram;
+        currentProgram.store(restoredProgram, std::memory_order_relaxed);
     else
-        currentProgram = 0;
+        currentProgram.store(0, std::memory_order_relaxed);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout

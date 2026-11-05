@@ -4,6 +4,7 @@
 
 #include <JuceHeader.h>
 
+#include <atomic>
 #include <memory>
 
 struct InstrumentEffectsSettings
@@ -76,7 +77,7 @@ private:
     juce::LinearSmoothedValue<float> flightAmount;
     juce::LinearSmoothedValue<float> outputGain;
     float lastPreClampPeak = 0.0f;
-    int currentProgram = 0;
+    std::atomic<int> currentProgram { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CorvusInstrumentProcessor)
 };

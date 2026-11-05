@@ -104,7 +104,9 @@ def function_body(text: str, name: str):
 
 REPLACE_STATE = re.compile(r"\bapvts\s*\.\s*replaceState\s*\(\s*candidate\s*\)\s*;")
 PROGRAM_DECL = re.compile(r"\bconst\s+auto\s+restoredProgram\s*=[^;]*;")
-CLAMP = re.compile(r"\belse\s+currentProgram\s*=\s*(-?\d+)\s*;")
+CLAMP = re.compile(
+    r"\belse\s+currentProgram\s*\.\s*store\s*\(\s*(-?\d+)\s*,\s*"
+    r"std::memory_order_relaxed\s*\)\s*;")
 
 
 def check_text(source_text: str):
@@ -139,7 +141,9 @@ def check_text(source_text: str):
     in_range = re.search(
         r"restoredProgram\s*>=\s*0\s*&&\s*restoredProgram\s*<\s*"
         r"getNumPrograms\s*\(\s*\)", after)
-    store = re.search(r"\bcurrentProgram\s*=\s*restoredProgram\s*;", after)
+    store = re.search(
+        r"\bcurrentProgram\s*\.\s*store\s*\(\s*restoredProgram\s*,\s*"
+        r"std::memory_order_relaxed\s*\)\s*;", after)
     clamp = CLAMP.search(after)
     if not in_range:
         errors.append("out-of-range program index must be tested against "
@@ -180,7 +184,7 @@ def early_return_probe(code: str):
         "    if (restoredProgram < 0 || restoredProgram >= getNumPrograms())\n"
         "        return;\n\n"
         "    apvts.replaceState(candidate);\n"
-        "    currentProgram = restoredProgram;"
+        "    currentProgram.store(restoredProgram, std::memory_order_relaxed);"
     )
     return code[:replace_call.start()] + legacy + code[clamp.end():]
 
