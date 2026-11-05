@@ -611,6 +611,16 @@ inline float finiteSmoothingTarget(float mapped, float fallback)
     return 0.0f;
 }
 
+// CV-038: one NaN or infinity in the host input must not latch the input meter
+// or survive in the dry path. Folded once before the per-sample loop captures
+// its dry tap; finite samples are left untouched.
+inline void foldNonFiniteSamples(float* samples, int numSamples) noexcept
+{
+    for (int i = 0; i < numSamples; ++i)
+        if (!std::isfinite(samples[i]))
+            samples[i] = 0.0f;
+}
+
 // Declared default of an APVTS parameter in the parameter's own units (0..100
 // for the percentage knobs, 0..200 for master_width, Hz / ms for the native
 // ones). Read-only: no APVTS write, no lock, no allocation.
@@ -1031,6 +1041,10 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     smoothReverbSize.skip(numSamples);
     smoothReverbDamping.skip(numSamples);
     smoothReverbMod.skip(numSamples);
+
+    foldNonFiniteSamples(chData[0], numSamples);
+    if (!isMono)
+        foldNonFiniteSamples(chData[1], numSamples);
 
     for (int s = 0; s < numSamples; ++s)
     {
