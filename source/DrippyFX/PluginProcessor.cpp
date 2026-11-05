@@ -1024,6 +1024,14 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // Master output always runs, so call unconditionally
     masterOutput.beginBlock();
 
+    // These smoothers feed only block-level coefficient caches, so advance
+    // their ramps once for the samples this block will render.
+    smoothChorusMix.skip(numSamples);
+    smoothDelayDamping.skip(numSamples);
+    smoothReverbSize.skip(numSamples);
+    smoothReverbDamping.skip(numSamples);
+    smoothReverbMod.skip(numSamples);
+
     for (int s = 0; s < numSamples; ++s)
     {
         // Capture the pristine channel input once per sample, before any DSP
