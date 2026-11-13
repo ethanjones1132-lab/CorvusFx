@@ -20,6 +20,27 @@ constexpr int fxParameterChunkSize = 32;
 // Measured peak emitted activity over the 8,192-sample 0.8-velocity Dawn
 // Choir signature window.
 constexpr float dawnTriadUnityActivity = 1.17023f;
+
+// Marks multi-parameter writes so a publisher can discard any snapshot that
+// overlaps a preset or state restore, even if the whole batch starts and ends
+// while the snapshot is being collected. Odd values mean a batch is active.
+class ParameterGenerationBatch final
+{
+public:
+    explicit ParameterGenerationBatch(std::atomic<std::uint32_t>& sequence) noexcept
+        : sequence(sequence)
+    {
+        sequence.fetch_add(1, std::memory_order_seq_cst);
+    }
+
+    ~ParameterGenerationBatch()
+    {
+        sequence.fetch_add(1, std::memory_order_seq_cst);
+    }
+
+private:
+    std::atomic<std::uint32_t>& sequence;
+};
 }
 
 struct CorvusInstrumentProcessor::EffectsCore
@@ -37,10 +58,19 @@ CorvusInstrumentProcessor::CorvusInstrumentProcessor()
       apvts(*this, &undoManager, stateRoot, createParameterLayout()),
       effects(std::make_unique<EffectsCore>())
 {
+    for (const auto* id : { "osc_wave", "attack", "decay", "sustain", "release",
+                            "fx_amount", "flight", "output" })
+        apvts.addParameterListener(id, this);
+    publishParameterGeneration();
     setCurrentProgram(0);
 }
 
-CorvusInstrumentProcessor::~CorvusInstrumentProcessor() = default;
+CorvusInstrumentProcessor::~CorvusInstrumentProcessor()
+{
+    for (const auto* id : { "osc_wave", "attack", "decay", "sustain", "release",
+                            "fx_amount", "flight", "output" })
+        apvts.removeParameterListener(id, this);
+}
 
 int CorvusInstrumentProcessor::getNumPrograms()
 {
@@ -64,15 +94,19 @@ void CorvusInstrumentProcessor::setCurrentProgram(int index)
             parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
     };
 
-    setPhysicalValue("osc_wave", static_cast<float>(preset.wave));
-    setPhysicalValue("attack", preset.attack);
-    setPhysicalValue("decay", preset.decay);
-    setPhysicalValue("sustain", preset.sustain);
-    setPhysicalValue("release", preset.release);
-    setPhysicalValue("fx_amount", preset.fxAmount);
-    setPhysicalValue("flight", preset.flight);
-    setPhysicalValue("output", preset.outputDb);
-    currentProgram.store(index, std::memory_order_relaxed);
+    {
+        ParameterGenerationBatch batch(presetBatchSequence);
+        setPhysicalValue("osc_wave", static_cast<float>(preset.wave));
+        setPhysicalValue("attack", preset.attack);
+        setPhysicalValue("decay", preset.decay);
+        setPhysicalValue("sustain", preset.sustain);
+        setPhysicalValue("release", preset.release);
+        setPhysicalValue("fx_amount", preset.fxAmount);
+        setPhysicalValue("flight", preset.flight);
+        setPhysicalValue("output", preset.outputDb);
+        currentProgram.store(index, std::memory_order_relaxed);
+    }
+    publishParameterGeneration();
 }
 
 const juce::String CorvusInstrumentProcessor::getProgramName(int index)
@@ -142,16 +176,115 @@ CorvusInstrumentProcessor::settingsForFlight(float flight) const noexcept
     return settings;
 }
 
-VoiceParameters CorvusInstrumentProcessor::currentVoiceParameters() const
+void CorvusInstrumentProcessor::parameterChanged(const juce::String& parameterID,
+                                                  float newValue)
+{
+    juce::ignoreUnused(parameterID, newValue);
+    if ((presetBatchSequence.load(std::memory_order_seq_cst) & 1u) != 0)
+    {
+        generationDirty.store(true, std::memory_order_release);
+        return;
+    }
+    publishParameterGeneration();
+}
+
+void CorvusInstrumentProcessor::publishParameterGeneration() noexcept
+{
+    // Audio-thread callbacks never wait for another writer. If a writer is
+    // active, leave dirty set; processBlock retries before its next snapshot.
+    if (generationWriter.test_and_set(std::memory_order_acquire))
+    {
+        generationDirty.store(true, std::memory_order_release);
+        return;
+    }
+
+    // Consume an earlier notification only after owning the writer flag. Any
+    // later contender leaves dirty set; never clear it after unlocking, where
+    // doing so could steal a notification from the next writer.
+    generationDirty.exchange(false, std::memory_order_acq_rel);
+    const auto batchBefore = presetBatchSequence.load(std::memory_order_seq_cst);
+    if ((batchBefore & 1u) != 0)
+    {
+        generationDirty.store(true, std::memory_order_release);
+        generationWriter.clear(std::memory_order_release);
+        return;
+    }
+
+    ParameterGeneration candidate;
+    candidate.wave = apvts.getRawParameterValue("osc_wave")->load();
+    candidate.attack = apvts.getRawParameterValue("attack")->load();
+    candidate.decay = apvts.getRawParameterValue("decay")->load();
+    candidate.sustain = apvts.getRawParameterValue("sustain")->load();
+    candidate.release = apvts.getRawParameterValue("release")->load();
+    candidate.fxAmount = apvts.getRawParameterValue("fx_amount")->load();
+    candidate.flight = apvts.getRawParameterValue("flight")->load();
+    candidate.output = apvts.getRawParameterValue("output")->load();
+    candidate.programIndex = currentProgram.load(std::memory_order_relaxed);
+
+    // A batch may have begun and ended during the reads, so checking only its
+    // active/odd state is insufficient. Publish only if the even epoch matches.
+    const auto batchAfter = presetBatchSequence.load(std::memory_order_seq_cst);
+    if (batchBefore != batchAfter || (batchAfter & 1u) != 0)
+    {
+        generationDirty.store(true, std::memory_order_release);
+        generationWriter.clear(std::memory_order_release);
+        return;
+    }
+
+    // All payload atomics and sequence markers are sequentially consistent so
+    // a reader that observes payload from this write cannot accept the old even
+    // sequence on either side of it.
+    generationSequence.fetch_add(1, std::memory_order_seq_cst); // odd: write in progress
+    generationWave.store(candidate.wave, std::memory_order_seq_cst);
+    generationAttack.store(candidate.attack, std::memory_order_seq_cst);
+    generationDecay.store(candidate.decay, std::memory_order_seq_cst);
+    generationSustain.store(candidate.sustain, std::memory_order_seq_cst);
+    generationRelease.store(candidate.release, std::memory_order_seq_cst);
+    generationFxAmount.store(candidate.fxAmount, std::memory_order_seq_cst);
+    generationFlight.store(candidate.flight, std::memory_order_seq_cst);
+    generationOutput.store(candidate.output, std::memory_order_seq_cst);
+    generationProgramIndex.store(candidate.programIndex, std::memory_order_seq_cst);
+    generationSequence.fetch_add(1, std::memory_order_seq_cst); // even: published
+    generationWriter.clear(std::memory_order_release);
+}
+
+CorvusInstrumentProcessor::ParameterGeneration
+CorvusInstrumentProcessor::readParameterGeneration(ParameterGeneration lastGood) const noexcept
+{
+    // Three attempts cap audio-thread work. Atomic payload fields avoid the C++
+    // data race inherent in a plain-struct seqlock; sequence checks reject tears.
+    for (int attempt = 0; attempt < 3; ++attempt)
+    {
+        const auto before = generationSequence.load(std::memory_order_seq_cst);
+        if ((before & 1u) != 0)
+            continue;
+        ParameterGeneration candidate;
+        candidate.wave = generationWave.load(std::memory_order_seq_cst);
+        candidate.attack = generationAttack.load(std::memory_order_seq_cst);
+        candidate.decay = generationDecay.load(std::memory_order_seq_cst);
+        candidate.sustain = generationSustain.load(std::memory_order_seq_cst);
+        candidate.release = generationRelease.load(std::memory_order_seq_cst);
+        candidate.fxAmount = generationFxAmount.load(std::memory_order_seq_cst);
+        candidate.flight = generationFlight.load(std::memory_order_seq_cst);
+        candidate.output = generationOutput.load(std::memory_order_seq_cst);
+        candidate.programIndex = generationProgramIndex.load(std::memory_order_seq_cst);
+        const auto after = generationSequence.load(std::memory_order_seq_cst);
+        if (before == after && (after & 1u) == 0)
+            return candidate;
+    }
+    return lastGood;
+}
+
+VoiceParameters CorvusInstrumentProcessor::voiceParametersFor(
+    const ParameterGeneration& generation) const noexcept
 {
     VoiceParameters parameters;
-    const auto waveIndex = juce::jlimit(
-        0, 3, static_cast<int>(std::lround(apvts.getRawParameterValue("osc_wave")->load())));
+    const auto waveIndex = juce::jlimit(0, 3, static_cast<int>(std::lround(generation.wave)));
     parameters.wave = static_cast<FactoryWave>(waveIndex);
-    parameters.attackSeconds = apvts.getRawParameterValue("attack")->load();
-    parameters.decaySeconds = apvts.getRawParameterValue("decay")->load();
-    parameters.sustainLevel = apvts.getRawParameterValue("sustain")->load();
-    parameters.releaseSeconds = apvts.getRawParameterValue("release")->load();
+    parameters.attackSeconds = generation.attack;
+    parameters.decaySeconds = generation.decay;
+    parameters.sustainLevel = generation.sustain;
+    parameters.releaseSeconds = generation.release;
     return parameters;
 }
 
@@ -166,16 +299,21 @@ void CorvusInstrumentProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         return;
     }
 
-    if (currentProgram.load(std::memory_order_relaxed) == 0)
+    if (generationDirty.load(std::memory_order_acquire))
+        publishParameterGeneration();
+    lastGoodGeneration = readParameterGeneration(lastGoodGeneration);
+    const auto& generation = lastGoodGeneration;
+    const auto voiceParameters = voiceParametersFor(generation);
+    if (generation.programIndex == 0)
         synthEngine.renderWithDawnActivityGain(
-            buffer, midi, currentVoiceParameters(), dawnTriadUnityActivity);
+            buffer, midi, voiceParameters, dawnTriadUnityActivity);
     else
-        synthEngine.render(buffer, midi, currentVoiceParameters());
+        synthEngine.render(buffer, midi, voiceParameters);
     for (auto channel = 2; channel < buffer.getNumChannels(); ++channel)
         buffer.clear(channel, 0, buffer.getNumSamples());
 
-    fxAmount.setTargetValue(apvts.getRawParameterValue("fx_amount")->load());
-    flightAmount.setTargetValue(apvts.getRawParameterValue("flight")->load());
+    fxAmount.setTargetValue(generation.fxAmount);
+    flightAmount.setTargetValue(generation.flight);
 
     // CV-023: refresh the flight-derived FX settings once per fixed sub-chunk
     // (~0.73 ms at 44.1 kHz) instead of once per host block, so a modulated
@@ -255,8 +393,7 @@ void CorvusInstrumentProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         buffer.setSample(1, sample, dryRight * dry + processedRight * wet);
     }
 
-    outputGain.setTargetValue(juce::Decibels::decibelsToGain(
-        apvts.getRawParameterValue("output")->load()));
+    outputGain.setTargetValue(juce::Decibels::decibelsToGain(generation.output));
     for (auto sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
         const auto gain = outputGain.getNextValue();
@@ -299,17 +436,19 @@ void CorvusInstrumentProcessor::setStateInformation(const void* data, int sizeIn
             != stateSchemaVersion)
         return;
 
-    apvts.replaceState(candidate);
+    {
+        ParameterGenerationBatch batch(presetBatchSequence);
+        apvts.replaceState(candidate);
 
-    // CV-023: a stale or corrupt program index must never discard a schema-valid
-    // parameter tree. Clamp the index instead of failing the whole restore, and
-    // do not call setCurrentProgram here - loading a preset would overwrite the
-    // parameters we just restored.
-    const auto restoredProgram = static_cast<int>(candidate.getProperty("currentProgram", 0));
-    if (restoredProgram >= 0 && restoredProgram < getNumPrograms())
-        currentProgram.store(restoredProgram, std::memory_order_relaxed);
-    else
-        currentProgram.store(0, std::memory_order_relaxed);
+        // CV-023: a stale or corrupt program index must not discard a valid
+        // parameter tree. Restore the index without loading a factory preset.
+        const auto restoredProgram = static_cast<int>(candidate.getProperty("currentProgram", 0));
+        if (restoredProgram >= 0 && restoredProgram < getNumPrograms())
+            currentProgram.store(restoredProgram, std::memory_order_relaxed);
+        else
+            currentProgram.store(0, std::memory_order_relaxed);
+    }
+    publishParameterGeneration();
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout

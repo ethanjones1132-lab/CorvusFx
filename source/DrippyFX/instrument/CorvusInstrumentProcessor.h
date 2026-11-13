@@ -5,6 +5,7 @@
 #include <JuceHeader.h>
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 
 struct InstrumentEffectsSettings
@@ -27,7 +28,8 @@ struct InstrumentEffectsSettings
     float masterWidth = 1.0f;
 };
 
-class CorvusInstrumentProcessor final : public juce::AudioProcessor
+class CorvusInstrumentProcessor final : public juce::AudioProcessor,
+                                        private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     CorvusInstrumentProcessor();
@@ -58,6 +60,7 @@ public:
 
     void getStateInformation(juce::MemoryBlock& destination) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
+    void parameterChanged(const juce::String& parameterID, float newValue) override;
     InstrumentEffectsSettings settingsForFlight(float flight) const noexcept;
 
     juce::UndoManager undoManager;
@@ -68,7 +71,15 @@ private:
     struct EffectsCore;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-    VoiceParameters currentVoiceParameters() const;
+    struct ParameterGeneration
+    {
+        float wave = 2.0f, attack = 0.05f, decay = 0.35f, sustain = 0.75f;
+        float release = 1.5f, fxAmount = 0.65f, flight = 0.5f, output = -6.0f;
+        int programIndex = 0;
+    };
+    void publishParameterGeneration() noexcept;
+    ParameterGeneration readParameterGeneration(ParameterGeneration lastGood) const noexcept;
+    VoiceParameters voiceParametersFor(const ParameterGeneration& generation) const noexcept;
 
     CorvusSynthEngine synthEngine;
     std::unique_ptr<EffectsCore> effects;
@@ -78,6 +89,16 @@ private:
     juce::LinearSmoothedValue<float> outputGain;
     float lastPreClampPeak = 0.0f;
     std::atomic<int> currentProgram { 0 };
+    std::atomic_flag generationWriter = ATOMIC_FLAG_INIT;
+    std::atomic<bool> generationDirty { false };
+    std::atomic<std::uint32_t> presetBatchSequence { 0 };
+    std::atomic<std::uint32_t> generationSequence { 0 };
+    std::atomic<float> generationWave { 2.0f }, generationAttack { 0.05f };
+    std::atomic<float> generationDecay { 0.35f }, generationSustain { 0.75f };
+    std::atomic<float> generationRelease { 1.5f }, generationFxAmount { 0.65f };
+    std::atomic<float> generationFlight { 0.5f }, generationOutput { -6.0f };
+    std::atomic<int> generationProgramIndex { 0 };
+    ParameterGeneration lastGoodGeneration;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CorvusInstrumentProcessor)
 };
