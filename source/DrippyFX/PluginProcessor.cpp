@@ -2,6 +2,43 @@
 #include "PluginEditor.h"
 #include <cmath>
 #include <algorithm>
+#include <cstdint>
+
+namespace
+{
+// CV-028: marks a multi-parameter recall as one batch. The epoch is bumped when
+// the batch opens and closes, so a block-header capture that overlapped the
+// writes — including one that starts and finishes entirely inside the capture —
+// is rejected by publishParameterGeneration(), and so processBlock can tell that
+// its own header reads straddle the recall. The epoch also tells the writer's
+// own publish that the batch is complete.
+class ParameterGenerationBatch final
+{
+public:
+    explicit ParameterGenerationBatch(std::atomic<std::uint32_t>& sequence) noexcept
+        : sequence(sequence)
+    {
+        sequence.fetch_add(1, std::memory_order_seq_cst);
+    }
+
+    // Closes the batch so the completed set can be published before the object
+    // leaves scope. Idempotent: the destructor is the early-return/throw path.
+    void close() noexcept
+    {
+        if (! closed)
+        {
+            closed = true;
+            sequence.fetch_add(1, std::memory_order_seq_cst);
+        }
+    }
+
+    ~ParameterGenerationBatch() { close(); }
+
+private:
+    std::atomic<std::uint32_t>& sequence;
+    bool closed = false;
+};
+}
 
 CorvusFXAudioProcessor::CorvusFXAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -54,6 +91,12 @@ apvts(*this, &undoManager, "Parameters", createParameterLayout())
     // has a coherent view instead of waiting for the first message-thread edit.
     publishMidiMap();
 
+    // CV-028: commit the initial parameter set and seed the block header's
+    // last-good generation before the first render, so a block that lands while
+    // a recall is already in flight still has a coherent set to fall back on.
+    publishParameterGeneration();
+    lastGoodGeneration = readParameterGeneration(lastGoodGeneration);
+
     // CV-029: the message-thread drain runs from the processor's own timer so a
     // mapped CC reaches the host whether or not the editor window is open.
     startTimerHz(30);
@@ -101,7 +144,12 @@ void CorvusFXAudioProcessor::loadPreset(int index)
     // Combo order: CLEAN [0-5], WARM [6-11], CREATIVE [12-17], EXTREME [18-23], SIGNATURE [24-29], DREAM [30-35]
     if (index < 0 || index >= 36) return;
     undoManager.beginNewTransaction("Load Preset");
-    
+
+    // CV-028: the writes below are one recall. The batch epoch keeps a block
+    // header that overlaps them from rendering a mix of the old preset and the
+    // new one; the completed set is published as one generation at the end.
+    ParameterGenerationBatch batch(presetBatchSequence);
+
     //                    fat  cD   cR    cM   dT   dFb  dM   dDmp dMod rS   rDmp rM   rMod  mDrv mWid mMid mSide dByp cByp dByp rByp mByp
     struct P { float fat, cD, cR, cM, dT, dFb, dM, dDmp, dMod, rS, rDmp, rM, rMod, mDrv, mWid, mMid, mSide, distByp, chorusByp, delayByp, reverbByp, masterByp, oTrim; };
     static const P presets[36] = {
@@ -219,6 +267,11 @@ void CorvusFXAudioProcessor::loadPreset(int index)
     set("reverb_bypass", p.reverbByp);
     set("master_bypass", p.masterByp);
     set("output_trim", p.oTrim);
+
+    // CV-028: the whole preset is in place now — close the batch and commit it
+    // as one generation, so the next block adopts all 23 values together.
+    batch.close();
+    publishParameterGeneration();
 }
 
 void CorvusFXAudioProcessor::randomizePreset()
@@ -659,6 +712,9 @@ void CorvusFXAudioProcessor::saveSlotB()
 void CorvusFXAudioProcessor::loadSlotA()
 {
     undoManager.beginNewTransaction("A/B Compare");
+    // CV-028: an A/B recall rewrites all 24 snapshot parameters; bracket it as
+    // one batch so no block can render half of slot A and half of slot B.
+    ParameterGenerationBatch batch(presetBatchSequence);
     for (int i = 0; i < NUM_AB_PARAMS; ++i)
     {
         auto* p = apvts.getParameter(abParamIds[i]);
@@ -674,6 +730,8 @@ void CorvusFXAudioProcessor::loadSlotA()
         }
         if (p) p->endChangeGesture();
     }
+    batch.close();
+    publishParameterGeneration();
     // A/B preset choice INTENTIONALLY STALE: loadSlotA restores the 24
     // knob-level snapshot values only. Writing the "preset" id too would
     // fire parameterChanged -> loadPreset, whose set() writes stomp every
@@ -688,6 +746,8 @@ void CorvusFXAudioProcessor::loadSlotA()
 void CorvusFXAudioProcessor::loadSlotB()
 {
     undoManager.beginNewTransaction("A/B Compare");
+    // CV-028: see loadSlotA — one batch, one published generation.
+    ParameterGenerationBatch batch(presetBatchSequence);
     for (int i = 0; i < NUM_AB_PARAMS; ++i)
     {
         auto* p = apvts.getParameter(abParamIds[i]);
@@ -703,6 +763,8 @@ void CorvusFXAudioProcessor::loadSlotB()
         }
         if (p) p->endChangeGesture();
     }
+    batch.close();
+    publishParameterGeneration();
     // A/B preset choice INTENTIONALLY STALE: loadSlotB restores the 24
     // knob-level snapshot values only. Writing the "preset" id too would
     // fire parameterChanged -> loadPreset, whose set() writes stomp every
@@ -760,6 +822,194 @@ inline float feedbackTarget(float linearAmount)
 {
     return linearAmount * linearAmount * 0.65f + linearAmount * 0.27f;
 }
+
+// CV-028: the single restore path for a generated target. The live block header
+// writes its 19 smoother targets and 5 bypass-gain targets inline (those lines
+// are pinned by check_cv023_parameter_targets.py / check_bypass_gain_glue.py),
+// so a restore goes through this one guarded seed instead of a second copy of
+// the pinned lines. Every restored value passes the same CV-023 guard the live
+// path uses, so a corrupt generation can never seed a non-finite target.
+inline void seedRestoredTarget(juce::LinearSmoothedValue<float>& smoother,
+                               float mapped, float fallback) noexcept
+{
+    smoother.setTargetValue(finiteSmoothingTarget(mapped, fallback));
+}
+}
+
+
+// ── CV-028 / CV-048: one coherent parameter generation ──
+void CorvusFXAudioProcessor::publishParameterGeneration() noexcept
+{
+    // Never wait: a publisher that loses the writer flag leaves the previously
+    // committed generation in place and the next audio block tries again.
+    if (generationWriter.test_and_set(std::memory_order_acquire))
+        return;
+
+    const auto batchBefore = presetBatchSequence.load(std::memory_order_seq_cst);
+    if ((batchBefore & 1u) != 0)
+    {
+        // A recall is mid-batch, so the live parameters are a mix of two
+        // presets. Commit nothing; the batch's own publish (or the next block)
+        // captures the completed set.
+        generationWriter.clear(std::memory_order_release);
+        return;
+    }
+
+    ParameterGeneration candidate;
+    candidate.overall = apvts.getRawParameterValue("overall")->load();
+    candidate.fatness = apvts.getRawParameterValue("fatness")->load();
+    candidate.chorusDepth = apvts.getRawParameterValue("chorus_depth")->load();
+    candidate.chorusRate = apvts.getRawParameterValue("chorus_rate")->load();
+    candidate.chorusMix = apvts.getRawParameterValue("chorus_mix")->load();
+    candidate.delayTime = apvts.getRawParameterValue("delay_time")->load();
+    candidate.delayFeedback = apvts.getRawParameterValue("delay_feedback")->load();
+    candidate.delayMix = apvts.getRawParameterValue("delay_mix")->load();
+    candidate.delayDamping = apvts.getRawParameterValue("delay_damping")->load();
+    candidate.delayMod = apvts.getRawParameterValue("delay_mod")->load();
+    candidate.reverbSize = apvts.getRawParameterValue("reverb_size")->load();
+    candidate.reverbDamping = apvts.getRawParameterValue("reverb_damping")->load();
+    candidate.reverbMix = apvts.getRawParameterValue("reverb_mix")->load();
+    candidate.reverbMod = apvts.getRawParameterValue("reverb_mod")->load();
+    candidate.masterDrive = apvts.getRawParameterValue("master_drive")->load();
+    candidate.masterWidth = apvts.getRawParameterValue("master_width")->load();
+    candidate.masterMidDrive = apvts.getRawParameterValue("master_mid_drive")->load();
+    candidate.masterSideDrive = apvts.getRawParameterValue("master_side_drive")->load();
+    candidate.distortionBypass = apvts.getRawParameterValue("distortion_bypass")->load() > 0.5f;
+    candidate.chorusBypass = apvts.getRawParameterValue("chorus_bypass")->load() > 0.5f;
+    candidate.delayBypass = apvts.getRawParameterValue("delay_bypass")->load() > 0.5f;
+    candidate.reverbBypass = apvts.getRawParameterValue("reverb_bypass")->load() > 0.5f;
+    candidate.masterBypass = apvts.getRawParameterValue("master_bypass")->load() > 0.5f;
+    candidate.outputTrim = apvts.getRawParameterValue("output_trim")->load();
+
+    // A batch can start and finish entirely inside the capture above, so the
+    // odd/even test at the top is not enough: commit only when the even epoch
+    // the capture straddles is the same on both sides.
+    const auto batchAfter = presetBatchSequence.load(std::memory_order_seq_cst);
+    if (batchBefore != batchAfter || (batchAfter & 1u) != 0)
+    {
+        generationWriter.clear(std::memory_order_release);
+        return;
+    }
+
+    // Sequentially consistent payload and markers: a reader that observes any
+    // payload field from this commit can never accept the previous even
+    // sequence on both sides of it, so it sees this generation whole or not at
+    // all.
+    generationSequence.fetch_add(1, std::memory_order_seq_cst); // odd: write in progress
+    generationOverall.store(candidate.overall, std::memory_order_seq_cst);
+    generationFatness.store(candidate.fatness, std::memory_order_seq_cst);
+    generationChorusDepth.store(candidate.chorusDepth, std::memory_order_seq_cst);
+    generationChorusRate.store(candidate.chorusRate, std::memory_order_seq_cst);
+    generationChorusMix.store(candidate.chorusMix, std::memory_order_seq_cst);
+    generationDelayTime.store(candidate.delayTime, std::memory_order_seq_cst);
+    generationDelayFeedback.store(candidate.delayFeedback, std::memory_order_seq_cst);
+    generationDelayMix.store(candidate.delayMix, std::memory_order_seq_cst);
+    generationDelayDamping.store(candidate.delayDamping, std::memory_order_seq_cst);
+    generationDelayMod.store(candidate.delayMod, std::memory_order_seq_cst);
+    generationReverbSize.store(candidate.reverbSize, std::memory_order_seq_cst);
+    generationReverbDamping.store(candidate.reverbDamping, std::memory_order_seq_cst);
+    generationReverbMix.store(candidate.reverbMix, std::memory_order_seq_cst);
+    generationReverbMod.store(candidate.reverbMod, std::memory_order_seq_cst);
+    generationMasterDrive.store(candidate.masterDrive, std::memory_order_seq_cst);
+    generationMasterWidth.store(candidate.masterWidth, std::memory_order_seq_cst);
+    generationMasterMidDrive.store(candidate.masterMidDrive, std::memory_order_seq_cst);
+    generationMasterSideDrive.store(candidate.masterSideDrive, std::memory_order_seq_cst);
+    generationOutputTrim.store(candidate.outputTrim, std::memory_order_seq_cst);
+    generationDistortionBypass.store(candidate.distortionBypass, std::memory_order_seq_cst);
+    generationChorusBypass.store(candidate.chorusBypass, std::memory_order_seq_cst);
+    generationDelayBypass.store(candidate.delayBypass, std::memory_order_seq_cst);
+    generationReverbBypass.store(candidate.reverbBypass, std::memory_order_seq_cst);
+    generationMasterBypass.store(candidate.masterBypass, std::memory_order_seq_cst);
+    generationSequence.fetch_add(1, std::memory_order_seq_cst); // even: committed
+
+    generationWriter.clear(std::memory_order_release);
+}
+
+CorvusFXAudioProcessor::ParameterGeneration
+CorvusFXAudioProcessor::readParameterGeneration(ParameterGeneration lastGood) const noexcept
+{
+    // Bounded seqlock read. The payload fields are individually atomic, so an
+    // overlapped write can only hand back a stale mix, never an undefined
+    // value; the sequence markers reject that mix, and a busy publisher keeps
+    // the caller's last good generation.
+    for (int attempt = 0; attempt < 3; ++attempt)
+    {
+        const auto before = generationSequence.load(std::memory_order_seq_cst);
+        if ((before & 1u) != 0)
+            continue;
+
+        ParameterGeneration candidate;
+        candidate.overall = generationOverall.load(std::memory_order_seq_cst);
+        candidate.fatness = generationFatness.load(std::memory_order_seq_cst);
+        candidate.chorusDepth = generationChorusDepth.load(std::memory_order_seq_cst);
+        candidate.chorusRate = generationChorusRate.load(std::memory_order_seq_cst);
+        candidate.chorusMix = generationChorusMix.load(std::memory_order_seq_cst);
+        candidate.delayTime = generationDelayTime.load(std::memory_order_seq_cst);
+        candidate.delayFeedback = generationDelayFeedback.load(std::memory_order_seq_cst);
+        candidate.delayMix = generationDelayMix.load(std::memory_order_seq_cst);
+        candidate.delayDamping = generationDelayDamping.load(std::memory_order_seq_cst);
+        candidate.delayMod = generationDelayMod.load(std::memory_order_seq_cst);
+        candidate.reverbSize = generationReverbSize.load(std::memory_order_seq_cst);
+        candidate.reverbDamping = generationReverbDamping.load(std::memory_order_seq_cst);
+        candidate.reverbMix = generationReverbMix.load(std::memory_order_seq_cst);
+        candidate.reverbMod = generationReverbMod.load(std::memory_order_seq_cst);
+        candidate.masterDrive = generationMasterDrive.load(std::memory_order_seq_cst);
+        candidate.masterWidth = generationMasterWidth.load(std::memory_order_seq_cst);
+        candidate.masterMidDrive = generationMasterMidDrive.load(std::memory_order_seq_cst);
+        candidate.masterSideDrive = generationMasterSideDrive.load(std::memory_order_seq_cst);
+        candidate.outputTrim = generationOutputTrim.load(std::memory_order_seq_cst);
+        candidate.distortionBypass = generationDistortionBypass.load(std::memory_order_seq_cst);
+        candidate.chorusBypass = generationChorusBypass.load(std::memory_order_seq_cst);
+        candidate.delayBypass = generationDelayBypass.load(std::memory_order_seq_cst);
+        candidate.reverbBypass = generationReverbBypass.load(std::memory_order_seq_cst);
+        candidate.masterBypass = generationMasterBypass.load(std::memory_order_seq_cst);
+
+        const auto after = generationSequence.load(std::memory_order_seq_cst);
+        if (before == after && (after & 1u) == 0)
+            return candidate;
+    }
+    return lastGood;
+}
+
+void CorvusFXAudioProcessor::applyParameterGeneration(const ParameterGeneration& generation) noexcept
+{
+    // Re-seeds every block-header target from one coherent generation. The
+    // mapping mirrors the render refresh in processBlock (percent knobs through
+    // /100, delay feedback through the quadratic curve, bypasses through the
+    // 0.5 gate) and a non-finite mapping falls back to the declared default
+    // exactly as the CV-023 guards do, so a restore never seeds a smoother with
+    // a value the live path would have rejected.
+    seedRestoredTarget(smoothOverall, generation.overall / 100.0f, declaredPercentTarget(apvts, "overall"));
+    seedRestoredTarget(smoothFatness, generation.fatness / 100.0f, declaredPercentTarget(apvts, "fatness"));
+    seedRestoredTarget(smoothChorusDepth, generation.chorusDepth / 100.0f, declaredPercentTarget(apvts, "chorus_depth"));
+    seedRestoredTarget(smoothChorusRate, generation.chorusRate, declaredTarget(apvts, "chorus_rate"));
+    seedRestoredTarget(smoothChorusMix, generation.chorusMix / 100.0f, declaredPercentTarget(apvts, "chorus_mix"));
+    seedRestoredTarget(smoothDelayTime, generation.delayTime, declaredTarget(apvts, "delay_time"));
+    {
+        const float fbRaw = generation.delayFeedback / 100.0f;
+        seedRestoredTarget(smoothDelayFeedback,
+            feedbackTarget(fbRaw),
+            feedbackTarget(declaredPercentTarget(apvts, "delay_feedback")));
+    }
+    seedRestoredTarget(smoothDelayMix, generation.delayMix / 100.0f, declaredPercentTarget(apvts, "delay_mix"));
+    seedRestoredTarget(smoothDelayDamping, generation.delayDamping / 100.0f, declaredPercentTarget(apvts, "delay_damping"));
+    seedRestoredTarget(smoothDelayMod, generation.delayMod / 100.0f, declaredPercentTarget(apvts, "delay_mod"));
+    seedRestoredTarget(smoothReverbSize, generation.reverbSize / 100.0f, declaredPercentTarget(apvts, "reverb_size"));
+    seedRestoredTarget(smoothReverbDamping, generation.reverbDamping / 100.0f, declaredPercentTarget(apvts, "reverb_damping"));
+    seedRestoredTarget(smoothReverbMix, generation.reverbMix / 100.0f, declaredPercentTarget(apvts, "reverb_mix"));
+    seedRestoredTarget(smoothReverbMod, generation.reverbMod / 100.0f, declaredPercentTarget(apvts, "reverb_mod"));
+    seedRestoredTarget(smoothMasterDrive, generation.masterDrive / 100.0f, declaredPercentTarget(apvts, "master_drive"));
+    seedRestoredTarget(smoothMasterWidth, generation.masterWidth / 100.0f, declaredPercentTarget(apvts, "master_width"));
+    seedRestoredTarget(smoothMasterMidDrive, generation.masterMidDrive / 100.0f, declaredPercentTarget(apvts, "master_mid_drive"));
+    seedRestoredTarget(smoothMasterSideDrive, generation.masterSideDrive / 100.0f, declaredPercentTarget(apvts, "master_side_drive"));
+    seedRestoredTarget(smoothOutputTrim, generation.outputTrim / 100.0f, declaredPercentTarget(apvts, "output_trim"));
+    // Inverted literal, same as the live header: bypassed -> 0.0f, active ->
+    // 1.0f. The bool is finite, so the fallback is unreachable.
+    seedRestoredTarget(bypassGainDist, generation.distortionBypass ? 0.0f : 1.0f, 1.0f);
+    seedRestoredTarget(bypassGainChorus, generation.chorusBypass ? 0.0f : 1.0f, 1.0f);
+    seedRestoredTarget(bypassGainDelay, generation.delayBypass ? 0.0f : 1.0f, 1.0f);
+    seedRestoredTarget(bypassGainReverb, generation.reverbBypass ? 0.0f : 1.0f, 1.0f);
+    seedRestoredTarget(bypassGainMaster, generation.masterBypass ? 0.0f : 1.0f, 1.0f);
 }
 
 
@@ -901,6 +1151,18 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // LinearSmoothedValue then interpolates across samples within the block,
     // eliminating zipper noise from knob movement and host automation.
     //
+    // ── CV-028 / CV-048: one coherent parameter generation ──
+    // Commit the live set as one generation and adopt the newest committed one.
+    // `lastGoodGeneration` is what this block falls back to if a preset, A/B or
+    // session recall moves the batch epoch while the header below reads its
+    // parameters: the header must never smooth a mix of the old and new values.
+    // Publishing every block (not on a dirty notification) is what keeps every
+    // knob and automation edit live here, and it costs one capture of the same
+    // 24 raw reads the header performs anyway.
+    publishParameterGeneration();
+    lastGoodGeneration = readParameterGeneration(lastGoodGeneration);
+    const auto generationBatchBefore = presetBatchSequence.load(std::memory_order_seq_cst);
+
     // CV-023: the render fallback is the smoother's current target when that is
     // finite, otherwise the same declared default the prepare path uses. The
     // ternary is lazy, so the declared-default lookup runs only on a bad read;
@@ -980,6 +1242,17 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     bypassGainDelay.setTargetValue(delayBypass ? 0.0f : 1.0f);
     bypassGainReverb.setTargetValue(reverbBypass ? 0.0f : 1.0f);
     bypassGainMaster.setTargetValue(masterBypass ? 0.0f : 1.0f);
+
+    // CV-028: if a recall batch was open, started, or finished anywhere across
+    // the parameter reads above, the targets just set are a hybrid of two
+    // presets. Re-seed every one of them from the last coherent generation; the
+    // per-sample loop below then ramps from what the previous block actually
+    // rendered, never from a mix. A stable epoch means the targets above are
+    // already one generation, so nothing is re-applied.
+    const auto generationBatchAfter = presetBatchSequence.load(std::memory_order_seq_cst);
+    if (generationBatchBefore != generationBatchAfter
+        || (generationBatchAfter & 1u) != 0)
+        applyParameterGeneration(lastGoodGeneration);
 
     // MIDI Learn: apply CC to parameter mappings from MIDI input
     // When midiLearnActive is true, the next CC message captures that CC
@@ -1397,6 +1670,12 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
         parameterState.deleteAllChildElementsWithTagName("abSlots");
         parameterState.deleteAllChildElementsWithTagName("midiMaps");
         parameterState.deleteAllChildElementsWithTagName("paramLocks");
+        // CV-028: replaceState rewrites the whole parameter tree, so the
+        // restore is one recall. While the batch is open, a block header that
+        // reads parameters here cannot commit — and if it already read, it
+        // restores its last coherent generation instead of a half-restored
+        // session.
+        ParameterGenerationBatch batch(presetBatchSequence);
         restoringPresetState.store(true);
         apvts.replaceState(juce::ValueTree::fromXml(parameterState));
         restoringPresetState.store(false);
@@ -1498,6 +1777,12 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
                     lockedParams.insert(id);
             }
         }
+
+        // CV-028: the restored parameter set is complete and every companion
+        // child (abSlots, midiMaps, paramLocks) is in place — commit it as one
+        // generation so the next block adopts the session whole.
+        batch.close();
+        publishParameterGeneration();
 }
 
 }

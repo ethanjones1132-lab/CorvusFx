@@ -6,6 +6,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <map>
 #include <set>
 #include <utility>
@@ -162,6 +163,66 @@ private:
     juce::LinearSmoothedValue<float> bypassGainDelay;
     juce::LinearSmoothedValue<float> bypassGainReverb;
     juce::LinearSmoothedValue<float> bypassGainMaster;
+
+
+    // ── CV-028 / CV-048: one coherent parameter generation ──
+    // A preset, A/B or session recall rewrites the whole parameter set with one
+    // notification per id. Read one parameter at a time, a block can pick up the
+    // new chorus depth next to the old reverb mix and render a hybrid of two
+    // presets, so the recall has to land as ONE generation. Every recall path is
+    // bracketed by ParameterGenerationBatch; publishParameterGeneration()
+    // commits the 24 block parameters only when that batch epoch is even and
+    // unchanged across the capture; and the block header re-seeds its targets
+    // from lastGoodGeneration whenever the epoch moved while it read. The writer
+    // flag, batch epoch, sequentially consistent payload and last-good fallback
+    // are the contract the instrument processor already uses.
+    //
+    // The FX block header is this publisher's only consumer, so it captures once
+    // per block instead of chasing per-parameter notifications. That keeps every
+    // knob and automation edit live (the capture still reads the raw parameters
+    // every block) and keeps lastGoodGeneration a current, coherent pre-recall
+    // set rather than a set that can only be as fresh as the last notification.
+    struct ParameterGeneration
+    {
+        float overall = 100.0f, fatness = 0.0f, chorusDepth = 0.0f;
+        float chorusRate = 2.0f, chorusMix = 50.0f, delayTime = 250.0f;
+        float delayFeedback = 30.0f, delayMix = 0.0f, delayDamping = 40.0f;
+        float delayMod = 30.0f, reverbSize = 50.0f, reverbDamping = 50.0f;
+        float reverbMix = 0.0f, reverbMod = 30.0f, masterDrive = 0.0f;
+        float masterWidth = 100.0f, masterMidDrive = 0.0f;
+        float masterSideDrive = 0.0f, outputTrim = 100.0f;
+        bool distortionBypass = false, chorusBypass = false, delayBypass = false;
+        bool reverbBypass = false, masterBypass = false;
+    };
+    void publishParameterGeneration() noexcept;
+    ParameterGeneration readParameterGeneration(ParameterGeneration lastGood) const noexcept;
+    void applyParameterGeneration(const ParameterGeneration& generation) noexcept;
+
+    std::atomic_flag generationWriter = ATOMIC_FLAG_INIT; // one publisher at a time
+    std::atomic<std::uint32_t> presetBatchSequence { 0 }; // odd = recall in flight
+    std::atomic<std::uint32_t> generationSequence { 0 };  // odd = payload write
+    std::atomic<float> generationOverall { 100.0f }, generationFatness { 0.0f };
+    std::atomic<float> generationChorusDepth { 0.0f }, generationChorusRate { 2.0f };
+    std::atomic<float> generationChorusMix { 50.0f }, generationDelayTime { 250.0f };
+    std::atomic<float> generationDelayFeedback { 30.0f };
+    std::atomic<float> generationDelayMix { 0.0f };
+    std::atomic<float> generationDelayDamping { 40.0f };
+    std::atomic<float> generationDelayMod { 30.0f };
+    std::atomic<float> generationReverbSize { 50.0f };
+    std::atomic<float> generationReverbDamping { 50.0f };
+    std::atomic<float> generationReverbMix { 0.0f };
+    std::atomic<float> generationReverbMod { 30.0f };
+    std::atomic<float> generationMasterDrive { 0.0f };
+    std::atomic<float> generationMasterWidth { 100.0f };
+    std::atomic<float> generationMasterMidDrive { 0.0f };
+    std::atomic<float> generationMasterSideDrive { 0.0f };
+    std::atomic<float> generationOutputTrim { 100.0f };
+    std::atomic<bool> generationDistortionBypass { false };
+    std::atomic<bool> generationChorusBypass { false };
+    std::atomic<bool> generationDelayBypass { false };
+    std::atomic<bool> generationReverbBypass { false };
+    std::atomic<bool> generationMasterBypass { false };
+    ParameterGeneration lastGoodGeneration;
 
 
     // ── CV-027: lock-free MIDI-map publication ──
