@@ -21,6 +21,9 @@ test -f "$CORVUS_ROOT/scripts/check_cv041_preset_automation.py"
 # CV-048: generation listener and bounded coherent snapshot probes are part of
 # the glob-driven gate; keep an explicit guard against accidental deregistration.
 test -f "$CORVUS_ROOT/scripts/check_cv048_preset_generation.py"
+# CV-027: processBlock takes no MIDI-map lock and allocates nothing, including
+# on the first MIDI-learn event (scripts/check_cv027_audio_thread_map.py).
+test -f "$CORVUS_ROOT/scripts/check_cv027_audio_thread_map.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"

@@ -57,7 +57,9 @@ if "startMidiLearn" not in edit_c or "MIDI Learn" not in edit_c:
     fail("PluginEditor.cpp no longer offers/wires the MIDI Learn menu entry")
 print("midi-learn: right-click MIDI Learn menu entry still wired")
 
-# (d) capture branch must not jump the parameter
+# (d) CV-027: the capture branch records the mapping only — it hands the
+#     captured CC and armed roster slot to the message-thread fold through
+#     preallocated atomics, and does NOT jump the target parameter.
 cap = re.search(r"if\s*\(midiLearnActive\)\s*\{", proc_c)
 if not cap:
     fail("PluginProcessor.cpp: midiLearnActive capture branch missing")
@@ -72,10 +74,15 @@ while j < len(proc_c):
         if depth == 0: break
     j += 1
 cap_body = proc_c[body_start:j + 1]
-if "midiMap" not in cap_body:
-    fail("capture branch no longer records midiMap[cc] = midiLearnParamID")
+if "pendingLearnCc" not in cap_body or "pendingLearnSlot" not in cap_body:
+    fail("capture branch no longer records pendingLearnCc/pendingLearnSlot — "
+         "the first learn event would have to mutate the map on the audio thread")
+if re.search(r"\bmidiMap\s*\[", cap_body):
+    fail("capture branch writes midiMap[...] on the audio thread — the first "
+         "learn event would allocate a map node in the callback (CV-027)")
 if "setValueNotifyingHost" in cap_body:
     fail("capture branch jumps the target parameter via setValueNotifyingHost — a stray CC during learn rewrites the knob")
-print("midi-learn: capture records the mapping without jumping the parameter")
+print("midi-learn: capture hands the learn to the message-thread fold without "
+      "jumping the parameter")
 
 print("MIDI-LEARN-LIFECYCLE OK")

@@ -81,9 +81,20 @@ if cap_body is not None and "setValueNotifyingHost" in cap_body:
         "the mapping only (iter-019 removed the capture jump)"
     )
 
-# sanity: the capture branch still records the mapping
-if cap_body is not None and "midiMap[" not in cap_body:
-    failures.append("capture branch no longer writes midiMap[...]")
+# sanity: the capture branch still records the learn — CV-027 hands it to the
+# message-thread fold through the preallocated atomics instead of writing the
+# shared map on the audio thread.
+if cap_body is not None and not (
+        "pendingLearnCc" in cap_body and "pendingLearnSlot" in cap_body):
+    failures.append(
+        "capture branch no longer records pendingLearnCc/pendingLearnSlot — the "
+        "captured CC would never reach the message-thread fold"
+    )
+if cap_body is not None and re.search(r"\bmidiMap\s*\[", cap_body):
+    failures.append(
+        "capture branch writes midiMap[...] on the audio thread — the first "
+        "learn event must not allocate a map node in the callback (CV-027)"
+    )
 
 # sanity: the loop still applies mappings for non-captured CCs.
 # CV-029: the audio thread no longer notifies the host directly — it stages the

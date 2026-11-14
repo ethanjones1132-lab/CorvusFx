@@ -2,11 +2,73 @@
 #include "PluginProcessor.h"
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <new>
+#include <thread>
 #include <vector>
+
+//==============================================================================
+// CV-027: audio-thread allocation probe.
+//
+// The flag is thread-local so the callback is measured in isolation: the
+// concurrent publisher thread legitimately allocates map nodes and Strings
+// while the test pins that processBlock itself allocates nothing.
+namespace
+{
+thread_local bool cv027TrackAllocations = false;
+thread_local int cv027AllocationCount = 0;
+
+void resetCv027AllocationProbe() noexcept
+{
+    cv027AllocationCount = 0;
+    cv027TrackAllocations = true;
+}
+
+int stopCv027AllocationProbe() noexcept
+{
+    cv027TrackAllocations = false;
+    return cv027AllocationCount;
+}
+}
+
+void* operator new(std::size_t size)
+{
+    if (cv027TrackAllocations)
+        ++cv027AllocationCount;
+    if (auto* block = std::malloc(size == 0 ? 1 : size))
+        return block;
+    throw std::bad_alloc();
+}
+
+void* operator new[](std::size_t size)
+{
+    return ::operator new(size);
+}
+
+void operator delete(void* block) noexcept
+{
+    std::free(block);
+}
+
+void operator delete[](void* block) noexcept
+{
+    std::free(block);
+}
+
+void operator delete(void* block, std::size_t) noexcept
+{
+    std::free(block);
+}
+
+void operator delete[](void* block, std::size_t) noexcept
+{
+    std::free(block);
+}
 
 namespace
 {
@@ -329,6 +391,99 @@ public:
 };
 
 //==============================================================================
+// CV-027: MIDI-map publication concurrency and audio-thread allocation
+// The callback must never take a lock the message thread can hold and must
+// never allocate, including on the very first MIDI-learn event. A message
+// thread publishes map edits and folds learn captures while this test drives
+// processBlock; the thread-local allocation probe then proves the callback
+// path itself allocates nothing.
+//==============================================================================
+class CorvusFxMidiMapConcurrencyTest final : public juce::UnitTest
+{
+public:
+    CorvusFxMidiMapConcurrencyTest()
+        : juce::UnitTest("Corvus FX MIDI map publication") {}
+
+    void runTest() override
+    {
+        beginTest("processBlock never locks or allocates while map and learn are published");
+
+        auto processor = std::make_unique<CorvusFXAudioProcessor>();
+        processor->prepareToPlay(48000.0, 128);
+        juce::AudioBuffer<float> buffer(2, 128);
+        buffer.clear();
+        juce::MidiBuffer controller;
+        controller.addEvent(juce::MidiMessage::controllerEvent(1, 74, 100), 0);
+        juce::MidiBuffer noMidi;
+
+        // Warm the DSP path first: only the published-map callback work is
+        // measured, not one-off module preparation.
+        for (int block = 0; block < 4; ++block)
+            processor->processBlock(buffer, noMidi);
+
+        std::atomic<bool> publisherReady { false };
+        std::atomic<bool> stopPublisher { false };
+        std::thread publisher([&processor, &publisherReady, &stopPublisher]()
+        {
+            publisherReady.store(true, std::memory_order_release);
+            int iteration = 0;
+            while (!stopPublisher.load(std::memory_order_acquire))
+            {
+                // Message-thread work racing the callback: keep a learn armed,
+                // mutate and republish the map, then fold a captured learn.
+                processor->startMidiLearn(iteration % 2 == 0 ? "chorus_depth"
+                                                             : "delay_mix");
+                processor->clearAllMidiMappings();
+                processor->drainPendingMidiHostNotifications();
+                ++iteration;
+                std::this_thread::yield();
+            }
+        });
+        while (!publisherReady.load(std::memory_order_acquire)) {}
+
+        // Arm the first learn event, then pin every callback block while the
+        // other thread republishes the map and folds learn captures.
+        processor->startMidiLearn("chorus_depth");
+        resetCv027AllocationProbe();
+        for (int block = 0; block < 128; ++block)
+            processor->processBlock(buffer, controller);
+        const int callbackAllocations = stopCv027AllocationProbe();
+
+        stopPublisher.store(true, std::memory_order_release);
+        publisher.join();
+
+        expectEquals(callbackAllocations, 0,
+                     "processBlock must not allocate while the MIDI map is "
+                     "republished and a learn event is captured concurrently");
+
+        // Behaviour is unchanged: an armed learn captures the next CC (with no
+        // allocation, measured above) and the message-thread fold installs it.
+        processor->clearAllMidiMappings();
+        processor->startMidiLearn("chorus_depth");
+        expect(processor->isMidiLearnActive(), "arming must set the learn flag");
+        processor->processBlock(buffer, controller);
+        expect(!processor->isMidiLearnActive(),
+               "the first CC must be captured and disarm the learn");
+        processor->drainPendingMidiHostNotifications();
+        expect(processor->hasMidiMapping("chorus_depth"),
+               "the captured CC must fold into the map on the message thread");
+        const auto mappings = processor->getMidiMappings();
+        const auto mapping = mappings.find(74);
+        expect(mapping != mappings.end() && mapping->second == "chorus_depth",
+               "CC 74 must map to chorus_depth");
+
+        // A CC mapped to a different parameter is not stolen by a new learn.
+        processor->startMidiLearn("delay_mix");
+        processor->processBlock(buffer, controller);
+        processor->drainPendingMidiHostNotifications();
+        expect(processor->hasMidiMapping("chorus_depth"),
+               "a learn must not steal a CC already mapped to another parameter");
+        expect(!processor->hasMidiMapping("delay_mix"),
+               "the refused learn must leave the existing mapping intact");
+    }
+};
+
+//==============================================================================
 // REVERB TAIL AUDIO (CV-039)
 // The modulated-delay history repair must be audible as a repaired reverb tail,
 // not hidden by the final limiter, a clamp or a gain change. These long-running
@@ -597,6 +752,7 @@ private:
 };
 
 CorvusFxStateTest corvusFxStateTest;
+CorvusFxMidiMapConcurrencyTest corvusFxMidiMapConcurrencyTest;
 CorvusFxReverbAudioTest corvusFxReverbAudioTest;
 }
 

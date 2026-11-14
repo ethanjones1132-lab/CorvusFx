@@ -33,18 +33,17 @@ Asserts on the real tree (comment-stripped, brace-matched bodies):
         a mapped knob works with the editor closed.
 
   (C) "preset" is refused at BOTH mapping sites
-      * creation: startMidiLearn refuses `paramID == "preset"`, the audio-thread
-        learn capture refuses `midiLearnParamID == "preset"`, and
-        setStateInformation never restores a `paramID != "preset"` row;
-      * application: the processBlock apply path breaks on
-        `entry.second == "preset"` before it stages anything.
+      * creation: startMidiLearn refuses `paramID == "preset"`, the roster that
+        publishes the CC→slot table excludes the program parameter, and the
+        audio-thread capture/drain apply path drops -1/out-of-range slots;
+      * setStateInformation never restores a `paramID != "preset"` row.
 
   (D) semantics preserved
       * the CC value is still `getControllerValue() / 127.0f` (unchanged, so the
-        parameter's own rounding is untouched), the mapped parameter id is still
-        resolved from the snapshot entry, the learn capture still writes
-        `midiMap[cc] = midiLearnParamID` + clears midiLearnActive, and the
-        CV-017 snapshot refill is intact.
+        parameter's own rounding is untouched), the mapped parameter is still
+        resolved from published state (CV-027 roster slot), the learn capture
+        still records the CC and clears midiLearnActive, and the CV-027
+        published-view refresh is intact.
 
 Negative probes (in memory only — the real tree is never written) mutate the
 live texts and must be rejected: host notify / gesture / undo re-added in
@@ -318,20 +317,30 @@ def check(raw_cpp, raw_header, raw_editor):
         raise Reject("PluginProcessor.h:startMidiLearn — the \"preset\" check "
                      "does not return early, so the mapping is still created")
 
-    capture_guard = _require(
-        pb, r'midiLearnParamID\s*==\s*"preset"',
+    capture_slot = _require(
+        pb, r"midiLearnParamSlot\s*\.\s*load\s*\(",
         "PluginProcessor.cpp:processBlock",
-        'the learn capture no longer refuses midiLearnParamID == "preset" — a '
-        'CC could be recorded as a program-change mapping')
-    capture_write = re.search(r"midiMap\s*\[\s*cc\s*\]\s*=\s*midiLearnParamID",
-                              pb)
+        "the learn capture no longer reads the armed atomic roster slot — it "
+        "must not read the juce::String midiLearnParamID on the audio thread "
+        "(CV-027)")
+    capture_write = re.search(r"pendingLearnCc\s*\.\s*store\s*\(\s*cc\s*,", pb)
     if not capture_write:
         raise Reject("PluginProcessor.cpp:processBlock — the learn capture no "
-                     'longer writes midiMap[cc] = midiLearnParamID')
-    if capture_guard.start() > capture_write.start():
-        raise Reject('PluginProcessor.cpp:processBlock — the "preset" refusal '
-                     'sits AFTER the midiMap write; the mapping would already '
-                     'exist (CV-029)')
+                     "longer records the captured CC in pendingLearnCc for the "
+                     "message-thread fold (CV-027)")
+    _require(pb, r"armedSlot\s*<\s*0",
+             "PluginProcessor.cpp:processBlock",
+             "the learn capture no longer refuses a negative/unarmed roster slot "
+             "— a stale arm could be captured (CV-027)")
+    if capture_slot.start() > capture_write.start():
+        raise Reject("PluginProcessor.cpp:processBlock — the armed-slot read "
+                     "sits AFTER the pending learn record; a torn/target-less "
+                     "capture could be published (CV-027)")
+    if re.search(r"\bmidiMap\s*\[", pb):
+        raise Reject("PluginProcessor.cpp:processBlock — the capture writes "
+                     "midiMap[...] on the audio thread; the first learn event "
+                     "would allocate a map node in the callback, and a CC→preset "
+                     "row could be created without the fold's gate (CV-027/029)")
 
     restore = method_body(code, "setStateInformation")
     if restore is None:
@@ -343,32 +352,36 @@ def check(raw_cpp, raw_header, raw_editor):
              '(CV-029)')
 
     apply_guard = _require(
-        pb, r'second\s*==\s*"preset"', "PluginProcessor.cpp:processBlock",
-        'the audio-thread apply path no longer rejects "preset" (CV-029)')
+        pb, r"slot\s*<\s*0\s*\|\|\s*slot\s*>=\s*numMidiHostNotifySlots",
+        "PluginProcessor.cpp:processBlock",
+        'the audio-thread apply path no longer drops a -1/out-of-range roster '
+        'slot — a stale or non-learnable row (including anything preset-like) '
+        'could be staged (CV-027/029)')
     stage_call = re.search(re.escape(STAGE) + r"\s*\(", pb)
     if apply_guard.start() > stage_call.start():
-        raise Reject('PluginProcessor.cpp:processBlock — the apply-path '
-                     '"preset" refusal sits AFTER the staging call; the preset '
-                     'value would already be staged (CV-029)')
+        raise Reject('PluginProcessor.cpp:processBlock — the apply-path slot '
+                     'refusal sits AFTER the staging call; an invalid row would '
+                     'already be staged (CV-027/029)')
 
     # ---- (D) existing CC semantics preserved ------------------------------
     _require(pb, r"getControllerValue\s*\(\s*\)\s*/\s*127\.0f",
              "PluginProcessor.cpp:processBlock",
              "the CC → normalised value mapping (getControllerValue() / 127.0f) "
              "changed — the parameter's own rounding must stay untouched")
-    _require(pb, r"getParameter\s*\(\s*\w+\s*(?:->|\.)\s*second\s*\)",
+    _require(pb, r"midiHostNotifySlots\s*\[[^\]]*\]\s*\.\s*param",
              "PluginProcessor.cpp:processBlock",
-             "the apply path no longer resolves the mapped parameter id from "
-             "the snapshot entry")
+             "the apply path no longer resolves the mapped parameter pointer "
+             "from the preallocated roster slot")
     _require(pb, r"midiLearnActive\s*=\s*false",
              "PluginProcessor.cpp:processBlock",
              "the learn capture no longer clears midiLearnActive")
-    _require(pb, r"mapSnapshot\s*\.\s*clear\s*\(\s*\)",
+    _require(pb, r"refreshMidiMapView\s*\(\s*\)",
              "PluginProcessor.cpp:processBlock",
-             "the CV-017 map snapshot refill (mapSnapshot.clear()) is gone")
-    _require(pb, r"mapSnapshot\s*\.\s*emplace_back\s*\(",
+             "the CV-027 published-map view refresh is gone")
+    _require(pb, r"midiMapView\s*\[",
              "PluginProcessor.cpp:processBlock",
-             "the CV-017 map snapshot refill (mapSnapshot.emplace_back) is gone")
+             "the apply path no longer reads the preallocated published "
+             "midiMapView table")
     return True
 
 
@@ -392,8 +405,9 @@ print("cv029: processBlock performs no setValueNotifyingHost / gesture / undo "
       "work (no preset fan-out on the audio thread)")
 print("cv029: the CC apply path stages the newest value per parameter; the "
       "editor timer drains it at most once per parameter per tick")
-print("cv029: \"preset\" is refused at mapping creation (arm + capture + "
-      "restore) and at the audio-thread apply site")
+print("cv029: \"preset\" is refused at mapping creation (arm + roster "
+      "publication + restore) and the audio-thread apply path drops any "
+      "non-roster slot")
 print("cv029: real tree OK")
 
 
@@ -493,17 +507,16 @@ probe("arm-site preset gate removed",
       "startMidiLearn could arm a program-change CC target",
       hdr_mut=[(r"if\s*\(\s*paramID\s*==\s*\"preset\"\s*\)\s*\n\s*return;\s*",
                 "")])
-probe("capture-site preset gate removed",
-      "the learn capture could record a CC → preset mapping",
-      cpp_mut=[(r"if\s*\(\s*midiLearnParamID\s*==\s*\"preset\"\s*\)\s*\n"
-                r"\s*continue;\s*", "")])
+probe("capture-site armed-slot gate removed",
+      "the learn capture could publish a capture for an unarmed/negative slot",
+      cpp_mut=[(r"armedSlot\s*<\s*0", "armedSlot < -1")])
 probe("restore-site preset gate removed",
       "a saved state could re-arm a CC → preset mapping",
       cpp_mut=[(r'paramID\s*!=\s*"preset"\s*&&\s*', "")])
-probe("apply-site preset gate removed",
-      "a stale CC → preset row could fan out into a program change",
-      cpp_mut=[(r'if\s*\(\s*entry\.second\s*==\s*"preset"\s*\)\s*\n\s*break;\s*',
-                "")])
+probe("apply-site slot gate removed",
+      "a stale or non-learnable roster row could be staged",
+      cpp_mut=[(r"if\s*\(\s*slot\s*<\s*0\s*\|\|\s*slot\s*>=\s*"
+                r"numMidiHostNotifySlots\s*\)\s*\n\s*continue;\s*", "")])
 
 # (D) semantics preserved (a stale gate must not pass vacuously)
 probe("CC value scaling changed",

@@ -1,153 +1,144 @@
 #!/usr/bin/env python3
 """check_midi_map_lock_scope.py
 
-Pins the audio-thread CC apply path in processBlock:
-  1. `setValueNotifyingHost` NO LONGER dereferences the live `midiMap`
-     while `midiMapLock` is held: the apply path must use a snapshot copy
-     (e.g. `mapSnapshot`) after the ScopedLock block closes;
-  2. a ScopedLock on midiMapLock still exists (capture + snapshot still
-     happen under the lock, locking discipline retained);
-  3. the capture branch still writes under the lock (midiMap[...] inside
-     the locked region) and clears midiLearnActive;
-  4. no `setValueNotifyingHost` inside the ScopedLock block;
-  5. CV-029: after the lock the apply path only STAGES the mapped value
-     (stageMidiHostNotify) for the message-thread drain — no
-     setValueNotifyingHost anywhere in the post-lock apply region.
+Pins the audio-thread MIDI CC apply path in processBlock (CV-027 shape):
 
-Negative (proven): temp-reverting the apply path to `midiMap.find(cc)`
-inside the hold-locked ScopedLock region -> FAIL exit 1; removing the
-ScopedLock entirely -> FAIL exit 1; re-adding a direct host notification
-after the lock -> FAIL exit 1; restoring the source -> EXIT 0.
+  1. no ScopedLock on midiMapLock anywhere in processBlock — the callback must
+     never take a lock the message thread can hold;
+  2. the callback first try-reads the published CC→slot view
+     (refreshMidiMapView) and then applies only from the preallocated
+     `midiMapView` table — never from the live `midiMap`;
+  3. the capture branch still reads midiLearnActive, records the captured CC
+     in the pending atomics and clears the arm flag;
+  4. no `setValueNotifyingHost` anywhere in processBlock: the apply path only
+     STAGES the mapped value (stageMidiHostNotify) for the message-thread
+     drain (CV-029);
+  5. the apply path reads a roster slot and stages through that slot's
+     preallocated parameter pointer — no juce::String/APVTS lookup.
+
+Negative (proven): re-adding a lock or a live `midiMap.find(cc)` read to the
+callback -> FAIL exit 1; dropping the view refresh -> FAIL exit 1; re-adding a
+direct host notification after the staging call -> FAIL exit 1; restoring the
+source -> EXIT 0. Every probe first verifies its mutation changed the text, so
+a stale/no-op probe cannot pass vacuously.
 """
 import re
 import sys
+from pathlib import Path
 
-SRC = "source/DrippyFX/PluginProcessor.cpp"
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-src = open(SRC, encoding="utf-8").read()
+ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "source" / "DrippyFX" / "PluginProcessor.cpp"
+
+src = SRC.read_text(encoding="utf-8")
 
 # Strip comments so commented-out code can't fake a pass.
 no_comments = re.sub(r"//[^\n]*", "", src)
 no_comments = re.sub(r"/\*.*?\*/", "", no_comments, flags=re.S)
 
-failures = []
 
-# Locate the MIDI-map region: the processBlock ScopedLock is the one whose
-# enclosing block contains midiLearnActive (setStateInformation/clear* also
-# take midiMapLock earlier in the file).
-cands = [mm for mm in re.finditer(
-    r"ScopedLock\s+lock\s*\(\s*midiMapLock\s*\)", no_comments)]
-m = None
-lock_block = ""
-lock_block_end = 0
-for c in cands:
-    brace_start = no_comments.rfind("{", 0, c.start())
-    bdepth = 0
-    # walk forward from the brace that owns this lock statement
-    for i in range(brace_start, len(no_comments)):
-        if no_comments[i] == "{":
-            bdepth += 1
-        elif no_comments[i] == "}":
-            bdepth -= 1
-            if bdepth == 0:
-                blk = no_comments[brace_start:i + 1]
-                if "midiLearnActive" in blk:
-                    m, lock_block, lock_block_end = c, blk, i + 1
-                break
-if m is None:
-    failures.append("no ScopedLock(midiMapLock) block containing "
-                    "midiLearnActive found in processBlock — capture/snapshot "
-                    "locking discipline lost")
-    for f in failures:
-        print("FAIL:", f)
-    sys.exit(1)
-
-# Find the brace block that owns this ScopedLock.
-brace_start = no_comments.rfind("{", 0, m.start())
-depth = 0
-lock_block = ""
-lock_block_end = m.start()
-for i in range(brace_start, len(no_comments)):
-    if no_comments[i] == "{":
-        depth += 1
-    elif no_comments[i] == "}":
-        depth -= 1
-        if depth == 0:
-            lock_block = no_comments[brace_start:i + 1]
-            lock_block_end = i + 1
-            break
-
-# CV-029: bound the apply region to the enclosing MIDI block, then require the
-# staging hand-off (stageMidiHostNotify). The audio thread must never perform
-# the host notification itself: that moved to the message-thread drain.
-def _block_end(text, lb):
+def reject(text):
+    """Return a diagnostic for the first violated invariant, or None."""
+    m = re.search(r"CorvusFXAudioProcessor::processBlock\s*\(", text)
+    if not m:
+        return "processBlock definition missing"
+    brace = text.find("{", m.end())
+    if brace == -1:
+        return "processBlock body not found"
     depth = 0
-    for i in range(lb, len(text)):
+    end = len(text)
+    for i in range(brace, len(text)):
         if text[i] == "{":
             depth += 1
         elif text[i] == "}":
             depth -= 1
             if depth == 0:
-                return i + 1
-    return len(text)
+                end = i + 1
+                break
+    pb = text[brace:end]
+
+    if re.search(r"\bScopedLock\b", pb) or re.search(r"\bmidiMapLock\b", pb):
+        return ("processBlock takes midiMapLock (or any ScopedLock) — the "
+                "callback must use the lock-free published view (CV-027)")
+    if re.search(r"\bmidiMap\b", pb):
+        return ("the apply path dereferences the live `midiMap` — it must read "
+                "only the preallocated published view (CV-027)")
+    if not re.search(r"refreshMidiMapView\s*\(\s*\)\s*;", pb):
+        return ("the callback no longer refreshes its published MIDI-map view "
+                "(refreshMidiMapView) before capturing/applying")
+    if not re.search(r"midiMapView\s*\[", pb):
+        return ("the apply path does not read the preallocated `midiMapView` "
+                "table")
+    if "midiLearnActive" not in pb:
+        return ("the capture path no longer reads the armed midiLearnActive flag "
+                "— armed learn would never capture, or every CC would")
+    if "midiLearnActive = false" not in pb:
+        return "the capture path no longer clears midiLearnActive after capture"
+    if not re.search(r"pendingLearnCc\s*\.\s*store\s*\(", pb):
+        return ("the capture path no longer records the captured CC in "
+                "pendingLearnCc for the message-thread fold")
+    if not re.search(r"stageMidiHostNotify\s*\(", pb):
+        return ("the CC apply path no longer stages the mapped value "
+                "(stageMidiHostNotify) — it must hand the newest value to the "
+                "message-thread drain instead of notifying the host from "
+                "processBlock")
+    if "setValueNotifyingHost" in pb:
+        return ("setValueNotifyingHost still runs in processBlock — the audio "
+                "thread must only stage the newest value for the message-thread "
+                "drain (CV-029)")
+    return None
 
 
-enclosing = no_comments.rfind("{", 0, brace_start)
-region_end = _block_end(no_comments, enclosing) if enclosing != -1 \
-    else len(no_comments)
-region = no_comments[lock_block_end:region_end]
-apply_end = region.find("stageMidiHostNotify")
-if apply_end == -1:
-    failures.append(
-        "the CC apply path no longer stages the mapped value "
-        "(stageMidiHostNotify) — it must hand the newest value to the "
-        "message-thread drain instead of notifying the host from processBlock"
-    )
-else:
-    # The statement that dereferences the mapping must NOT be midiMap.find
-    # after the lock (it must be the snapshot).
-    window = region[max(0, apply_end - 800):apply_end]
-    if re.search(r"midiMap\s*\.\s*find", window):
-        failures.append(
-            "the apply path still dereferences the live `midiMap.find(cc)` "
-            "outside/around the lock — it must read from a snapshot copy so "
-            "no host-facing work contends midiMapLock with the message thread"
-        )
-    if "mapSnapshot" not in window:
-        failures.append(
-            "the apply path does not use a snapshot copy (mapSnapshot); the "
-            "lock must be released before any staging/notification"
-        )
-if "setValueNotifyingHost" in region:
-    failures.append(
-        "setValueNotifyingHost still runs in the post-lock apply region of "
-        "processBlock — the audio thread must only stage the newest value for "
-        "the message-thread drain (CV-029)"
-    )
+failures = []
+verdict = reject(no_comments)
+if verdict:
+    failures.append(verdict)
 
-# No setValueNotifyingHost inside the locked block (host notification must
-# never run while midiMapLock is held).
-if "setValueNotifyingHost" in lock_block:
-    failures.append(
-        "setValueNotifyingHost appears INSIDE the midiMapLock ScopedLock "
-        "block — host notification must happen after the lock is released"
-    )
+probes = [
+    ("lock re-added to processBlock",
+     lambda t: re.sub(r"(\brefreshMidiMapView\s*\(\s*\)\s*;)",
+                      r"const juce::ScopedLock lock(midiMapLock);\n \1", t, 1),
+     "a blocking lock in the callback was accepted"),
+    ("live midiMap.find re-added to the apply path",
+     lambda t: re.sub(r"(\brefreshMidiMapView\s*\(\s*\)\s*;)",
+                      r"\1\n (void) midiMap.find(cc);", t, 1),
+     "a live-map read in the callback was accepted"),
+    ("published-view refresh dropped",
+     lambda t: re.sub(r"\brefreshMidiMapView\s*\(\s*\)\s*;", "", t, 1),
+     "a callback that never adopts publications was accepted"),
+    ("direct host notification re-added",
+     lambda t: t.replace("stageMidiHostNotify(p, normValue);",
+                         "stageMidiHostNotify(p, normValue);\n"
+                         "                p->setValueNotifyingHost(normValue);", 1),
+     "a host notification inside processBlock was accepted"),
+]
 
-# Capture still writes under the lock and clears the flag.
-if not re.search(r"midiMap\s*\[\s*\w+\s*\]\s*=", lock_block):
-    failures.append("the capture path no longer records midiMap[cc] under the lock")
-if "midiLearnActive = false" not in lock_block:
-    failures.append("the capture path no longer clears midiLearnActive under the lock")
-if "mapSnapshot" not in lock_block:
-    failures.append("no snapshot copy is taken of midiMap under the lock")
+for label, mutate, why in probes:
+    mutated = mutate(no_comments)
+    if mutated == no_comments:
+        failures.append(f"no-op probe ({label}): mutation did not change the "
+                        f"source — the negative check is vacuous")
+        continue
+    if reject(mutated) is None:
+        failures.append(f"negative probe '{label}' was NOT rejected — {why}")
+
+# Specificity: a benign edit outside the pinned shapes must still pass.
+benign = no_comments.replace("int capturedCc = -1;",
+                             "int capturedCc = -1 ;", 1)
+if benign == no_comments:
+    failures.append("benign no-op guard: anchor pattern absent")
+elif reject(benign) is not None:
+    failures.append(f"a benign edit was REJECTED — the checker "
+                    f"over-fires: {reject(benign)}")
 
 if failures:
     for f in failures:
         print("FAIL:", f)
     sys.exit(1)
 
-print("OK: CC apply path stages the mapped value from a snapshot after "
-      "midiMapLock release (CV-029: no host notification on the audio "
-      "thread); capture+snapshot still under the lock; no host notification "
-      "inside the critical section")
+print("OK: processBlock takes no MIDI-map lock; the apply path stages mapped "
+      "values from the preallocated published view (CV-027) and never notifies "
+      "the host or reads the live map (CV-029)")
 sys.exit(0)

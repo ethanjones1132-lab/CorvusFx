@@ -60,20 +60,25 @@ public:
     bool hasPersistedABSnapshots() const { return abSnapshotsPersisted; }
 
     // MIDI Learn
+    //
+    // CV-027: arming resolves the target to a fixed roster slot, so the audio
+    // thread never reads the juce::String parameter ID and never allocates.
+    // CV-029: "preset" is not a legal MIDI-learn target. A CC bound to the
+    // program parameter has no knob-level meaning and would fan a raw CC out
+    // into loadPreset() (an undo transaction plus a full parameter rewrite), so
+    // arming is refused here, in the learn fold, and at state restore; the
+    // roster itself also excludes the program parameter, so no published slot
+    // can ever resolve to it.
     void startMidiLearn(const juce::String& paramID)
     {
-        // CV-029: "preset" is not a legal MIDI-learn target. A CC bound to the
-        // program parameter has no knob-level meaning and would fan a raw CC
-        // out into loadPreset() (an undo transaction plus a full parameter
-        // rewrite), so arming is refused here as well as in the audio-thread
-        // capture branch and the apply path.
         if (paramID == "preset")
             return;
-        // Armed-learn state is read by the audio thread under midiMapLock;
-        // write under the same lock so the capture branch can never see a
-        // torn juce::String parameter ID.
-        const juce::ScopedLock lock(midiMapLock);
-        midiLearnParamID = paramID;
+        const int slot = findMidiMapParamSlot(paramID);
+        if (slot < 0)
+            return;
+        // Publish the roster slot BEFORE arming: the audio thread only ever
+        // reads this atomic and never the juce::String parameter id.
+        midiLearnParamSlot.store(slot, std::memory_order_relaxed);
         midiLearnActive = true;
     }
     bool isMidiLearnActive() const { return midiLearnActive.load(); }
@@ -82,9 +87,10 @@ public:
     void clearMidiMapping(const juce::String& paramID);
     void clearAllMidiMappings();
     // Returns a snapshot copy taken under midiMapLock. Never return a
-    // reference to the live map: it is mutated on the audio thread (learn
-    // capture) and the message thread (clear/restore) under midiMapLock, so
-    // any caller iterating it unsynchronized would race the insert/erase.
+    // reference to the live map: it is mutated by the message-thread fold
+    // (learn), clear and restore paths, and CV-027 keeps the audio thread out
+    // of it entirely (the callback reads the published CC→slot table instead),
+    // but the copy keeps any future caller from aliasing message-thread state.
     std::map<int, juce::String> getMidiMappings() const
     {
         juce::CriticalSection& mapLock =
@@ -158,36 +164,56 @@ private:
     juce::LinearSmoothedValue<float> bypassGainMaster;
 
 
-    // MIDI Learn - maps MIDI CC numbers to parameter IDs
+    // ── CV-027: lock-free MIDI-map publication ──
+    // The authoritative map and its lock are message-thread only. To make a
+    // change visible to processBlock without the audio thread taking that
+    // lock, publishMidiMap() flattens midiMap into one parameter-roster slot
+    // index per legal CC and publishes the table behind a sequence counter
+    // (odd = publication in progress). processBlock try-reads the table into
+    // preallocated arrays; if a publication overlaps the read it keeps its
+    // last coherent view and retries on the next block. The callback therefore
+    // never locks, never touches a juce::String and never allocates — including
+    // on the first learn event, which only stores two ints in pendingLearnCc /
+    // pendingLearnSlot for the message-thread fold.
     std::map<int, juce::String> midiMap;
     juce::CriticalSection midiMapLock;
 
-    // CV-017: reusable, pre-reserved storage for the audio-thread CC apply
-    // snapshot. Replaces the per-block std::map local that heap-allocated
-    // (and freed) map nodes on every MIDI block: processBlock now only
-    // clear-and-refills this member under midiMapLock. Clearing keeps the
-    // reserved capacity and the refill appends plain copies (a juce::String
-    // copy is a ref-count bump), so the refill never allocates. Capacity is
-    // reserved off the audio thread in the constructor and re-asserted in
-    // prepareToPlay; MIDI CC numbers are 0..127, so a full legal mapping
-    // table is at most 128 entries — capping the refill at that width makes
-    // growth impossible. Only the audio thread touches this member.
-    std::vector<std::pair<int, juce::String>> mapSnapshot;
+    static constexpr int MAX_MIDI_CCS = 128;   // legal MIDI CC domain 0..127
+    std::array<std::atomic<int>, MAX_MIDI_CCS> publishedMidiCcSlots {};
+    std::atomic<unsigned> midiMapSequence { 0 };     // even = stable, odd = busy
+    std::array<int, MAX_MIDI_CCS> midiMapView {};    // audio thread: last good
+    std::array<int, MAX_MIDI_CCS> midiMapScratch {}; // audio thread: try-read
+    unsigned midiMapViewSequence = 0;
+
+    // Armed learn target (message thread writes; audio thread reads the slot).
+    std::atomic<int> midiLearnParamSlot { -1 };
+    // Audio-thread capture hand-off, applied by foldPendingMidiLearn().
+    std::atomic<int> pendingLearnCc { -1 };
+    std::atomic<int> pendingLearnSlot { -1 };
+
+    int findMidiMapParamSlot(const juce::String& paramID) const;
+    void publishMidiMap();
+    void foldPendingMidiLearn();
+    void refreshMidiMapView() noexcept;
 
     // ── CV-029: audio-thread → message-thread host-notification mailbox ──
     // One slot per automatable parameter, populated ONCE in the constructor
     // from the fixed parameter layout, so the audio thread only ever performs
-    // a pointer match. The "preset" program parameter is deliberately absent:
-    // a CC can never fan out into a whole preset change. processBlock stores
-    // value + pending (relaxed/release atomics only — no lock, no allocation,
-    // no host call, no APVTS listener work); the message thread drains the
-    // mailbox from the editor timer and is the only place a MIDI CC reaches
+    // a pointer match. CV-027 reuses the same roster as the MIDI-map slot
+    // table: a published CC row stores a slot index, so the apply path resolves
+    // the parameter pointer and its id without any juce::String work. The
+    // "preset" program parameter is deliberately absent: a CC can never fan
+    // out into a whole preset change. processBlock stores value + pending
+    // (relaxed/release atomics only — no lock, no allocation, no host call, no
+    // APVTS listener work); the message thread drains the mailbox from the
+    // processor timer and is the only place a MIDI CC reaches
     // setValueNotifyingHost. 64 slots comfortably cover the 24-parameter
     // layout plus any future addition.
     static constexpr int MAX_MIDI_HOST_NOTIFY_PARAMS = 64;
     struct MidiHostNotifySlot
     {
         juce::RangedAudioParameter* param = nullptr; // fixed off the audio thread
+        juce::String id;                             // message thread only
         std::atomic<float> value { 0.0f };           // newest requested value
         std::atomic<bool> pending { false };         // set by the audio thread
     };
@@ -215,8 +241,9 @@ private:
     bool abSnapshotsPersisted = false;
     std::atomic<bool> restoringPresetState{false};
     // MIDI Learn State (accessed across audio/message threads)
+    // CV-027: only the atomic arm flag is shared; the armed target lives in the
+    // atomic roster slot above, so the audio thread never reads a juce::String.
     std::atomic<bool> midiLearnActive{false};
-    juce::String midiLearnParamID;
     // ── Level Meter State ──
     // Smoothed peak/RMS meters for input and output.
     // Updated in processBlock (audio thread), read by editor (message thread)

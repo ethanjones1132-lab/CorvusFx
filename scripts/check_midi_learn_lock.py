@@ -2,12 +2,13 @@
 """Headless checker: MIDI-learn arm-path locking invariants.
 
 Asserts (in PluginProcessor.h):
-  (a) startMidiLearn's body acquires midiMapLock (the armed CC-capture
-      state midiLearnParamID / midiLearnActive is written on the message
-      thread while the audio thread reads both fields under the same lock
-      in the CC loop — the String assignment must be protected too).
+  (a) CV-027: startMidiLearn resolves the target to a fixed roster slot and
+      publishes that atomic slot before arming; it keeps no shared juce::String
+      parameter id for the audio thread to read.
   (b) stopMidiLearn still clears midiLearnActive (single atomic flag,
       intentionally lock-free).
+  (c) the audio-thread capture hands the CC + armed slot to the message-thread
+      fold through preallocated atomics and never writes the map.
 Exit 0 = ok, 1 = violation with line-cited diagnostics.
 """
 import re
@@ -54,18 +55,30 @@ def extract_fn(name, src=None, pattern=None):
     line = src[:m.start()].count("\n") + 1
     return src[i:j + 1], line
 
-# (a) startMidiLearn acquires midiMapLock (comments stripped so a code
-#     comment mentioning the lock cannot fake a pass)
+# (a) CV-027: startMidiLearn resolves the target to the fixed roster slot and
+#     publishes only that atomic slot before arming. The audio-thread capture
+#     must not be able to see a torn juce::String id, so the arm path keeps no
+#     shared String at all.
 start, line = extract_fn("startMidiLearn")
 start_code = strip_comments(start)
-if "midiMapLock" not in start_code:
-    fail(f"startMidiLearn (PluginProcessor.h:{line}) writes midiLearnParamID/"
-         "midiLearnActive without midiMapLock — audio-thread capture branch can "
-         "read a torn juce::String parameter ID")
-for field in ("midiLearnParamID", "midiLearnActive = true"):
-    if field not in start:
-        fail(f"startMidiLearn no longer sets {field} — MIDI learn arming is broken")
-print("midi-learn-lock: startMidiLearn arms midiLearnParamID/midiLearnActive under midiMapLock")
+if "midiLearnParamSlot" not in start_code:
+    fail(f"startMidiLearn (PluginProcessor.h:{line}) no longer resolves/publishes "
+         "the atomic roster slot — the audio-thread capture has no lock-free "
+         "armed target (CV-027)")
+if "midiLearnParamID" in start_code:
+    fail(f"startMidiLearn (PluginProcessor.h:{line}) still publishes a shared "
+         "juce::String parameter id — the audio-thread capture would have to "
+         "read a torn String (CV-027)")
+if "midiLearnActive = true" not in start:
+    fail("startMidiLearn no longer arms midiLearnActive — MIDI learn arming is "
+         "broken")
+if (start_code.find("midiLearnParamSlot")
+        > start_code.find("midiLearnActive = true")):
+    fail(f"startMidiLearn (PluginProcessor.h:{line}) arms midiLearnActive "
+         "before publishing the atomic roster slot — a capture could read a "
+         "stale slot (CV-027)")
+print("midi-learn-lock: startMidiLearn publishes the atomic roster slot before "
+      "arming (no shared juce::String)")
 
 # (b) stopMidiLearn still clears the flag
 stop, stline = extract_fn("stopMidiLearn")
@@ -74,20 +87,78 @@ if "midiLearnActive = false" not in stop:
          "an armed listen could never be cancelled")
 print("midi-learn-lock: stopMidiLearn still clears midiLearnActive")
 
-# audio-thread capture branch must remain under midiMapLock and record the
-# armed param ID into midiMap (either `midiMap[cc] = ...` legacy single-CC
-# shape or `midiMap[capturedCc] = ...` snapshot-lock-scope shape)
+# (b) CV-027: the audio-thread capture must NOT mutate the shared map or read
+#     the juce::String armed id. It records the captured CC + armed roster slot
+#     in preallocated atomics and disarms; the message-thread fold applies the
+#     mapping under midiMapLock.
 cpp = (SRC / "PluginProcessor.cpp").read_text(encoding="utf-8")
-mcap = re.search(r"midiMap\s*\[\s*(?:cc|capturedCc)\s*\]\s*=\s*midiLearnParamID", cpp)
-if not mcap:
-    fail("audio-thread learn-capture branch (midiMap[...] = midiLearnParamID) missing from PluginProcessor.cpp")
-cap = mcap.start()
-lock_site = cpp.rfind("midiMapLock", 0, cap)
-if lock_site == -1:
-    fail("capture branch no longer runs inside a midiMapLock scope")
-if "midiLearnActive" not in cpp[max(0, cap - 3000):cap]:
-    fail("capture branch no longer checks midiLearnActive — armed learn would fire on every CC")
-print("midi-learn-lock: audio-thread capture still reads both fields under midiMapLock")
+
+
+def capture_body(src_text):
+    try:
+        pb, _ = extract_fn("processBlock", src_text)
+    except SystemExit:
+        return None
+    m = re.search(r"if\s*\(\s*midiLearnActive\s*\)", pb)
+    if not m:
+        return None
+    i = pb.find("{", m.end())
+    if i == -1:
+        return None
+    depth = 0
+    for j in range(i, len(pb)):
+        if pb[j] == "{":
+            depth += 1
+        elif pb[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return pb[i:j + 1]
+    return None
+
+
+def capture_violation(src_text):
+    cap = capture_body(src_text)
+    if cap is None:
+        return "the midiLearnActive capture branch is missing from processBlock"
+    code = strip_comments(cap)
+    if re.search(r"\bmidiMap\s*\[", code):
+        return ("the audio-thread capture writes midiMap[...] — the first learn "
+                "event would allocate a map node in the callback (CV-027)")
+    if "midiLearnParamID" in code:
+        return ("the audio-thread capture reads midiLearnParamID (a "
+                "juce::String) — it must use the atomic roster slot (CV-027)")
+    if not re.search(r"pendingLearnCc\s*\.\s*store\s*\(", code):
+        return ("the capture no longer records the captured CC in pendingLearnCc")
+    if not re.search(r"pendingLearnSlot\s*\.\s*store\s*\(", code):
+        return "the capture no longer records the armed slot in pendingLearnSlot"
+    if "midiLearnActive = false" not in code:
+        return "the capture no longer clears midiLearnActive"
+    if "setValueNotifyingHost" in code:
+        return "the capture jumps the parameter via setValueNotifyingHost"
+    return None
+
+
+violation = capture_violation(cpp)
+if violation:
+    fail(violation)
+
+fold, fline = extract_fn("foldPendingMidiLearn", cpp)
+fold_code = strip_comments(fold)
+if "midiMapLock" not in fold_code:
+    fail(f"foldPendingMidiLearn (PluginProcessor.cpp:{fline}) installs the "
+         "learned mapping without midiMapLock")
+fold_write = re.search(r"midiMap\s*\[\s*cc\s*\]\s*=\s*paramID", fold_code)
+if not fold_write:
+    fail(f"foldPendingMidiLearn (PluginProcessor.cpp:{fline}) no longer writes "
+         "the learned mapping into midiMap")
+if fold_code.find("midiMapLock") > fold_write.start():
+    fail("foldPendingMidiLearn writes midiMap before acquiring midiMapLock")
+pb_all, _ = extract_fn("processBlock", cpp)
+if re.search(r"\bfoldPendingMidiLearn\s*\(", strip_comments(pb_all)):
+    fail("processBlock calls foldPendingMidiLearn — the learn fold mutates the "
+         "map and must run on the message thread (CV-027)")
+print("midi-learn-lock: capture hands the armed slot to the message-thread "
+      "fold; the fold writes midiMap under midiMapLock")
 
 # (c) hasMidiMapping (def in PluginProcessor.cpp) acquires midiMapLock before
 #     iterating the map: the map is mutated on the audio thread (learn capture)
@@ -171,6 +242,33 @@ for label, mutate in probes:
              "the negative check is vacuous")
     verdict = run_text(mutated)
     if verdict is None:
+        fail(f"negative probe '{label}' was NOT rejected — checker is vacuous")
+    print(f"midi-learn-lock: negative probe '{label}' rejected")
+
+# Negative probes for the CV-027 capture hand-off: a live map write or a lost
+# disarm in the audio-thread branch must be rejected.
+capture_probes = [
+    ("live map write re-added to the capture branch",
+     lambda s: s.replace(
+         "pendingLearnCc.store(cc, std::memory_order_relaxed);",
+         "midiMap[cc] = midiLearnParamID;\n"
+         "                    pendingLearnCc.store(cc, std::memory_order_relaxed);",
+         1)),
+    ("disarm stripped from the capture branch",
+     lambda s: s.replace("                    midiLearnActive = false;", "", 1)),
+    ("armed juce::String read re-added to the capture branch",
+     lambda s: s.replace(
+         "const int armedSlot =\n"
+         "                midiLearnParamSlot.load(std::memory_order_relaxed);",
+         "const int armedSlot = 0; (void) midiLearnParamID;", 1)),
+]
+
+for label, mutate in capture_probes:
+    mutated = mutate(cpp)
+    if mutated == cpp:
+        fail(f"no-op probe ({label}): mutation did not change the source — "
+             "the negative check is vacuous")
+    if capture_violation(mutated) is None:
         fail(f"negative probe '{label}' was NOT rejected — checker is vacuous")
     print(f"midi-learn-lock: negative probe '{label}' rejected")
 

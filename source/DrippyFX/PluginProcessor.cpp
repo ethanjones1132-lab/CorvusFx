@@ -20,17 +20,22 @@ apvts(*this, &undoManager, "Parameters", createParameterLayout())
 {
     apvts.addParameterListener("preset", this);
 
-    // CV-017: reserve the audio-thread MIDI apply snapshot storage before
-    // any audio runs, so processBlock's clear-and-refill never allocates.
-    mapSnapshot.reserve(128);
+    // CV-017 / CV-027: the audio-thread MIDI-map view and the host-notify
+    // roster are fixed-size arrays reserved here, off the audio thread, so the
+    // callback's try-read and CC apply never allocate.
+    for (auto& slot : publishedMidiCcSlots)
+        slot.store(-1, std::memory_order_relaxed);
+    midiMapView.fill(-1);
+    midiMapScratch.fill(-1);
 
     // CV-029: build the CC → host-notification roster once, off the audio
     // thread. One slot per automatable parameter; the program parameter
     // ("preset") is deliberately excluded (a CC must never fan out into a
     // whole preset change), so a stale or restored CC→preset mapping can never
     // reach the host from the apply path and no preset slot can ever be
-    // staged. It is excluded by identity, which needs no id string compare on
-    // this construction path.
+    // staged. CV-027 uses the same roster as the published MIDI-map slot
+    // table, so each slot also carries its parameter id for the
+    // message-thread publication path.
     auto* programParam = apvts.getParameter("preset");
     for (auto* param : getParameters())
     {
@@ -39,9 +44,15 @@ apvts(*this, &undoManager, "Parameters", createParameterLayout())
             continue;
         if (numMidiHostNotifySlots >= MAX_MIDI_HOST_NOTIFY_PARAMS)
             break;
-        midiHostNotifySlots[(size_t) numMidiHostNotifySlots].param = ranged;
+        auto& slot = midiHostNotifySlots[(size_t) numMidiHostNotifySlots];
+        slot.param = ranged;
+        slot.id = ranged->getParameterID();
         ++numMidiHostNotifySlots;
     }
+
+    // CV-027: publish the (empty) initial map so the first audio block already
+    // has a coherent view instead of waiting for the first message-thread edit.
+    publishMidiMap();
 
     // CV-029: the message-thread drain runs from the processor's own timer so a
     // mapped CC reaches the host whether or not the editor window is open.
@@ -416,10 +427,9 @@ void CorvusFXAudioProcessor::changeProgramName(int, const juce::String&) {}
 // MIDI Learn: map management
 bool CorvusFXAudioProcessor::hasMidiMapping(const juce::String& paramID) const
 {
-    // The map is mutated on the audio thread (learn capture) and on the
-    // message thread (clear/restore) under midiMapLock; this reader runs on
-    // the message thread (knob context menu) and must take the same lock so
-    // an audio-thread insert during the iteration cannot tear the map.
+    // CV-027: the authoritative map is message-thread only — the audio thread
+    // reads the published CC→slot table instead — but the lock keeps this
+    // reader safe against every message-thread mutation (fold/clear/restore).
     juce::CriticalSection& mapLock =
         const_cast<juce::CriticalSection&>(midiMapLock);
     const juce::ScopedLock lock(mapLock);
@@ -430,20 +440,32 @@ bool CorvusFXAudioProcessor::hasMidiMapping(const juce::String& paramID) const
 
 void CorvusFXAudioProcessor::clearMidiMapping(const juce::String& paramID)
 {
-    const juce::ScopedLock lock(midiMapLock);
-    for (auto it = midiMap.begin(); it != midiMap.end(); )
     {
-        if (it->second == paramID)
-            it = midiMap.erase(it);
-        else
-            ++it;
+        const juce::ScopedLock lock(midiMapLock);
+        for (auto it = midiMap.begin(); it != midiMap.end(); )
+        {
+            if (it->second == paramID)
+                it = midiMap.erase(it);
+            else
+                ++it;
+        }
     }
+    // CV-027: republish so the audio-thread view drops the mapping without the
+    // callback ever taking midiMapLock.
+    publishMidiMap();
 }
 
 void CorvusFXAudioProcessor::clearAllMidiMappings()
 {
-    const juce::ScopedLock lock(midiMapLock);
-    midiMap.clear();
+    {
+        const juce::ScopedLock lock(midiMapLock);
+        midiMap.clear();
+    }
+    // A learn captured before the clear must not resurrect a mapping from the
+    // message-thread fold.
+    pendingLearnCc.store(-1, std::memory_order_relaxed);
+    pendingLearnSlot.store(-1, std::memory_order_relaxed);
+    publishMidiMap();
 }
 
 // ── CV-029: audio-thread → message-thread host-notification mailbox ──
@@ -469,6 +491,97 @@ void CorvusFXAudioProcessor::stageMidiHostNotify(juce::RangedAudioParameter* par
     }
 }
 
+// ── CV-027: message-thread MIDI-map publication + learn fold ──
+int CorvusFXAudioProcessor::findMidiMapParamSlot(const juce::String& paramID) const
+{
+    // Message thread only. Returns the fixed roster slot for `paramID`, or -1
+    // when the id is unknown or not learnable ("preset" is absent from the
+    // roster by construction). The audio thread never calls this.
+    for (int i = 0; i < numMidiHostNotifySlots; ++i)
+        if (midiHostNotifySlots[(size_t) i].id == paramID)
+            return i;
+    return -1;
+}
+
+void CorvusFXAudioProcessor::publishMidiMap()
+{
+    // Message thread only. Seqlock-style publication: mark the table unstable
+    // (odd sequence), flatten midiMap into one roster-slot index per legal CC,
+    // then mark it stable. The audio thread never waits here: a callback block
+    // that overlaps this write keeps its previous coherent view.
+    midiMapSequence.fetch_add(1, std::memory_order_acq_rel);
+    {
+        const juce::ScopedLock lock(midiMapLock);
+        for (int cc = 0; cc < MAX_MIDI_CCS; ++cc)
+        {
+            int slot = -1;
+            const auto it = midiMap.find(cc);
+            if (it != midiMap.end())
+                slot = findMidiMapParamSlot(it->second);
+            publishedMidiCcSlots[(size_t) cc].store(slot,
+                                                    std::memory_order_relaxed);
+        }
+    }
+    midiMapSequence.fetch_add(1, std::memory_order_release);
+}
+
+void CorvusFXAudioProcessor::foldPendingMidiLearn()
+{
+    // Message thread only. The audio thread recorded the captured CC and the
+    // armed roster slot in plain atomics, so this is where the map node and the
+    // juce::String assignment happen — never in the callback.
+    const int slot = pendingLearnSlot.exchange(-1, std::memory_order_acq_rel);
+    if (slot < 0 || slot >= numMidiHostNotifySlots)
+    {
+        pendingLearnCc.store(-1, std::memory_order_relaxed);
+        return;
+    }
+    const int cc = pendingLearnCc.exchange(-1, std::memory_order_relaxed);
+    if (cc < 0 || cc >= MAX_MIDI_CCS)
+        return;
+
+    bool changed = false;
+    {
+        const juce::ScopedLock lock(midiMapLock);
+        const juce::String& paramID = midiHostNotifySlots[(size_t) slot].id;
+        // CV-029: "preset" can never be a roster id, but the refusal stays
+        // explicit so a future roster change cannot restore a preset fan-out.
+        if (paramID.isEmpty() || paramID == "preset")
+            return;
+        const auto existing = midiMap.find(cc);
+        // Refuse to steal: the audio thread already checked its published
+        // view, this re-check protects against a concurrent message-thread
+        // change between capture and fold.
+        if (existing != midiMap.end() && existing->second != paramID)
+            return;
+        if (existing == midiMap.end())
+        {
+            midiMap[cc] = paramID;
+            changed = true;
+        }
+    }
+    if (changed)
+        publishMidiMap();
+}
+
+void CorvusFXAudioProcessor::refreshMidiMapView() noexcept
+{
+    // Audio thread. Try-read of the published CC→slot table: copy into the
+    // preallocated scratch array, then verify the sequence did not move. Only a
+    // coherent read is adopted; an in-flight publication leaves the previous
+    // view untouched so the callback always has a last good map.
+    const unsigned sequence = midiMapSequence.load(std::memory_order_acquire);
+    if (sequence == midiMapViewSequence || (sequence & 1u) != 0u)
+        return;
+    for (int cc = 0; cc < MAX_MIDI_CCS; ++cc)
+        midiMapScratch[(size_t) cc] =
+            publishedMidiCcSlots[(size_t) cc].load(std::memory_order_relaxed);
+    if (midiMapSequence.load(std::memory_order_acquire) != sequence)
+        return;
+    midiMapView = midiMapScratch;
+    midiMapViewSequence = sequence;
+}
+
 void CorvusFXAudioProcessor::timerCallback()
 {
     drainPendingMidiHostNotifications();
@@ -476,12 +589,16 @@ void CorvusFXAudioProcessor::timerCallback()
 
 int CorvusFXAudioProcessor::drainPendingMidiHostNotifications()
 {
-    // Message thread only (editor timer). This is the single place a MIDI CC
+    // Message thread only (processor timer). This is the single place a MIDI CC
     // reachable from processBlock notifies the host, so the render callback
     // never calls setValueNotifyingHost, a gesture or an undo transaction.
     // Each parameter is drained at most once per tick: the exchange consumes
     // the newest staged value and nothing re-notifies until the audio thread
     // stages again.
+    //
+    // CV-027: also folds a learn captured by the audio thread, so the map edit
+    // and its republication stay on the message thread.
+    foldPendingMidiLearn();
     int notified = 0;
     for (int i = 0; i < numMidiHostNotifySlots; ++i)
     {
@@ -659,10 +776,9 @@ void CorvusFXAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     // it (and never allocates) on the audio thread.
     dryBuffer.setSize(2, samplesPerBlock, false, true, true);
 
-    // CV-017: re-assert the MIDI apply snapshot capacity (reserve() is a
-    // no-op once the capacity is already there; both sites stay off the
-    // audio thread).
-    mapSnapshot.reserve(128);
+    // CV-027: the MIDI-map view, scratch table and published CC→slot table are
+    // fixed-size std::array members initialised in the constructor, so there is
+    // no capacity to re-assert here and no audio-thread allocation to guard.
 
     // ── Parameter smoothing initialization ──
     // 20ms smoothing time: responsive feel, no zipper noise.
@@ -870,68 +986,51 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // for the target parameter (triggered by right-click in the UI).
     if (!midiMessages.isEmpty())
     {
-        // Snapshot the live map under midiMapLock, then release the lock
-        // BEFORE the apply path: setValueNotifyingHost must never run while
-        // this audio thread holds a lock the message thread needs for
-        // clearMidiMapping / clearAllMidiMappings / setStateInformation,
-        // and host notification latency must not sit inside the critical
-        // section. The snapshot is a handful of <int, String> entries.
-        //
-        // CV-017: the snapshot lives in the member `mapSnapshot` vector
-        // (PluginProcessor.h), whose capacity is reserved in the
-        // constructor and prepareToPlay — off the audio thread. Clearing a
-        // vector keeps its reserved capacity and the refill appends plain
-        // copies, so this block heap-allocates nothing.
+        // CV-027: adopt the newest published CC→parameter table. This is a
+        // try-read, not a lock: if the message thread is mid-publication the
+        // callback keeps its last good view and retries on the next block. All
+        // buffers involved are fixed-size members, so nothing allocates here.
+        refreshMidiMapView();
+
+        // CV-027: learn capture never mutates the authoritative map on this
+        // thread. It records the first unclaimed CC and the armed parameter
+        // slot in preallocated atomics; foldPendingMidiLearn() applies them on
+        // the message thread, so the first learn event cannot allocate a map
+        // node inside the callback. The armed slot is always a roster slot and
+        // the roster excludes "preset" (and startMidiLearn refuses it), so a
+        // CC can never fan out into loadPreset(). Refuse to steal: a CC already
+        // mapped to a DIFFERENT parameter is left alone and the learn stays
+        // armed. The full buffer keeps getting scanned (no loop exit),
+        // mirroring the skip-only-this-CC semantics.
         int capturedCc = -1;
+        if (midiLearnActive)
         {
-            const juce::ScopedLock lock(midiMapLock);
-            if (midiLearnActive)
+            const int armedSlot =
+                midiLearnParamSlot.load(std::memory_order_relaxed);
+            for (const auto& metadata : midiMessages)
             {
-                // Capture the FIRST CC in the buffer for the target parameter;
-                // the flag clears so later CCs go through the apply path as
-                // normal. The full buffer keeps getting scanned (no loop
-                // exit), mirroring the skip-only-this-CC semantics.
-                for (const auto& metadata : midiMessages)
+                auto msg = metadata.getMessage();
+                if (msg.isController() && capturedCc == -1)
                 {
-                    auto msg = metadata.getMessage();
-                    if (msg.isController() && capturedCc == -1)
-                    {
-                        const int cc = msg.getControllerNumber();
-                        // CV-029: "preset" is never a legal CC target, so the
-                        // capture path can never create one. The same gate
-                        // exists when learn is armed (startMidiLearn), when
-                        // saved mappings are restored, and in the apply path
-                        // below — a CC can never fan out into loadPreset().
-                        if (midiLearnParamID == "preset")
-                            continue;
-                        // Refuse to steal: if this CC is already mapped to a
-                        // DIFFERENT parameter, leave the mapping (and the
-                        // learn armed) untouched so the user can move a knob
-                        // on an unused CC — an overwrite here silently
-                        // re-maps the first knob with no UI affordance.
-                        auto existing = midiMap.find(cc);
-                        if (existing != midiMap.end() && existing->second != midiLearnParamID)
-                            continue;
-                        capturedCc = cc;
-                        midiMap[cc] = midiLearnParamID;
-                        midiLearnActive = false;
-                    }
+                    const int cc = msg.getControllerNumber();
+                    if (cc < 0 || cc >= MAX_MIDI_CCS)
+                        continue;
+                    if (armedSlot < 0
+                        || (midiMapView[(size_t) cc] >= 0
+                            && midiMapView[(size_t) cc] != armedSlot))
+                        continue;
+                    capturedCc = cc;
+                    pendingLearnCc.store(cc, std::memory_order_relaxed);
+                    // Release store publishes the CC recorded above; the fold
+                    // consumes this slot with an acquire exchange.
+                    pendingLearnSlot.store(armedSlot, std::memory_order_release);
+                    midiLearnActive = false;
                 }
             }
-            mapSnapshot.clear();
-            // Entries are appended in midiMap's ascending-CC order (std::map
-            // iterates sorted), and only legal MIDI CC numbers 0..127 are
-            // copied: the apply path below only ever looks up
-            // getControllerNumber() values, so an out-of-range "cc"
-            // attribute surviving a state restore is a dead entry that can
-            // never grow the snapshot past its reserved 128-entry capacity —
-            // the refill is guaranteed not to reallocate.
-            for (const auto& [cc, pid] : midiMap)
-                if (cc >= 0 && cc <= 127)
-                    mapSnapshot.emplace_back(cc, pid);
         }
-        // Lock released — apply mappings from the snapshot. The captured CC
-        // skips its own mapping step (skip-only-this-CC semantics).
+
+        // Apply mappings from the published view. The captured CC skips its own
+        // mapping step (skip-only-this-CC semantics).
         //
         // CV-029: the audio thread NEVER notifies the host. A mapped CC only
         // stages the newest normalised value (the raw cc/127, unchanged, so
@@ -941,34 +1040,29 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // setValueNotifyingHost per parameter per tick, so no mapped knob can
         // run host-facing work, an undo transaction or APVTS listener work
         // inside this render callback.
+        //
+        // CV-027: the view stores roster slot indices, not parameter-id
+        // strings, so this path does no juce::String work and performs no
+        // APVTS lookup. A row that is not a live slot (removed parameter, or
+        // anything that could never be rostered such as "preset") is -1 and is
+        // dropped here.
         for (const auto& metadata : midiMessages)
         {
             auto msg = metadata.getMessage();
             if (!msg.isController())
                 continue;
             int cc = msg.getControllerNumber();
+            if (cc < 0 || cc >= MAX_MIDI_CCS)
+                continue;
             if (cc == capturedCc)
                 continue;
             float normValue = msg.getControllerValue() / 127.0f;
-            // The snapshot is a flat vector of (cc, paramID) pairs in
-            // ascending CC order. Scan it and stage through that entry.
-            for (const auto& entry : mapSnapshot)
-            {
-                if (entry.first == cc)
-                {
-                    // CV-029: refuse "preset" at the apply site too. Mapping
-                    // creation and restore already reject it; this gate means
-                    // even a stale/restored CC→preset row can never fan a CC
-                    // out into a whole preset change (undo transaction plus a
-                    // full parameter rewrite) on the audio thread.
-                    if (entry.second == "preset")
-                        break;
-                    auto* p = apvts.getParameter(entry.second);
-                    if (p != nullptr)
-                        stageMidiHostNotify(p, normValue);
-                    break;
-                }
-            }
+            const int slot = midiMapView[(size_t) cc];
+            if (slot < 0 || slot >= numMidiHostNotifySlots)
+                continue;
+            auto* p = midiHostNotifySlots[(size_t) slot].param;
+            if (p != nullptr)
+                stageMidiHostNotify(p, normValue);
         }
     }
 // Snapshot smoothed values for the beginning of this block.
@@ -1225,6 +1319,11 @@ juce::AudioProcessorEditor* CorvusFXAudioProcessor::createEditor() { return new 
 
 void CorvusFXAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
+    // CV-027: a learn captured in the last audio block may still be waiting for
+    // the message-thread fold; apply it before serializing so a save never
+    // drops the mapping the user just learned.
+    foldPendingMidiLearn();
+
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
 
@@ -1368,6 +1467,13 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
                     midiMap[cc] = paramID;
             }
         }
+
+        // CV-027: a restored session starts from the saved map only. Drop any
+        // learn captured by the previous session's audio thread and republish
+        // the rebuilt table so the next processBlock adopts it without a lock.
+        pendingLearnCc.store(-1, std::memory_order_relaxed);
+        pendingLearnSlot.store(-1, std::memory_order_relaxed);
+        publishMidiMap();
 
         // Clear locked parameters unconditionally: a saved state from an
         // older build (without a "paramLocks" child) must not silently keep
