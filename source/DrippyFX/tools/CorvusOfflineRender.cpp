@@ -579,6 +579,7 @@ int renderToFile (ProductProcessor& processor,
     double peak[kNumChannels] = {};
     double sumOfSquares[kNumChannels] = {};
     std::int64_t clipped[kNumChannels] = {};
+    std::int64_t nearFullScale[kNumChannels] = {};
     std::int64_t frame = 0;
 
     while (frame < frames)
@@ -620,6 +621,8 @@ int renderToFile (ProductProcessor& processor,
 
                 if (magnitude > 1.0)
                     ++clipped[channel];
+                if (magnitude >= 0.99)
+                    ++nearFullScale[channel];
             }
         }
 
@@ -663,6 +666,7 @@ int renderToFile (ProductProcessor& processor,
     const double overallRms = std::sqrt ((sumOfSquares[0] + sumOfSquares[1])
                                       / static_cast<double> (frames * kNumChannels));
     const auto clippedTotal = clipped[0] + clipped[1];
+    const auto nearFullScaleTotal = nearFullScale[0] + nearFullScale[1];
 
     writeOut ("wrote=" + outFile.getFullPathName());
     writeOut ("product=" + juce::String (kProductName));
@@ -683,6 +687,9 @@ int renderToFile (ProductProcessor& processor,
     writeOut ("clipped_samples=" + juce::String (static_cast<juce::int64> (clippedTotal))
             + " (left=" + juce::String (static_cast<juce::int64> (clipped[0]))
             + ", right=" + juce::String (static_cast<juce::int64> (clipped[1])) + ")");
+    writeOut ("near_full_scale_samples=" + juce::String (static_cast<juce::int64> (nearFullScaleTotal))
+            + " (left=" + juce::String (static_cast<juce::int64> (nearFullScale[0]))
+            + ", right=" + juce::String (static_cast<juce::int64> (nearFullScale[1])) + ")");
     writeOut ("provenance=" + (options.provenance.isNotEmpty()
                                ? options.provenance
                                : juce::String ("(not supplied)")));

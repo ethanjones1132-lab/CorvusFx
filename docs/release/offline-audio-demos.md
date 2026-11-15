@@ -179,24 +179,26 @@ frames, a partial final block of 384 samples) and Cathedral Drift uses 12.0 s
 not cut off. The tool's default is 6.0 s.
 
 Each command prints the product, program, exact frame/sample counts, duration,
-peak and RMS (linear and dBFS), clipping count, provenance and `status=ok`.
+peak and RMS (linear and dBFS), clipping count, **near_full_scale_samples** (samples at or above 0.99 linear magnitude per channel, including clipped samples), provenance and `status=ok`.
 Capture that stdout next to the WAV; it is part of the manifest.
+
+The **near_full_scale_samples** metric counts float samples whose absolute magnitude is at least 0.99, including samples also counted as clipped. It quantifies how often the signal approaches or exceeds 0 dBFS; a count of zero does not imply silence, so use the existing peak and RMS measurements to assess signal level.
 
 ## Manifest
 
 Fill this table from the actual tool output and file hashes. Do not fill it
 from this document.
 
-| File | Product | Preset | Program | Seconds | Format | Frames | Peak dBFS | RMS dBFS | Clipped | SHA-256 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `corvus-fx-00-clean-sparkle.wav` | Corvus FX | 0 | Clean Sparkle | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record |
-| `corvus-fx-08-thick-sauce.wav` | Corvus FX | 8 | Thick Sauce | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record |
-| `corvus-fx-13-cosmic-wide.wav` | Corvus FX | 13 | Cosmic Wide | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record |
-| `corvus-fx-21-event-horizon.wav` | Corvus FX | 21 | Event Horizon | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record |
-| `corvus-instrument-00-dawn-choir.wav` | Corvus Instrument | 0 | Dawn Choir | 9.0 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record |
-| `corvus-instrument-01-raven-glass.wav` | Corvus Instrument | 1 | Raven Glass | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record |
-| `corvus-instrument-02-ashen-sky.wav` | Corvus Instrument | 2 | Ashen Sky | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record |
-| `corvus-instrument-04-cathedral-drift.wav` | Corvus Instrument | 4 | Cathedral Drift | 12.0 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record |
+| File | Product | Preset | Program | Seconds | Format | Frames | Peak dBFS | RMS dBFS | Clipped | NearFullScale | SHA-256 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `corvus-fx-00-clean-sparkle.wav` | Corvus FX | 0 | Clean Sparkle | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
+| `corvus-fx-08-thick-sauce.wav` | Corvus FX | 8 | Thick Sauce | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
+| `corvus-fx-13-cosmic-wide.wav` | Corvus FX | 13 | Cosmic Wide | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
+| `corvus-fx-21-event-horizon.wav` | Corvus FX | 21 | Event Horizon | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
+| `corvus-instrument-00-dawn-choir.wav` | Corvus Instrument | 0 | Dawn Choir | 9.0 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
+| `corvus-instrument-01-raven-glass.wav` | Corvus Instrument | 1 | Raven Glass | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
+| `corvus-instrument-02-ashen-sky.wav` | Corvus Instrument | 2 | Ashen Sky | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
+| `corvus-instrument-04-cathedral-drift.wav` | Corvus Instrument | 4 | Cathedral Drift | 12.0 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
 
 Also record the source/build provenance:
 
