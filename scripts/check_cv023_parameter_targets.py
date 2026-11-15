@@ -6,6 +6,15 @@ juce::LinearSmoothedValue target:
 
     smooth<X>.setTargetValue(apvts.getRawParameterValue("<id>")->load() ...);
 
+The preparation site seeds BOTH ends of the ramp:
+
+    smooth<X>.setCurrentAndTargetValue(finiteSmoothingTarget(...));
+
+because `reset(sampleRate, smoothTime)` zeroes the current value: a plain
+`setTargetValue` there would ramp the first 20ms of audio from 0 (audible
+sweep on output gain and delay time at every block-size change and at the
+start of an offline render).
+
 Both sites (prepareToPlay seeds, processBlock refreshes) used to hand the raw
 APVTS read to the smoother with no finiteness test. A NaN, an infinity, or an
 overflowed mapping (a finite raw percent whose SQUARE overflows float32, e.g.
@@ -29,7 +38,10 @@ Asserts (comment-stripped, whitespace-collapsed, brace-matched):
       `fallback`, then returns 0 - the finite test strictly precedes use;
   (b) both real call sites route ALL 19 targets through it, in the pinned
       order, each paired with the correct fallback local computed BEFORE the
-      call; the unguarded `setTargetValue(<mapped>)` form is absent;
+      call; prepareToPlay seeds with `setCurrentAndTargetValue` (current ==
+      target, so no ramp from zero) and a bare `smooth<X>.setTargetValue`
+      anywhere in prepareToPlay is rejected; the unguarded `<setter>(<mapped>)`
+      form is absent from both bodies;
   (c) the preparation fallback chain comes from the declared default
       (`declaredPercentTarget` / `declaredTarget` / `feedbackTarget`), and the
       prepare body never reads the previous target;
@@ -48,6 +60,8 @@ Negative self-probes on mutated in-memory texts (real tree never mutated):
   - bypass one actual target guard -> rejected;
   - remove one preparation fallback -> rejected;
   - let an invalid mapped feedback value through -> rejected;
+  - seed one prepare smoother with plain setTargetValue -> rejected
+    (ramp-from-zero diagnostic);
   - retain a non-finite old target as the render fallback -> rejected;
   - benign comment edit inside prepareToPlay -> accepted (specificity).
 Each probe asserts the mutation actually changed the source and that the
@@ -163,9 +177,10 @@ def mapped_expr(pid, family):
     return FB_EXPR
 
 
-def expected_call(camel, pid, family):
-    return "smooth%s.setTargetValue(finiteSmoothingTarget(%s, fallback%s));" % (
-        camel, mapped_expr(pid, family), camel)
+def expected_call(camel, pid, family, is_prepare=False):
+    setter = "setCurrentAndTargetValue" if is_prepare else "setTargetValue"
+    return "smooth%s.%s(finiteSmoothingTarget(%s, fallback%s));" % (
+        camel, setter, mapped_expr(pid, family), camel)
 
 
 def declared_expr(pid, family):
@@ -282,28 +297,45 @@ def check_numeric_model(quad, lin):
 # ---------------------------------------------------------------------------
 
 def check_body(label, region, is_prepare):
-    count = len(re.findall(r"smooth[A-Za-z0-9]+\.setTargetValue\(", region))
+    setter = "setCurrentAndTargetValue" if is_prepare else "setTargetValue"
+
+    if is_prepare:
+        # A bare setTargetValue() after reset() leaves the current value at 0,
+        # so the first getNextValue() ramps from zero for the whole smoothing
+        # time. Every prepare-side seed must set BOTH ends of the ramp. This
+        # check runs first so the diagnostic names the ramp, not the roster.
+        stale = re.findall(
+            r"smooth[A-Za-z0-9]+\.setTargetValue\([^;]*\);", region)
+        if stale:
+            raise _Rejected(
+                "prepareToPlay still seeds %d smoother(s) with plain "
+                "setTargetValue (%s) - reset(sampleRate, smoothTime) zeroes the "
+                "current value, so the first block ramps from 0 for the whole "
+                "smoothing time (audible sweep on output gain / delay time)"
+                % (len(stale), stale[0]))
+
+    count = len(re.findall(r"smooth[A-Za-z0-9]+\." + setter + r"\(", region))
     if count != len(TARGETS):
-        raise _Rejected("%s routes %d smoothing target(s) through "
-                        "setTargetValue, expected %d - a dropped or duplicated "
-                        "target line changes the smoothing roster"
-                        % (label, count, len(TARGETS)))
+        raise _Rejected("%s routes %d smoothing target(s) through %s, expected "
+                        "%d - a dropped or duplicated target line changes the "
+                        "smoothing roster"
+                        % (label, count, setter, len(TARGETS)))
 
     pos = -1
     for camel, pid, family in TARGETS:
-        call = expected_call(camel, pid, family)
+        call = expected_call(camel, pid, family, is_prepare)
         if region.count(call) != 1:
             raise _Rejected(
-                "%s target '%s' is not routed through finiteSmoothingTarget - "
-                "expected `%s`; a NaN/inf/overflowed mapping would reach the "
-                "smoother" % (label, pid, call))
+                "%s target '%s' is not routed through finiteSmoothingTarget via "
+                "`%s` - expected `%s`; a NaN/inf/overflowed mapping would reach "
+                "the smoother" % (label, pid, setter, call))
         k = region.find(call)
         if k < pos:
             raise _Rejected("%s target '%s' arrived out of the pinned "
                             "smoothing order" % (label, pid))
         pos = k
 
-        unguarded = "smooth%s.setTargetValue(%s);" % (camel, mapped_expr(pid, family))
+        unguarded = "smooth%s.%s(%s);" % (camel, setter, mapped_expr(pid, family))
         if unguarded in region:
             raise _Rejected("%s keeps an unguarded `%s` call - that mapped "
                             "value bypasses finiteSmoothingTarget"
@@ -449,8 +481,8 @@ def run_text(cpp_text):
 # Raw (un-stripped) anchors used by the self-probes
 # ---------------------------------------------------------------------------
 
-def raw_call(camel, pid, family):
-    return "    " + expected_call(camel, pid, family) + "\n"
+def raw_call(camel, pid, family, is_prepare=False):
+    return "    " + expected_call(camel, pid, family, is_prepare) + "\n"
 
 
 def raw_prep_local(camel, pid, family):
@@ -472,15 +504,17 @@ def main():
     verdict = run_text(text)
     if verdict is not None:
         fail(verdict)
-    print("cv023-parameter-targets: 19 targets guarded in prepareToPlay + "
-          "processBlock, declared-default fallbacks pinned")
+    print("cv023-parameter-targets: 19 targets guarded in prepareToPlay "
+          "(setCurrentAndTargetValue seed) + processBlock (setTargetValue "
+          "refresh), declared-default fallbacks pinned")
 
     # ---- negative probes (in-memory mutations; each must be REJECTED) ----
     probes = [
         ("bypass one actual target guard (prepareToPlay output_trim)",
          lambda s: s.replace(
-             raw_call("OutputTrim", "output_trim", "pct"),
-             '    smoothOutputTrim.setTargetValue(apvts.getRawParameterValue('
+             raw_call("OutputTrim", "output_trim", "pct", True),
+             '    smoothOutputTrim.setCurrentAndTargetValue('
+             'apvts.getRawParameterValue('
              '"output_trim")->load() / 100.0f);\n', 1),
          "finiteSmoothingTarget"),
         ("remove the preparation fallback (overall)",
@@ -488,9 +522,17 @@ def main():
          "prepareToPlay fallback"),
         ("let an invalid mapped feedback value through (prepareToPlay)",
          lambda s: s.replace(
-             raw_call("DelayFeedback", "delay_feedback", "feedback"),
-             "    smoothDelayFeedback.setTargetValue(%s);\n" % FB_EXPR, 1),
+             raw_call("DelayFeedback", "delay_feedback", "feedback", True),
+             "    smoothDelayFeedback.setCurrentAndTargetValue(%s);\n" % FB_EXPR,
+             1),
          "finiteSmoothingTarget"),
+        ("seed one prepare smoother with plain setTargetValue (chorus_mix)",
+         lambda s: s.replace(
+             raw_call("ChorusMix", "chorus_mix", "pct", True),
+             "    smoothChorusMix.setTargetValue(finiteSmoothingTarget("
+             'apvts.getRawParameterValue("chorus_mix")->load() / 100.0f, '
+             "fallbackChorusMix));\n", 1),
+         "ramps from 0"),
         ("retain a non-finite old target as the render fallback (overall)",
          lambda s: s.replace(
              raw_proc_local("Overall", "overall", "pct"),

@@ -16,8 +16,11 @@ Asserts (comment-stripped):
   (b) the raw reads COVER every non-"preset" layout id — an added parameter
       whose read site is missing ships a knob that never leaves its default;
   (c) every smoothed (non-bypass, non-preset) id keeps one
-      `smooth<Pascal>.setTargetValue(` line in BOTH the prepareToPlay body and
-      the processBlock parameter-update region (up to the per-sample loop);
+      `smooth<Pascal>.setCurrentAndTargetValue(` line in the prepareToPlay body
+      (reset() zeroes the current value, so a plain setTargetValue() there would
+      ramp the first block up from 0) AND one
+      `smooth<Pascal>.setTargetValue(` line in the processBlock
+      parameter-update region (up to the per-sample loop);
       smoother names derived from the id, not a hand list; the smoother member
       must still exist in PluginProcessor.h;
   (c2) every smoothed id is still READ back — `getNextValue()` inside the
@@ -132,7 +135,8 @@ def verify(cpp_stripped, hdr_stripped=None):
             "PluginProcessor.cpp — unread parameters would revert behind the "
             "gate (or the read site was deleted)")
 
-    # (c) setTargetValue glue: prepareToPlay body + processBlock update region
+    # (c) seed glue: prepareToPlay body (seed current == target) + processBlock
+    #     update region (ramp the target)
     pascal = lambda pid: "".join(part.capitalize() for part in pid.split("_"))
     body_pp = fn_body(cpp_stripped, r"::prepareToPlay\s*\(")
     if body_pp is None:
@@ -149,11 +153,19 @@ def verify(cpp_stripped, hdr_stripped=None):
 
     for pid in sorted(non_preset - BYPASS_IDS):
         smoother = f"smooth{pascal(pid)}"
+        prep_line = f"{smoother}.setCurrentAndTargetValue("
         line = f"{smoother}.setTargetValue("
-        if line not in body_pp:
+        if prep_line not in body_pp:
             raise _Rejected(
-                f"prepareToPlay no longer smooths '{pid}' — '{line}' missing; that knob "
-                "would start from a stale target after a re-prepare")
+                f"prepareToPlay no longer seeds '{pid}' with "
+                f"'{prep_line}' — after reset() the smoother current value is 0, "
+                "so the first block would ramp up from 0 (audible sweep on every "
+                "re-prepare / block-size change)")
+        if line in body_pp:
+            raise _Rejected(
+                f"prepareToPlay still uses plain '{line}' for '{pid}' — "
+                "setTargetValue leaves the current value at 0 after reset(); "
+                "seed both ends with setCurrentAndTargetValue")
         if line not in pb_region:
             raise _Rejected(
                 f"processBlock parameter-update region no longer smooths '{pid}' — "
@@ -256,6 +268,10 @@ probes = [
          + "    const bool distortionBypass",
          PB_REGION_ANCHOR + "    const bool distortionBypass"),
     ),
+    ("seed a prepareToPlay smoother with plain setTargetValue",
+     lambda s: s.replace(
+         '    smoothOverall.setCurrentAndTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("overall")->load() / 100.0f, fallbackOverall));',
+         '    smoothOverall.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("overall")->load() / 100.0f, fallbackOverall));')),
     ("read master bypass without the > 0.5f gate",
      lambda s: s.replace(
          '    const bool masterBypass = apvts.getRawParameterValue("master_bypass")->load() > 0.5f;',

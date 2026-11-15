@@ -5,9 +5,10 @@ The per-block bypass reads (`distortion_bypass` etc. via `->load() > 0.5f`)
 are mapped into juce::LinearSmoothedValue bypassGain* targets in BOTH bodies:
 
   - prepareToPlay: bypassGainX.reset(sampleRate, bypassTime) then
-    bypassGainX.setTargetValue(bX) where bX keeps the inverted literal
-    `<bool> > 0.5f ? 0.0f : 1.0f` (so a stored "bypassed" state initializes
-    the smoother at 0.0 = dry);
+    bypassGainX.setCurrentAndTargetValue(bX) where bX keeps the inverted
+    literal `<bool> > 0.5f ? 0.0f : 1.0f` (so a stored "bypassed" state
+    initializes the smoother at 0.0 = dry, and an active module does not have
+    to fade in from 0 across the 30ms ramp after every re-prepare);
   - processBlock: bypassGainX.setTargetValue(<bool> ? 0.0f : 1.0f) right
     after the 5 bool reads.
 
@@ -15,16 +16,18 @@ Nothing else in the repo headless-pins this glue: check_raw_param_ids.py
 pins only the boolean read form, and the output-chain checker pins the
 per-sample crossfade READ side. A future edit that swaps 0.0f/1.0f in
 either the bool→gain map or the prepare init, drops one body's
-bypassGainX.setTargetValue ("simplification"), or removes a prepare-side
-reset() makes a bypass toggle click or mute a module silently, while the
-existing pins stay green.
+bypassGainX.setTargetValue / prepare seed ("simplification"), or removes a
+prepare-side reset() makes a bypass toggle click or mute a module silently,
+while the existing pins stay green.
 
 Asserts on the real tree (comment-stripped where noted):
   (a) prepareToPlay keeps, for each of the 5 modules: a
       bypassGainX.reset(sampleRate, bypassTime) AND a
-      bypassGainX.setTargetValue(bX) (raw, non-comment-stripped so
+      bypassGainX.setCurrentAndTargetValue(bX) (raw, non-comment-stripped so
       whitespace-insensitive regexes fire), plus the inverted `bDist =
-      ... > 0.5f ? 0.0f : 1.0f` literal forms;
+      ... > 0.5f ? 0.0f : 1.0f` literal forms; a prepare-side
+      bypassGainX.setTargetValue( is rejected (it leaves the current value
+      at 0 after reset());
   (b) the processBlock update region keeps, after the 5 bool reads, the 5
       `bypassGainX.setTargetValue(<bool> ? 0.0f : 1.0f)` lines;
   (c) all 5 bypassGain members are declared exactly once in
@@ -33,8 +36,9 @@ Asserts on the real tree (comment-stripped where noted):
 Negative self-probes on mutated in-memory texts (real tree never mutated;
 no-op mutation aborts as a stale alarm): swap 0.0f/1.0f in the
 processBlock map → rejected; drop one bypassGain setTargetValue →
-rejected; strip a prepare reset → rejected. Benign no-op edit outside the
-pinned shapes → accepted (probe specificity).
+rejected; strip a prepare reset → rejected; revert a prepare seed to plain
+setTargetValue → rejected. Benign no-op edit outside the pinned shapes →
+accepted (probe specificity).
 
 Exit 0 = ok, 1 = violation with a cited diagnostic.
 """
@@ -106,7 +110,7 @@ def _verify(cpp_text, h_text):
         return "processBlock body not found/brace-matched"
 
     for suffix, pid, boolname, bvar in MODULES:
-        # (a) prepare side: inverted-literal seed + reset + setTargetValue
+        # (a) prepare side: inverted-literal seed + reset + seeded current value
         seed = re.search(
             r"\b%s\s*=\s*apvts\.getRawParameterValue\(\"%s\"\)->load\(\)\s*>"
             r"\s*0\.5f\s*\?\s*0\.0f\s*:\s*1\.0f" % (bvar, pid),
@@ -121,9 +125,16 @@ def _verify(cpp_text, h_text):
             return ("prepareToPlay no longer calls bypassGain%s.reset — "
                     "bypass crossfade loses its 30ms ramp on a re-prepare"
                     % suffix)
-        if "bypassGain%s.setTargetValue(%s)" % (suffix, bvar) not in \
+        if "bypassGain%s.setCurrentAndTargetValue(%s)" % (suffix, bvar) not in \
                 prepare:
-            return "prepareToPlay bypassGain%s glue missing" % suffix
+            return ("prepareToPlay bypassGain%s seed missing — expected "
+                    "`bypassGain%s.setCurrentAndTargetValue(%s)` (current == "
+                    "target, so an active module does not fade in from 0 across "
+                    "the 30ms ramp)" % (suffix, suffix, bvar))
+        if re.search(r"bypassGain%s\.setTargetValue\(" % suffix, prepare):
+            return ("prepareToPlay still seeds bypassGain%s with plain "
+                    "setTargetValue — reset() zeroes the current value, so the "
+                    "first 30ms would ramp the module gain up from 0" % suffix)
 
         # (b) processBlock side: bool read then target map, in order
         bool_read = re.search(
@@ -168,8 +179,8 @@ def main():
     if err:
         fail(err)
     print("bypass-gain-glue: 5 inverted prepare seeds, 5 prepare "
-          "reset+setTargetValue, 5 processBlock `? 0.0f : 1.0f` maps, 5 "
-          "header members")
+          "reset+setCurrentAndTargetValue, 5 processBlock `? 0.0f : 1.0f` "
+          "maps, 5 header members")
 
     probe2_old = ("    bypassGainChorus.setTargetValue(chorusBypass "
                   "? 0.0f : 1.0f);")
@@ -180,8 +191,11 @@ def main():
         ("one processBlock setTargetValue dropped", probe2_old, ""),
         ("prepare reset stripped (Delay)",
          "bypassGainDelay.reset(sampleRate, bypassTime);  "
-         "bypassGainDelay.setTargetValue(bDel);",
-         "bypassGainDelay.setTargetValue(bDel);"),
+         "bypassGainDelay.setCurrentAndTargetValue(bDel);",
+         "bypassGainDelay.setCurrentAndTargetValue(bDel);"),
+        ("prepare seed reverted to plain setTargetValue (Reverb)",
+         "bypassGainReverb.setCurrentAndTargetValue(bRev);",
+         "bypassGainReverb.setTargetValue(bRev);"),
     ]
 
     for label, old, new in probes:

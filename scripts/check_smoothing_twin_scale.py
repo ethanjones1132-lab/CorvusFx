@@ -4,7 +4,9 @@
 The 19 `smooth<X>.setTargetValue(apvts.getRawParameterValue("<id>")->load()...)`
 lines are hand-maintained TWINS: prepareToPlay
 (source/DrippyFX/PluginProcessor.cpp:433-454) seeds the targets at
-re-prepare time and processBlock (:502-525) refreshes them per block.
+re-prepare time with `setCurrentAndTargetValue` (current == target, because
+reset() zeroes the current value) and processBlock (:502-525) refreshes the
+target per block with `setTargetValue`.
 check_raw_param_ids.py asserts each id's glue INSIDE each body but never
 COMPARES the two bodies: a prepare-side `chorus_rate` line rewritten with
 `/100.0f` while processBlock keeps the unscaled read seeds the smooth
@@ -14,8 +16,11 @@ body's lines diverges the twin copy histories — both compile clean.
 
 Asserts (comment-stripped, brace-matched):
   (a) each body keeps exactly the same 19 smoothed ids in the SAME ORDER;
-  (b) for each of the 19 ids the two bodies' setTargetValue expression
-      texts are IDENTICAL (catches a single-side /100.0f add or drop).
+  (b) for each of the 19 ids the two bodies' setter expression texts are
+      IDENTICAL (catches a single-side /100.0f add or drop), and each body
+      uses its required setter — prepareToPlay setCurrentAndTargetValue,
+      processBlock setTargetValue (a prepare-side setTargetValue leaves the
+      current value at 0 after reset() and ramps the first block up from 0).
 
 Self-probes (negative checks, sibling checker style) run on mutated
 in-memory TEMP texts — the real tree is never mutated. A no-op mutation
@@ -39,12 +44,18 @@ EXPECTED_IDS = [
     "output_trim",
 ]
 
-# Match `smooth<Name>.setTargetValue(...);` possibly spanning lines
-# (the delay_feedback twin wraps its expression in a brace block that
-# collapses to one statement after comment-stripping is line-based, so
-# match conservatively: target, then lazy capture up to `);`).
+# Match `smooth<Name>.setTargetValue(...);` / `smooth<Name>.setCurrentAndTargetValue(...);`
+# possibly spanning lines (the delay_feedback twin wraps its expression in a
+# brace block that collapses to one statement after comment-stripping is
+# line-based, so match conservatively: target, then lazy capture up to `);`).
 STMT_RE = re.compile(
-    r"smooth([A-Za-z0-9]+)\.setTargetValue\((.*?)\)\s*;", re.S)
+    r"smooth([A-Za-z0-9]+)\.(setTargetValue|setCurrentAndTargetValue)"
+    r"\((.*?)\)\s*;", re.S)
+
+# prepareToPlay must seed the ramp at BOTH ends; processBlock refreshes the
+# target only (its current value is the value the audio path is already at).
+PREP_SETTER = "setCurrentAndTargetValue"
+PROC_SETTER = "setTargetValue"
 
 
 def fail(msg):
@@ -92,10 +103,20 @@ def collapse_ws(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
-def body_twins(body):
-    """Return [(id, collapsed expr)] for the smooth* setTargetValue lines."""
-    return [(m.group(1), collapse_ws(m.group(2)))
-            for m in STMT_RE.finditer(body)]
+def body_twins(body, want_setter):
+    """Return [(id, collapsed expr)] for the body's smooth* setter lines.
+
+    `want_setter` is the setter that body must use; any line using the other
+    setter is reported as its own entry so the twin comparison rejects it
+    (a prepare-side setTargetValue would ramp the first block up from 0).
+    """
+    out = []
+    for m in STMT_RE.finditer(body):
+        expr = collapse_ws(m.group(3))
+        if m.group(2) != want_setter:
+            expr = "<%s>%s" % (m.group(2), expr)
+        out.append((m.group(1), expr))
+    return out
 
 
 def id_matches(camel, pid):
@@ -121,8 +142,8 @@ if not proc_c_path.exists():
     fail(f"missing source file {proc_c_path}")
 proc_c = proc_c_path.read_text(encoding="utf-8")
 
-prep_twins = body_twins(extract_body(proc_c, "prepareToPlay"))
-proc_twins = body_twins(extract_body(proc_c, "processBlock"))
+prep_twins = body_twins(extract_body(proc_c, "prepareToPlay"), PREP_SETTER)
+proc_twins = body_twins(extract_body(proc_c, "processBlock"), PROC_SETTER)
 
 if not check_twins(prep_twins, proc_twins):
     prep_ids = [i for i, _ in prep_twins]
@@ -139,8 +160,9 @@ if not check_twins(prep_twins, proc_twins):
          "\n  process: " + "; ".join(f"{i}({e})" for i, e in proc_twins) +
          detail)
 
-print("smoothing-twin: 19 setTargetValue twins match across "
-      "prepareToPlay and processBlock (scale + order pinned)")
+print("smoothing-twin: 19 smoother twins match across "
+      "prepareToPlay (setCurrentAndTargetValue seed) and processBlock "
+      "(setTargetValue refresh) (scale + order pinned)")
 
 # ---------------------------------------------------------------------------
 # Self-probes on mutated in-memory texts (real tree never mutated)
@@ -148,8 +170,10 @@ print("smoothing-twin: 19 setTargetValue twins match across "
 
 def recheck(mutated_full_text):
     try:
-        pt = body_twins(extract_body(mutated_full_text, "prepareToPlay"))
-        bt = body_twins(extract_body(mutated_full_text, "processBlock"))
+        pt = body_twins(extract_body(mutated_full_text, "prepareToPlay"),
+                        PREP_SETTER)
+        bt = body_twins(extract_body(mutated_full_text, "processBlock"),
+                        PROC_SETTER)
     except SystemExit:
         return False
     return check_twins(pt, bt)
@@ -173,7 +197,8 @@ def probe(description, mutator):
 # 1. add /100.0f to the prepare-side chorus_rate expression ONLY
 #    (seed the smooth target 100x high at re-prepare)
 cr_lines = [l for l in proc_c.splitlines()
-            if "smoothChorusRate.setTargetValue" in l]
+            if "smoothChorusRate.setTargetValue" in l
+            or "smoothChorusRate.setCurrentAndTargetValue" in l]
 if len(cr_lines) != 2:
     fail(f"self-probe baseline broken: expected 2 smoothChorusRate lines, "
          f"found {len(cr_lines)}")

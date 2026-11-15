@@ -25,7 +25,9 @@ Asserts on the real tree (comment-stripped, brace-matched):
       fits inside the new range while exceeding the old 0..100 range;
   (d) both smoothing sites read `getRawParameterValue("master_width")->load()
       / 100.0f` and both fallbacks use declaredPercentTarget (declared default
-      100 / 100 = 1.0 identity), with the consumer getNextValue in the loop;
+      100 / 100 = 1.0 identity); prepareToPlay seeds current == target with
+      setCurrentAndTargetValue (no ramp from 0 after reset()), processBlock
+      refreshes with setTargetValue, with the consumer getNextValue in the loop;
   (e) the master gate renders `float width = sMasterWidth;` — no offset, no
       scale factor — and passes it to masterOutput.process;
   (f) MasterOutputStage::process still applies `side *= width`.
@@ -72,6 +74,13 @@ OWN_RANGE_MAX = 200.0
 
 SMOOTH_WIDTH = (
     'smoothMasterWidth.setTargetValue(finiteSmoothingTarget('
+    'apvts.getRawParameterValue("master_width")->load() / 100.0f, '
+    'fallbackMasterWidth));')
+
+# prepareToPlay must seed BOTH ends of the ramp: reset() zeroes the current
+# value, so a plain setTargetValue there would sweep the first block up from 0.
+PREP_SMOOTH_WIDTH = (
+    'smoothMasterWidth.setCurrentAndTargetValue(finiteSmoothingTarget('
     'apvts.getRawParameterValue("master_width")->load() / 100.0f, '
     'fallbackMasterWidth));')
 
@@ -295,10 +304,11 @@ def verify(cpp_text, effects_text):
         raise Reject("prepareToPlay body not found / brace-matched")
     prepare_flat = collapse_ws(prepare)
     require_count(
-        prepare_flat, SMOOTH_WIDTH, 1,
-        "prepareToPlay no longer maps master_width with "
-        "`getRawParameterValue(...)->load() / 100.0f` through "
-        "finiteSmoothingTarget")
+        prepare_flat, PREP_SMOOTH_WIDTH, 1,
+        "prepareToPlay no longer seeds master_width with "
+        "`setCurrentAndTargetValue(getRawParameterValue(...)->load() / 100.0f "
+        "through finiteSmoothingTarget` — reset() zeroes the current value, so "
+        "a plain setTargetValue would ramp the first block up from 0")
     require_count(
         prepare_flat, PREP_FALLBACK, 1,
         "prepareToPlay master_width fallback is no longer "
@@ -458,7 +468,9 @@ def main():
              'declaredPercentTarget(apvts, "master_width")',
              'declaredTarget(apvts, "master_width")')),
         ("drop the prepareToPlay master_width smoothing site",
-         "cpp", cpp_mutate(SMOOTH_WIDTH, "", 1)),
+         "cpp", cpp_mutate(PREP_SMOOTH_WIDTH, "", 1)),
+        ("revert the prepareToPlay master_width seed to plain setTargetValue",
+         "cpp", cpp_mutate(PREP_SMOOTH_WIDTH, SMOOTH_WIDTH, 1)),
         ("raise a stored preset mWid above the range",
          "cpp", cpp_mutate(
              "80,  15, 140,   5,  30", "80,  15, 240,   5,  30", 1)),
