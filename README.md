@@ -406,7 +406,7 @@ cmake -G "Visual Studio 18 2026" -A x64 -DJUCE_PATH="%JUCE_PATH%" -DCORVUS_ENABL
 cmake --build build-pgo --config Release
 ```
 
-Source code is located in the `source/DrippyFX/` directory of this repo, alongside the historical legacy prebuilt binaries under `drippy/` and `DrippyMk2/` (not part of the v1.0.0 artifact set).
+Source code is located in the `source/DrippyFX/` directory of this repo, alongside the historical legacy prebuilt binary under `drippy/` (not part of the v1.0.0 artifact set). `DrippyMk2/` contains stale module metadata only (`NewProject.vst3/Contents/Resources/moduleinfo.json`) — no binary.
 
 | Path | Contents |
 |------|----------|
@@ -558,7 +558,7 @@ A: Open an [issue](https://github.com/ethanjones1132-lab/CorvusFx/issues) or sta
 
 Contributions are welcome! Whether it's bug fixes, DSP improvements, new presets, or documentation — every bit helps.
 
-**Source layout:** Edit JUCE code under `source/DrippyFX/`. Shared DSP lives in `source/DrippyFX/dsp/CorvusEffects.h`; the synth target is under `source/DrippyFX/instrument/`. Binary history: the historical legacy prebuilt Corvus FX binary lives at `drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3` (not rebuilt or renamed by the current CMake build, which instead produces `Corvus FX.vst3` from `source/DrippyFX/`). Any commit that updates the `.vst3` for a code-level fix must include the matching `source/DrippyFX/` diffs (see `AGENTS.md`).
+**Source layout:** Edit JUCE code under `source/DrippyFX/`. Shared DSP lives in `source/DrippyFX/dsp/CorvusEffects.h`; the synth target is under `source/DrippyFX/instrument/`. Binary history: `drippy/NewProject.vst3/Contents/x86_64-win/DrippyMk1.vst3` is a historical legacy prebuilt bundle, not a Corvus FX binary — its own module info (`drippy/NewProject.vst3/Contents/Resources/moduleinfo.json`) brands it `NewProject` from vendor `yourcompany`. It is not rebuilt or renamed by the current CMake build, which instead produces `Corvus FX.vst3` from `source/DrippyFX/`. Any commit that updates the `.vst3` for a code-level fix must include the matching `source/DrippyFX/` diffs (see `AGENTS.md`).
 
 1. Fork the repo
 2. Create a feature branch (`git checkout -b feature/amazing-idea`)
