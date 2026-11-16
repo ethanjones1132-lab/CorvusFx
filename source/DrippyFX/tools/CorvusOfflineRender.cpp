@@ -11,10 +11,14 @@
     product's actual AudioProcessor::processBlock path and its public
     setCurrentProgram()/getProgramName() interface. No DSP is copied here.
 
-    Fixed render contract:
-      * 48000 Hz, stereo, 24-bit PCM WAV.
+    Render contract:
+      * Stereo WAV at --sample-rate (default 48000 Hz), written as 24-bit PCM
+        or, with --bit-depth 32, as IEEE 32-bit float.
       * 512-sample blocks; the final block is shortened as needed.
       * --seconds is bounded to 0.25 .. 30.0 (default 6.0).
+      * --preset takes a program name or a program index. Either form is
+        resolved through the product's own getProgramName() roster and applied
+        with the same setCurrentProgram() call a host uses.
       * No audio device, host, microphone, user input file, network, provider
         or model is touched. Input is generated procedurally in this file.
 
@@ -64,14 +68,18 @@
 
 namespace
 {
-constexpr double kSampleRate = 48000.0;
+// Bit-depth choice for the WAV writer: 24 = PCM, 32 = IEEE float.
+constexpr double kDefaultSampleRate = 48000.0;
+constexpr double kMinSampleRate = 8000.0;
+constexpr double kMaxSampleRate = 192000.0;
 constexpr int kNumChannels = 2;
-constexpr int kBitsPerSample = 24;
+constexpr int kDefaultBitsPerSample = 24;
+constexpr int kFloatBitsPerSample = 32;
 constexpr int kBlockSize = 512;
 constexpr double kDefaultSeconds = 6.0;
 constexpr double kMinSeconds = 0.25;
 constexpr double kMaxSeconds = 30.0;
-constexpr std::int64_t kMaxFrames = 1440000; // 30 s at 48 kHz
+constexpr std::int64_t kMaxFrames = 5760000; // 30 s at 192 kHz
 
 struct Options
 {
@@ -79,8 +87,11 @@ struct Options
     bool listPresets = false;
     bool overwrite = false;
     int preset = -1;
+    juce::String presetText; // raw --preset value: program name or index
     juce::String outPath;
     double seconds = kDefaultSeconds;
+    double sampleRate = kDefaultSampleRate;
+    int bitsPerSample = kDefaultBitsPerSample;
     juce::String provenance;
 };
 
@@ -101,21 +112,27 @@ void printUsage (const juce::String& appName)
           << "\n"
           << "Usage:\n"
           << "  " << appName << " --list-presets\n"
-          << "  " << appName << " --preset <index> --out <new.wav> [options]\n"
+          << "  " << appName << " --preset <name|index> --out <new.wav> [options]\n"
           << "\n"
           << "Required for rendering:\n"
-          << "  --preset <index>      Program index from --list-presets (0-based)\n"
+          << "  --preset <name|index> Program name or index from --list-presets\n"
+          << "                        (an all-digit value is read as an index)\n"
           << "  --out <path.wav>      New output path. An existing file is refused\n"
           << "                        unless --overwrite is also given.\n"
           << "\n"
           << "Options:\n"
           << "  --seconds <n>         Render length, 0.25 to 30.0 (default 6.0)\n"
+          << "  --sample-rate <hz>    Render sample rate, 8000 to 192000, and it\n"
+          << "                        must be one the WAV writer supports\n"
+          << "                        (default 48000)\n"
+          << "  --bit-depth <24|32>   24 = PCM (default), 32 = IEEE 32-bit float\n"
           << "  --provenance <text>   Echo this text in the report, e.g. a git revision\n"
           << "  --overwrite           Replace an existing --out file (and stale .partial)\n"
           << "  --list-presets        Print program indices and names, then exit\n"
           << "  --help, -h            Print this help, then exit\n"
           << "\n"
-          << "Fixed output: 48000 Hz, stereo, 24-bit PCM WAV, 512-sample blocks.\n"
+          << "Fixed output: stereo, 512-sample blocks. No audio device, host or GUI\n"
+          << "is opened; input is generated inside this tool.\n"
           << "Exit codes: 0 success, 1 render/writer/verification failure,\n"
           << "            2 usage error or output-path precondition.\n";
     writeOut (usage);
@@ -204,13 +221,12 @@ bool parseOptions (int argc, char* argv[], Options& options, juce::String& error
         }
         else if (argument == "--preset")
         {
-            juce::String value;
-            if (! takeValue (value))
+            if (! takeValue (options.presetText))
                 return false;
 
-            if (! parseNonNegativeInt (value, options.preset))
+            if (options.presetText.trim().isEmpty())
             {
-                error = "--preset expects a non-negative integer, got '" + value + "'";
+                error = "--preset is empty";
                 return false;
             }
         }
@@ -228,6 +244,39 @@ bool parseOptions (int argc, char* argv[], Options& options, juce::String& error
             }
 
             options.seconds = parsed;
+        }
+        else if (argument == "--sample-rate")
+        {
+            juce::String value;
+            if (! takeValue (value))
+                return false;
+
+            double parsed = 0.0;
+            if (! parseFiniteDouble (value, parsed))
+            {
+                error = "--sample-rate expects a finite number, got '" + value + "'";
+                return false;
+            }
+
+            options.sampleRate = parsed;
+        }
+        else if (argument == "--bit-depth")
+        {
+            juce::String value;
+            if (! takeValue (value))
+                return false;
+
+            const auto trimmed = value.trim();
+            if (trimmed == "24")
+                options.bitsPerSample = kDefaultBitsPerSample;
+            else if (trimmed == "32")
+                options.bitsPerSample = kFloatBitsPerSample;
+            else
+            {
+                error = "--bit-depth expects 24 (PCM) or 32 (IEEE float), got '"
+                      + value + "'";
+                return false;
+            }
         }
         else if (argument == "--out")
         {
@@ -319,19 +368,82 @@ bool checkOutputPath (const Options& options,
     return true;
 }
 
+// The WAV writer only accepts the rates it advertises; asking JUCE for the list
+// keeps this tool correct without hard-coding a version-specific table.
+bool isSupportedSampleRate (double sampleRate)
+{
+    juce::WavAudioFormat wavFormat;
+
+    for (auto candidate : wavFormat.getPossibleSampleRates())
+        if (std::abs (sampleRate - static_cast<double> (candidate)) < 0.5)
+            return true;
+
+    return false;
+}
+
+// --preset accepts the same two ways of naming a program a host has: the index
+// or the name. A name is matched against the product's own roster, and the
+// result is still applied through setCurrentProgram(), so the render uses the
+// same program path as the plug-in. An all-digit argument stays an index so
+// existing scripted calls keep working; a missing or ambiguous name is a usage
+// error rather than a silent fallback to program 0.
+int resolvePreset (ProductProcessor& processor, const juce::String& text, juce::String& error)
+{
+    const int numPrograms = processor.getNumPrograms();
+    const auto trimmed = text.trim();
+
+    if (trimmed.isEmpty())
+    {
+        error = "--preset is empty";
+        return -1;
+    }
+
+    int index = -1;
+    if (parseNonNegativeInt (trimmed, index))
+    {
+        if (index >= 0 && index < numPrograms)
+            return index;
+
+        error = "--preset " + trimmed + " is outside the product range 0.."
+              + juce::String (numPrograms - 1);
+        return -1;
+    }
+
+    int match = -1;
+    int matches = 0;
+
+    for (int i = 0; i < numPrograms; ++i)
+    {
+        if (processor.getProgramName (i).equalsIgnoreCase (trimmed))
+        {
+            match = i;
+            ++matches;
+        }
+    }
+
+    if (matches == 1)
+        return match;
+
+    error = matches == 0
+        ? juce::String ("no program named '") + trimmed + "' (use --list-presets to see names)"
+        : juce::String ("program name '") + trimmed + "' is ambiguous; use its index instead";
+
+    return -1;
+}
+
 #if defined(CORVUS_RENDER_PRODUCT_FX)
 // Original deterministic tone/transient bed. Phase comes from the absolute
 // frame index, so the signal is independent of the block split. There is no
 // PRNG and no sample-rate conversion.
 constexpr double kTwoPi = 6.283185307179586476925286766559;
 
-void fillFxInput (juce::AudioBuffer<float>& buffer, std::int64_t startFrame)
+void fillFxInput (juce::AudioBuffer<float>& buffer, std::int64_t startFrame, double sampleRate)
 {
     const int numSamples = buffer.getNumSamples();
 
     for (int i = 0; i < numSamples; ++i)
     {
-        const double t = static_cast<double> (startFrame + i) / kSampleRate;
+        const double t = static_cast<double> (startFrame + i) / sampleRate;
 
         // 10 ms fade-in so the bed does not start with a step.
         const double fadeIn = std::min (1.0, t / 0.010);
@@ -372,7 +484,7 @@ struct ScheduledMidiEvent
     bool noteOn = false;
 };
 
-std::vector<ScheduledMidiEvent> makeInstrumentPattern()
+std::vector<ScheduledMidiEvent> makeInstrumentPattern (double sampleRate)
 {
     static constexpr int chords[4][3] =
     {
@@ -387,8 +499,8 @@ std::vector<ScheduledMidiEvent> makeInstrumentPattern()
 
     for (int chord = 0; chord < 4; ++chord)
     {
-        const auto onFrame = static_cast<std::int64_t> (std::llround (chord * 1.2 * kSampleRate));
-        const auto offFrame = onFrame + static_cast<std::int64_t> (std::llround (0.6 * kSampleRate));
+        const auto onFrame = static_cast<std::int64_t> (std::llround (chord * 1.2 * sampleRate));
+        const auto offFrame = onFrame + static_cast<std::int64_t> (std::llround (0.6 * sampleRate));
 
         for (int note : chords[chord])
         {
@@ -433,7 +545,11 @@ void addInstrumentMidiForBlock (juce::MidiBuffer& midi,
 }
 #endif
 
-bool verifyWavFile (const juce::File& file, std::int64_t expectedFrames, juce::String& error)
+bool verifyWavFile (const juce::File& file,
+                    std::int64_t expectedFrames,
+                    double expectedSampleRate,
+                    int expectedBitsPerSample,
+                    juce::String& error)
 {
     auto stream = file.createInputStream();
     if (stream == nullptr || ! stream->openedOk())
@@ -458,17 +574,26 @@ bool verifyWavFile (const juce::File& file, std::int64_t expectedFrames, juce::S
         return false;
     }
 
-    if (reader->bitsPerSample != static_cast<unsigned int> (kBitsPerSample))
+    if (reader->bitsPerSample != static_cast<unsigned int> (expectedBitsPerSample))
     {
         error = "verification failed: bits_per_sample=" + juce::String (static_cast<int> (reader->bitsPerSample))
-              + ", expected " + juce::String (kBitsPerSample);
+              + ", expected " + juce::String (expectedBitsPerSample);
         return false;
     }
 
-    if (std::abs (reader->sampleRate - kSampleRate) > 0.5)
+    const bool expectedFloat = expectedBitsPerSample == kFloatBitsPerSample;
+    if (reader->usesFloatingPointData != expectedFloat)
+    {
+        error = "verification failed: floating_point_data="
+              + juce::String (reader->usesFloatingPointData ? "yes" : "no")
+              + ", expected " + juce::String (expectedFloat ? "yes" : "no");
+        return false;
+    }
+
+    if (std::abs (reader->sampleRate - expectedSampleRate) > 0.5)
     {
         error = "verification failed: sample_rate=" + juce::String (reader->sampleRate, 3)
-              + ", expected " + juce::String (kSampleRate, 3);
+              + ", expected " + juce::String (expectedSampleRate, 3);
         return false;
     }
 
@@ -539,8 +664,8 @@ int renderToFile (ProductProcessor& processor,
     // prepared rate/block size from their own members rather than
     // getSampleRate()/getBlockSize(), but publishing them keeps the render
     // path host-shaped instead of relying on that detail.
-    processor.setRateAndBufferSizeDetails (kSampleRate, kBlockSize);
-    processor.prepareToPlay (kSampleRate, kBlockSize);
+    processor.setRateAndBufferSizeDetails (options.sampleRate, kBlockSize);
+    processor.prepareToPlay (options.sampleRate, kBlockSize);
 
     struct ReleaseGuard
     {
@@ -560,20 +685,32 @@ int renderToFile (ProductProcessor& processor,
     stream = std::move (fileStream);
 
     juce::WavAudioFormat wavFormat;
-    writer = wavFormat.createWriterFor (stream, juce::AudioFormatWriterOptions {}
-        .withSampleRate (kSampleRate)
+
+    // 24-bit is written as PCM; 32-bit is written as IEEE float, which is the
+    // WAV sample format a float render needs (an integral 32-bit file would
+    // clip differently and could not carry the tool's float measurements).
+    auto writerOptions = juce::AudioFormatWriterOptions {}
+        .withSampleRate (options.sampleRate)
         .withNumChannels (kNumChannels)
-        .withBitsPerSample (kBitsPerSample));
+        .withBitsPerSample (options.bitsPerSample);
+
+    if (options.bitsPerSample == kFloatBitsPerSample)
+        writerOptions = writerOptions.withSampleFormat (
+            juce::AudioFormatWriterOptions::SampleFormat::floatingPoint);
+
+    writer = wavFormat.createWriterFor (stream, writerOptions);
 
     if (writer == nullptr)
-        return fail ("WAV writer could not be created for 48 kHz / stereo / 24-bit");
+        return fail ("WAV writer could not be created for "
+                   + juce::String (options.sampleRate, 0) + " Hz / stereo / "
+                   + juce::String (options.bitsPerSample) + "-bit");
 
     juce::AudioBuffer<float> block (kNumChannels, kBlockSize);
     juce::MidiBuffer midi;
 
 #if ! defined(CORVUS_RENDER_PRODUCT_FX)
     std::size_t nextMidiEvent = 0;
-    const auto midiEvents = makeInstrumentPattern();
+    const auto midiEvents = makeInstrumentPattern (options.sampleRate);
 #endif
 
     double peak[kNumChannels] = {};
@@ -589,7 +726,7 @@ int renderToFile (ProductProcessor& processor,
         midi.clear();
 
 #if defined(CORVUS_RENDER_PRODUCT_FX)
-        fillFxInput (block, frame);
+        fillFxInput (block, frame, options.sampleRate);
 #else
         block.clear();
         addInstrumentMidiForBlock (midi, nextMidiEvent, midiEvents, frame, numSamples);
@@ -649,7 +786,8 @@ int renderToFile (ProductProcessor& processor,
     }
 
     juce::String verificationError;
-    if (! verifyWavFile (tempFile, frames, verificationError))
+    if (! verifyWavFile (tempFile, frames, options.sampleRate,
+                         options.bitsPerSample, verificationError))
         return fail (verificationError);
 
     if (outFile.existsAsFile() && ! options.overwrite)
@@ -677,7 +815,7 @@ int renderToFile (ProductProcessor& processor,
     writeOut ("frames=" + juce::String (static_cast<juce::int64> (frames)));
     writeOut ("samples_per_channel=" + juce::String (static_cast<juce::int64> (frames)));
     writeOut ("total_samples=" + juce::String (static_cast<juce::int64> (frames * kNumChannels)));
-    writeOut ("duration_seconds=" + juce::String (static_cast<double> (frames) / kSampleRate, 6));
+    writeOut ("duration_seconds=" + juce::String (static_cast<double> (frames) / options.sampleRate, 6));
     writeOut ("peak_linear=" + juce::String (overallPeak, 6));
     writeOut ("peak_dbfs=" + formatDb (overallPeak)
             + " (left=" + formatDb (peak[0]) + ", right=" + formatDb (peak[1]) + ")");
@@ -699,10 +837,14 @@ int renderToFile (ProductProcessor& processor,
 
     if (clippedTotal > 0)
     {
+        const juce::String formatNote = options.bitsPerSample == kFloatBitsPerSample
+            ? " a 32-bit float WAV can carry them, but playback or a later integer"
+              " stage may clip them."
+            : " 24-bit PCM cannot carry them, so the WAV will clip or distort them.";
+
         writeErr ("warning: " + juce::String (static_cast<juce::int64> (clippedTotal))
-                + " rendered sample(s) were outside [-1.0, +1.0]; 24-bit PCM cannot"
-                  " carry them, so the WAV will clip or distort them. The tool does"
-                  " not change the product's gain.");
+                + " rendered sample(s) were outside [-1.0, +1.0];" + formatNote
+                + " The tool does not change the product's gain.");
     }
 
     return 0;
@@ -753,15 +895,15 @@ int run (int argc, char* argv[])
         return 0;
     }
 
-    if (options.preset < 0)
-        return usageError (appName, "missing --preset <index> (use --list-presets to see indices)");
+    if (options.presetText.trim().isEmpty())
+        return usageError (appName, "missing --preset <name|index> (use --list-presets to see names)");
 
-    if (options.preset >= numPrograms)
-    {
-        return usageError (appName, "--preset " + juce::String (options.preset)
-                                    + " is outside the product range 0.."
-                                    + juce::String (numPrograms - 1));
-    }
+    juce::String presetError;
+    const int presetIndex = resolvePreset (processor, options.presetText, presetError);
+    if (presetIndex < 0)
+        return usageError (appName, presetError);
+
+    options.preset = presetIndex;
 
     if (options.outPath.trim().isEmpty())
         return usageError (appName, "missing --out <new .wav path>");
@@ -773,7 +915,15 @@ int run (int argc, char* argv[])
                                     + ".." + juce::String (kMaxSeconds, 1));
     }
 
-    const auto frames = static_cast<std::int64_t> (std::llround (options.seconds * kSampleRate));
+    if (! (options.sampleRate >= kMinSampleRate && options.sampleRate <= kMaxSampleRate)
+        || ! isSupportedSampleRate (options.sampleRate))
+    {
+        return usageError (appName, "--sample-rate " + juce::String (options.sampleRate, 3)
+                                    + " is not a WAV sample rate this tool can write"
+                                      " (try 44100, 48000, 96000 or 192000)");
+    }
+
+    const auto frames = static_cast<std::int64_t> (std::llround (options.seconds * options.sampleRate));
     if (frames <= 0 || frames > kMaxFrames)
     {
         return usageError (appName, "requested length is outside the bounded sample count");
@@ -807,9 +957,12 @@ int run (int argc, char* argv[])
     writeOut ("program_name=" + programName);
     writeOut ("current_program=" + juce::String (processor.getCurrentProgram()));
     writeOut ("input=" + juce::String (kInputDescription));
-    writeOut ("sample_rate=" + juce::String (static_cast<int> (kSampleRate)));
+    writeOut ("sample_rate=" + juce::String (static_cast<int> (options.sampleRate)));
     writeOut ("channels=" + juce::String (kNumChannels));
-    writeOut ("bits_per_sample=" + juce::String (kBitsPerSample));
+    writeOut ("bits_per_sample=" + juce::String (options.bitsPerSample)
+            + (options.bitsPerSample == kFloatBitsPerSample
+                   ? juce::String (" (IEEE float)")
+                   : juce::String (" (PCM)")));
     writeOut ("block_size=" + juce::String (kBlockSize));
     writeOut ("seconds=" + juce::String (options.seconds, 6));
     writeOut ("frames=" + juce::String (static_cast<juce::int64> (frames)));
@@ -820,7 +973,7 @@ int run (int argc, char* argv[])
     writeOut ("juce=" + juce::SystemStats::getJUCEVersion());
 
 #if ! defined(CORVUS_RENDER_PRODUCT_FX)
-    if (frames < static_cast<std::int64_t> (std::llround (4.5 * kSampleRate)))
+    if (frames < static_cast<std::int64_t> (std::llround (4.5 * options.sampleRate)))
     {
         writeErr ("warning: render is shorter than the 4.5 s instrument phrase;"
                   " note-offs and release tail may be truncated");

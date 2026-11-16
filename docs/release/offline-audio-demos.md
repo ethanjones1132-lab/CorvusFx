@@ -28,27 +28,36 @@ label. The tool also prints the processor's own `getName()` as
 `"CorvusFX"` string. That fallback is not the v1.0 host-visible product name;
 do not quote `processor_name=` as release identity evidence.
 
-Fixed render contract:
+Render contract:
 
-- 48000 Hz, stereo, 24-bit PCM WAV.
-- 512-sample blocks; the final block is shortened to the exact remaining
-  sample count, so non-block-aligned lengths are exercised.
+- Stereo WAV, 512-sample blocks; the final block is shortened to the exact
+  remaining sample count, so non-block-aligned lengths are exercised.
+- Default output is 48000 Hz, 24-bit PCM. `--sample-rate <hz>` selects another
+  rate the WAV writer supports (8000-192000; 44100/48000/96000/192000 are the
+  usual choices), and `--bit-depth 32` writes IEEE 32-bit float instead of
+  24-bit PCM.
 - `--seconds` is bounded to 0.25 through 30.0 (default 6.0).
-- `prepareToPlay()` and `releaseResources()` bracket the render.
-- No audio device, DAW, microphone, user-supplied audio file, network,
+- `--preset` accepts a program name or a program index. An all-digit value is
+  read as an index, so existing scripted calls keep working. Either form is
+  resolved against the binary's own `getProgramName()` roster and applied with
+  `setCurrentProgram()`, the same program path a host uses.
+- `prepareToPlay()` and `releaseResources()` bracket the render, at the
+  requested sample rate.
+- No audio device, DAW, microphone, user-supplied audio file, window, network,
   provider or model is used. The input is generated inside the tool.
 
 Output honesty:
 
 - The WAV is written to `<out>.partial`. It is reopened and checked for
-  channels, sample rate, bit depth and exact frame count before it is moved to
-  `<out>`.
+  channels, sample rate, bit depth, float/integer sample format and exact frame
+  count before it is moved to `<out>`.
 - A non-finite output sample fails the render. It is never replaced with
   silence, and the temporary file is deleted.
 - A 100% silent render fails the render.
-- Samples outside `[-1.0, +1.0]` are counted and reported because 24-bit PCM
-  cannot represent them. The tool does not change the product's gain to hide
-  clipping.
+- Samples outside `[-1.0, +1.0]` are counted and reported. 24-bit PCM cannot
+  represent them; a 32-bit float file can, but playback or a later integer
+  stage may still clip, so the warning is reported either way. The tool does
+  not change the product's gain to hide clipping.
 - An existing `<out>` file is refused unless `--overwrite` is passed.
 - An invalid argument, an invalid output path, or a stale `.partial` file is
   refused with exit code 2.
@@ -130,6 +139,11 @@ replacement for the list.
 Program names and indices come from the current product rosters. If
 `--list-presets` disagrees with this table, the binary wins; record the
 disagreement instead of renaming anything.
+
+The commands below pass indices. `--preset "Clean Sparkle"` is equivalent to
+`--preset 0`: a non-numeric value is matched case-insensitively against the same
+roster, and an unknown or ambiguous name exits with code 2 instead of falling
+back to program 0. Quote names that contain spaces.
 
 ## Generate uniquely named demo WAVs
 
@@ -285,12 +299,17 @@ Python 3.12 or newer is recommended: its `wave` module accepts both plain PCM
 and WAVE_FORMAT_EXTENSIBLE PCM headers, so the format check does not depend on
 which header variant the writer emitted.
 
-Required outcomes for every stem:
+Required outcomes for every stem (these assume the commands above, which keep
+the 48000 Hz / 24-bit PCM defaults; if a stem is rendered with `--sample-rate`
+or `--bit-depth 32`, change the helper's expected values and record the actual
+format instead):
 
 - `format` shows 2 channels, 48000 Hz, 3-byte samples, uncompressed PCM
   (`comptype == "NONE"`), and `frames == round(seconds * 48000)`.
-- `peak > 0` and `rms > 0`; the file is finite because it is 24-bit integer
-  PCM. The tool's own finite check covers the float samples before writing.
+- `peak > 0` and `rms > 0`; a 24-bit integer PCM file is finite by construction.
+  For a `--bit-depth 32` float file, the tool's own finite check covers the
+  float samples before writing, but the helper reads float samples directly and
+  should be extended before a float stem is used as evidence.
 - The tool report says `readback=verified` and `status=ok`, and its `frames`,
   `samples_per_channel` and `duration_seconds` match the file.
 
@@ -361,9 +380,13 @@ rows are success checks.
 | `CorvusRenderFX --preset 35` (no `--out`) | exit 2 |
 | `CorvusRenderFX --out x.wav` (no `--preset`) | exit 2 |
 | `CorvusRenderFX --preset 999 --out x.wav` | exit 2; out-of-range index |
+| `CorvusRenderFX --preset "No Such Program" --out x.wav` | exit 2; unknown name |
 | `CorvusRenderFX --preset 0 --out x.wav --seconds 0` | exit 2 |
 | `CorvusRenderFX --preset 0 --out x.wav --seconds 30.1` | exit 2 |
 | `CorvusRenderFX --preset 0 --out x.wav --seconds nan` | exit 2 |
+| `CorvusRenderFX --preset 0 --out x.wav --sample-rate 12345` | exit 2; not a WAV rate |
+| `CorvusRenderFX --preset 0 --out x.wav --sample-rate 0` | exit 2 |
+| `CorvusRenderFX --preset 0 --out x.wav --bit-depth 16` | exit 2 |
 | `CorvusRenderFX --preset 0 --out x.wav --bogus` | exit 2 |
 | `CorvusRenderFX --preset 0 --out C:\no-such-dir\x.wav` | exit 2; parent missing |
 | `CorvusRenderFX --preset 0 --out C:\temp\x.txt` | exit 2; not `.wav` |
@@ -379,10 +402,11 @@ that `--overwrite` only affects the named output and its `.partial`.
 
 ## Limits and honest claims
 
-- Fixed output is 48 kHz, stereo, 24-bit PCM; there is no resampling, dither,
-  mono mode or alternate bit depth. 24-bit PCM cannot carry samples above
-  0 dBFS, so the tool reports `clipped_samples` and warns; it does not lower
-  the product's gain.
+- Default output is 48 kHz, stereo, 24-bit PCM. `--sample-rate` and
+  `--bit-depth 32` (IEEE float) change that; there is still no resampling,
+  dither or mono mode. 24-bit PCM cannot carry samples above 0 dBFS, so the
+  tool reports `clipped_samples` and warns; it does not lower the product's
+  gain.
 - Render length is bounded to 0.25-30 s, and one program is rendered per run.
   There is no automation, parameter sweep, MIDI file input or multi-program
   batch in the tool.
