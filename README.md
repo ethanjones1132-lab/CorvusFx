@@ -120,7 +120,7 @@ The Drive knob smoothly morphs from transparent tape-style warmth (clean, musica
 |---------|--------|
 | **Mid/Side processing** | Independent L/R → M/S conversion with width control |
 | **Saturation** | Push-pull asymmetrical saturation — **2x oversampled** — generates even harmonics (2nd/4th) for analog warmth; independent Mid and Side drive controls |
-| **Width control** | Scales the side signal via M/S (0% mono → 100% original stereo image, default 100%) |
+| **Width control** | Scales the side signal via M/S (0–200%, default 100%: 0% mono → 100% original stereo image → 200% maximum width) |
 | **DC blocker** | Prevents DC offset accumulation from asymmetric saturation |
 | **Safety limiter** | Soft-knee safety clamp with Padé [3/2] tanh approximant |
 | **Output Trim** | Final gain staging after limiting (0–100%, default 100%) |
@@ -149,7 +149,7 @@ The Drive knob smoothly morphs from transparent tape-style warmth (clean, musica
 | **Reverb Mix** | 0–100% | 0% | Wet/dry balance (equal-power crossfade) |
 | **Reverb Mod** | 0–100% | 30% | Modulation depth for organic tail movement |
 | **Master Drive** | 0–100% | 0% | Master output push-pull saturation (even harmonics) |
-| **Master Width** | 0–100% | 100% | Stereo width via M/S side-signal scaling (0% mono; 100% original stereo image) |
+| **Master Width** | 0–200% | 100% | Stereo width via M/S side-signal scaling (0% mono; 100% original stereo image; 200% maximum width) |
 | **Master Mid Drive** | 0–100% | 0% | Mid channel saturation — affects center image |
 | **Master Side Drive** | 0–100% | 0% | Side channel saturation — affects stereo width |
 | **Output Trim** | 0–100% | 100% | Final output gain after the safety limiter |
@@ -561,7 +561,7 @@ A: Use the **A** and **B** buttons to load two snapshots and **SAVE** to store t
 A: Yes. Press `Ctrl+Z` to undo and `Ctrl+Shift+Z` or `Ctrl+Y` to redo (`Cmd` on macOS).
 
 **Q: How do the Master Width, Mid Drive, and Side Drive controls work?**
-A: The Master Output converts L/R to Mid/Side internally. **Width** scales the side signal (0% is mono; 100% is the original stereo image). **Mid Drive** applies saturation to center-panned content; **Side Drive** applies saturation to stereo-width content. This gives you independent control over the center image and stereo field saturation.
+A: The Master Output converts L/R to Mid/Side internally. **Width** scales the side signal over 0–200% (default 100%): 0% is mono, 100% is the original stereo image, and 200% is maximum width. **Mid Drive** applies saturation to center-panned content; **Side Drive** applies saturation to stereo-width content. This gives you independent control over the center image and stereo field saturation.
 
 **Q: Where can I report bugs or request features?**
 A: Open an [issue](https://github.com/ethanjones1132-lab/CorvusFx/issues) or start a [discussion](https://github.com/ethanjones1132-lab/CorvusFx/discussions).
