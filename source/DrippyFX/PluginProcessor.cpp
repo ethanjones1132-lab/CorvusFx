@@ -366,7 +366,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::crea
     };
 
     params.push_back(pctParam("overall", "Overall", 100));
-    params.push_back(pctParam("fatness", "Fatness", 0));
+    // CV-056: the host-visible name is "Drive" - the name the editor row
+    // prints and the README parameter table lists. The parameter ID stays
+    // "fatness" byte-for-byte so saved sessions, factory presets, MIDI maps
+    // and state round-trips keep their identity.
+    params.push_back(pctParam("fatness", "Drive", 0));
     params.push_back(std::make_unique<juce::AudioParameterBool>("distortion_bypass", "Distortion Bypass", false));
     params.push_back(pctParam("chorus_depth", "Chorus Depth", 0));
     params.push_back(hzParam("chorus_rate", "Chorus Rate", 0.1f, 10, 2));
