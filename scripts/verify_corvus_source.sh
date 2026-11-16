@@ -28,6 +28,10 @@ test -f "$CORVUS_ROOT/scripts/check_cv027_audio_thread_map.py"
 # their options (scripts/check_cv033_render_console.py). Same auto-registration
 # applies; this explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv033_render_console.py"
+# CV-011: the FX preset index tables stay inverse and cover every program
+# (scripts/check_cv011_preset_index_tables.py). Same auto-registration applies;
+# this explicit assertion keeps it from being lost silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv011_preset_index_tables.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"

@@ -94,6 +94,11 @@ peak bound, pairwise distinctness, and wet-vs-dry difference assertions.
 ## Verification and limits
 
 - Portable source gate: all 75 checkers pass, including negative probes.
+- CV-011: the FX preset index tables (`idToPreset[43]`, `presetFromId[43]`,
+  `presetToId[36]`, `getNumPrograms() == 36`) are pinned by
+  `scripts/check_cv011_preset_index_tables.py`: every combo id maps into 0..35,
+  every preset index owns a combo id, and the tables are inverse, with guarded
+  in-memory negative probes.
 - Historical sprint harness: 34/34 grade-queue and 22/22 refill tests pass.
 - CMake Release build: DSP tests, FX state tests, and both VST3 targets pass,
   using existing JUCE and ARM SSE compatibility headers outside the checkout.
