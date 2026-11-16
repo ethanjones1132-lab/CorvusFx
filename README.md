@@ -20,7 +20,7 @@ Built with [JUCE 8](https://juce.com) for Windows (x64). Free and open-source.
 
 Corvus FX is a **5-module cascade VST3 plugin** that chains **Distortion → Chorus → Delay → Reverb → Master Output** in a single, efficient processing pass. Each module has independent controls and a **click-free bypass button**, with **36 factory presets** organized into six categories — from subtle bus glue to massive ambient textures.
 
-Beyond the signal chain, the plugin ships a full performance workflow: **MIDI Learn** for hardware control of every knob, **Preset A/B Compare** for quick auditioning, a **Randomize** button for instant inspiration, and **Undo/Redo** throughout. All **25 parameters** are smoothed and automation-safe.
+Beyond the signal chain, the plugin ships a full performance workflow: **MIDI Learn** for hardware control of every knob, **Preset A/B Compare** for quick auditioning, a **Randomize** button for instant inspiration, and **Undo/Redo** throughout. All **24 audio parameters** are smoothed and automation-safe; the preset selector is deliberately **non-automatable**, so no host can record an automation lane that rewrites the whole parameter set mid-playback.
 
 Whether you're a producer looking for analog-style warmth, a sound designer chasing otherworldly modulation, or a mixing engineer wanting a cohesive channel strip, Corvus FX delivers transparent, musical processing with **zero compromise on audio quality**.
 
@@ -33,6 +33,14 @@ Whether you're a producer looking for analog-style warmth, a sound designer chas
 ![Corvus FX editor — Windows Standalone build, with the safety input-mute banner visible](assets/screenshot.png)
 
 *Windows Standalone editor, shown with its safety input-mute banner.*
+
+<!-- TODO (CV-058): re-capture this image from a native v1.0.0 Windows build before
+     publishing. The tracked image is a local Windows Standalone capture, not a
+     release build: the release review flags a pre-release "GO" pill in it, and
+     the version footer the current editor draws is absent. Neither can be fixed
+     without a native rebuild, and assets/screenshot.png must not be edited by
+     hand. docs/release/v1.0.0-notes.md: "The README screenshot is a tracked image,
+     not evidence of a tested release build." -->
 
 ---
 
@@ -70,10 +78,10 @@ The same cascade is exposed as the shared `source/DrippyFX/dsp/CorvusEffects.h` 
 | **Pre-emphasis** | High-shelf filter pushes harmonics into the saturation for richer texture |
 | **Post-filter** | 2-pole low-pass shapes the distorted signal |
 | **Warmth shelf** | Gentle bass-boost shelf adds body post-saturation |
-| **Anti-aliasing** | **2x oversampling** (8-tap half-band FIR) — eliminates aliasing at any drive setting |
+| **Anti-aliasing** | **2x oversampling** (8-tap half-band FIR) on the waveshaper — the release's anti-aliasing measure; aliasing is not yet measured |
 | **DC blocker** | Prevents offset buildup in the signal path |
 
-The Drive knob smoothly morphs from transparent tape-style warmth (clean, musical, soft-clipping) through to aggressive asymmetrical tube saturation (rich harmonics, compressed feel) using a smoothstep interpolation — no zipper artifacts at the transition.
+The Drive knob smoothly morphs from transparent tape-style warmth (clean, musical, soft-clipping) through to aggressive asymmetrical tube saturation (rich harmonics, compressed feel) using a smoothstep interpolation — designed to avoid zipper artifacts at the transition.
 
 ### 🌊 Chorus — 6-Voice Modulation
 | Feature | Detail |
@@ -171,7 +179,7 @@ The Drive knob smoothly morphs from transparent tape-style warmth (clean, musica
 | **Randomize** | `RND` button | Randomizes every continuous parameter; bypass buttons engage ~15% of the time. The preset index is left untouched. |
 | **Undo / Redo** | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | Undo/redo all parameter edits via a JUCE `UndoManager` wired to the parameter tree (`Cmd` on macOS). |
 
-All continuous parameters feature **20ms LinearSmoothedValue** interpolation for click-free automation and knob movement. All bypass switches use a **30ms LinearSmoothedValue wet/dry ramp** for truly click-free enable/disable.
+All continuous parameters feature **20ms LinearSmoothedValue** interpolation for click-free automation and knob movement. All bypass switches use a **30ms LinearSmoothedValue wet/dry ramp** for click-free enable/disable.
 
 ---
 
@@ -243,18 +251,20 @@ All continuous parameters feature **20ms LinearSmoothedValue** interpolation for
 
 ### Anti-Aliasing — All Saturation Stages Oversampled
 
-Non-linear waveshaping (saturation, distortion, tanh) generates harmonics above the Nyquist frequency that fold back as audible aliasing. Corvus FX eliminates this with **2x oversampling** on all four saturation stages:
+Non-linear waveshaping (saturation, distortion, tanh) generates harmonics above the Nyquist frequency that fold back as audible aliasing. Corvus FX runs all four saturation stages at **2x oversampling**:
 
 - **Distortion** — tape/tube waveshaping at 2x rate
 - **Chorus** — feedback tanh saturation at 2x rate (per-channel independent FIR state)
 - **Delay** — tape feedback saturation at 2x rate (mono per-channel processing)
 - **Master Output** — push-pull asymmetrical saturation at 2x rate (independent mid/side)
 
-Each stage uses the same `Oversampling2x` utility: an **8-tap 2nd-order half-band FIR** filter with polyphase up/down sampling. The FIR is **SSE-optimized** (scalar MACs → SIMD intrinsics) for ~4× throughput on the critical path. Only non-linear operations are oversampled — linear filters (EQ, damping) remain at base rate to avoid unnecessary CPU cost.
+Each stage uses the same `Oversampling2x` utility: an **8-tap 2nd-order half-band FIR** filter with polyphase up/down sampling. The FIR is **SSE-optimized** (scalar MACs → SIMD intrinsics); the changelog's ~4× figure has not been re-measured for this release. Only non-linear operations are oversampled — linear filters (EQ, damping) remain at base rate to avoid unnecessary CPU cost.
+
+This is the designed mitigation, not a measurement: no aliasing (THD+N) figure is recorded for v1.0.0 — see [Performance & Quality Targets](#performance--quality-targets).
 
 ### Click-Free Bypass — All 5 Modules
 
-Every module (Distortion, Chorus, Delay, Reverb, Master Output) features a dedicated bypass button with a **30ms LinearSmoothedValue wet/dry crossfade**. Previous implementations used hard switches that caused audible clicks; the current implementation ramps the signal over 30ms for truly silent enable/disable in any DAW.
+Every module (Distortion, Chorus, Delay, Reverb, Master Output) features a dedicated bypass button with a **30ms LinearSmoothedValue wet/dry crossfade**. Previous implementations used hard switches that caused audible clicks; the current implementation ramps the signal over 30ms. No click measurement or per-DAW listening test is recorded for this release.
 
 ### Parameter Smoothing
 
@@ -337,7 +347,7 @@ The full design (second oscillator, sub/noise, filter, modulation matrix, additi
 ### Requirements
 - **Host**: Any DAW that supports VST3 (Reaper, Ableton Live, FL Studio, Cubase, etc.)
 - **OS**: Windows 10 or 11 (x64)
-- **CPU**: Intel/AMD processor (SSE2 or later, AVX2 recommended)
+- **CPU**: Intel/AMD x64 processor with **AVX2 support required**. The Windows build compiles the FX and Instrument plugin targets with `/arch:AVX2` (`source/DrippyFX/CMakeLists.txt`), and there is no runtime dispatch to a non-AVX2 code path — a CPU without AVX2 is not supported.
 
 The CMake project defines these plugin formats; these are build configurations, not
 claims that binaries or packages have been built or published:
@@ -420,14 +430,16 @@ Source code is located in the `source/DrippyFX/` directory of this repo, alongsi
 
 ## Performance & Quality Targets
 
-| Metric | Target | Status |
-|--------|--------|--------|
-| **CPU usage** @ 48kHz/64 samples | < 5% | ✅ Achieved |
-| **Aliasing** (THD+N @ 10dB drive) | Inaudible (< -100dB) | ✅ 2x oversampling on all 4 saturation stages |
-| **Parameter zipper noise** | None audible | ✅ LinearSmoothedValue (20ms) |
-| **Preset recall reliability** | 100% | ✅ Bounds-checked, 4-table host interop |
-| **Compiler warnings** | 0 | ✅ 37 → 0 (`/W4`) |
-| **DAW compatibility** | Reaper, Ableton, FL, Cubase | ✅ Tested |
+These are targets, not release measurements. `docs/release/v1.0.0-notes.md` records no Windows build, CPU, aliasing, or DAW run for v1.0.0, so each row below is either source-verified only or explicitly unmeasured.
+
+| Metric | Target | Status | Source |
+|--------|--------|--------|--------|
+| **CPU usage** @ 48kHz/64 samples | < 5% | ⬜ Not yet measured | No CPU measurement is recorded; `ROADMAP.md` lists this as a target with a ~8% estimated baseline |
+| **Aliasing** (THD+N @ 10dB drive) | Inaudible (< -100dB) | ⬜ Not yet measured | 2x oversampling on all four saturation stages is source-verified and listed in `docs/release/v1.0.0-notes.md`; no THD+N figure has been captured |
+| **Parameter zipper noise** | None audible | ⬜ Not yet measured (design in place) | 20 ms `LinearSmoothedValue` is in `source/DrippyFX/PluginProcessor.cpp` (`smoothTime = 0.02`) and described in `docs/release/v1.0.0-notes.md`; no listening test is recorded |
+| **Preset recall reliability** | 100% | ✅ macOS ARM evidence; Windows pending | `docs/integration/2026-10-14-clean-baseline.md` (FX state tests and preset-lookup correction); the 4-table host-interop invariant is machine-checked by `scripts/check_preset_tables.py`; the Windows run is "pending verification" in `docs/release/v1.0.0-notes.md` |
+| **Compiler warnings** | 0 | ✅ 37 → 0 at `/W4` (historical), not re-run for v1.0.0 | `docs/release/v1.0.0-notes.md` → "Build, UI, and docs" |
+| **DAW compatibility** | Reaper, Ableton, FL, Cubase | ⬜ Not yet tested | `docs/release/v1.0.0-notes.md`: DAW load/play/save/reopen smoke is "not run"; `docs/integration/2026-10-14-clean-baseline.md`: Windows builds and full GUI interaction checks were not performed |
 
 ---
 
@@ -499,12 +511,14 @@ For the full engineering change log with binary verification, see `PRIORITIES.md
 
 | DAW | Status |
 |-----|--------|
-| **Reaper** | ✅ Tested |
-| **Ableton Live 11/12** | ✅ Tested |
-| **FL Studio** | ✅ Tested |
-| **Cubase** | ✅ Tested |
+| **Reaper** | ⬜ Not yet tested for this release |
+| **Ableton Live 11/12** | ⬜ Not yet tested for this release |
+| **FL Studio** | ⬜ Not yet tested for this release |
+| **Cubase** | ⬜ Not yet tested for this release |
 | **Studio One** | ⚠️ Community reports welcome |
 | **Bitwig** | ⚠️ Community reports welcome |
+
+No per-host test is recorded for this release: `docs/release/v1.0.0-notes.md` marks DAW load/play/save/reopen smoke as **not run**, and `docs/integration/2026-10-14-clean-baseline.md` states that Windows builds and full GUI interaction checks were not performed.
 
 Press **Ctrl+T** in the Corvus FX editor to toggle the dark/light theme palette (Ctrl+Z / Ctrl+Y remain Undo/Redo).
 
@@ -516,7 +530,7 @@ Press **Ctrl+T** in the Corvus FX editor to toggle the dark/light theme palette 
 - **RND**: Randomize all unlocked parameters (bypasses engage ~15%).
 - **Right-click any knob**: MIDI learn, lock/unlock a parameter, or clear mappings.
 
-Tested on **Windows 10 & 11 (x64)**. macOS support is not yet available.
+The source targets **Windows 10 & 11 (x64)**; no Windows build of this release has been verified (`docs/release/v1.0.0-notes.md`). macOS support is not yet available.
 
 ---
 
@@ -535,7 +549,7 @@ A: Yes. The MIT license permits commercial use — no attribution required.
 A: Corvus (Latin: crow/raven) — intelligent, adaptable birds known for their tool use and problem-solving. The name reflects the plugin's flexible signal chain and thoughtful DSP design.
 
 **Q: How do I bypass individual modules?**
-A: Each module has a color-coded BYPASS button below its controls. The bypass uses a 30ms click-free crossfade for silent switching in any DAW.
+A: Each module has a color-coded BYPASS button below its controls. The bypass ramps over 30ms for click-free switching.
 
 **Q: How do I control knobs from a hardware MIDI controller?**
 A: Right-click any knob and choose **MIDI Learn**, then move a control on your hardware. The mapping is saved in the plugin state. Re-open the same menu to **Forget MIDI Mapping** for that knob or **Clear All MIDI Maps**.
