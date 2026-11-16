@@ -475,7 +475,7 @@ void CorvusFXAudioProcessorEditor::paint(juce::Graphics& g)
     // Version text
     g.setColour(dark ? juce::Colour(0xff444466) : juce::Colour(0xff999aa8));
     g.setFont(juce::Font(juce::FontOptions(9.0f)));
-    g.drawText("CorvusFX v1.0 | Professional Multi-FX Suite",
+    g.drawText("Corvus FX v1.0 | Professional Multi-FX Suite",
         getLocalBounds().removeFromBottom(15), juce::Justification::centred, true);
 }
 
