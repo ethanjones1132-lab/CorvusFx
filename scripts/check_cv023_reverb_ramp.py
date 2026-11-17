@@ -6,15 +6,23 @@ here because they meet in `UpgradedReverb::beginBlock()`:
 
   1. every block used to clear the early-reflection tap buffers (mute() ->
      memset), so the early field was silenced 60-100 times a second. The fix
-     retargets the taps every block but only mutes them when the room size
-     actually moves:
+     retargets the taps every block but only mutes them on a genuinely
+     discontinuous room-size jump (CV-063 turns the old "did it move at all"
+     test into a rate test, so smoothed knob travel never mutes):
 
-         if (std::fabs(roomSize - lastRoomSize) > 1e-4f)
+         if (lastBlockSamples > 0)
          {
-             earlyL.mute();
-             earlyR.mute();
-             lastRoomSize = roomSize;
+             const float blockSeconds = ... lastBlockSamples ... sampleRate;
+             const float roomSizeRate = std::fabs(roomSize - lastRoomSize)
+                                      / juce::jmax(blockSeconds, 1.0e-6f);
+             if (roomSizeRate > ROOM_SIZE_RATE_LIMIT)
+             {
+                 earlyL.mute();
+                 earlyR.mute();
+             }
          }
+         lastRoomSize = roomSize;
+         lastBlockSamples = 0;
          earlyL.setRoomSize(roomSize);
          earlyR.setRoomSize(roomSize);
 
@@ -25,8 +33,8 @@ here because they meet in `UpgradedReverb::beginBlock()`:
 
 Asserts on the real tree (comment-stripped, brace-matched UpgradedReverb):
   (a) beginBlock contains no memset and exactly two mute() calls (earlyL and
-      earlyR), both inside the lastRoomSize change guard, with
-      `lastRoomSize = roomSize;` inside that guard;
+      earlyR), both inside the room-size rate guard; the applied size is
+      tracked every block (`lastRoomSize = roomSize;` outside the guard);
   (b) earlyL/earlyR are still retargeted every block (setRoomSize outside the
       guard) and `float lastRoomSize = 0.0f;` is declared on the struct;
   (c) beginBlock keeps the equal-power dry/wet targets from wetMix, arms a
@@ -147,29 +155,31 @@ def verify(header_text):
                      "(found %d mute() calls) - unconditional or missing "
                      "clears both lose the early field" % len(mutes))
     guard_match = re.search(
-        r"if\s*\(\s*std::fabs\s*\(\s*roomSize\s*-\s*lastRoomSize\s*\)"
-        r"\s*>\s*[0-9.eE+-]+f\s*\)\s*\{", begin)
+        r"if\s*\(\s*roomSizeRate\s*>\s*ROOM_SIZE_RATE_LIMIT\s*\)\s*\{",
+        begin)
     if guard_match is None:
         raise Reject("beginBlock no longer guards the early-buffer mute "
-                     "behind `std::fabs(roomSize - lastRoomSize) > ...` - "
-                     "every block would clear the early taps again")
+                     "behind the `roomSizeRate > ROOM_SIZE_RATE_LIMIT` rate "
+                     "test - every block would clear the early taps again")
     guard = brace_body(begin, guard_match.end() - 1)
     if guard is None:
         raise Reject("room-size guard body not brace-matched")
     for needle, label in (("earlyL.mute();", "earlyL.mute()"),
-                          ("earlyR.mute();", "earlyR.mute()"),
-                          ("lastRoomSize = roomSize;",
-                           "lastRoomSize = roomSize")):
+                          ("earlyR.mute();", "earlyR.mute()")):
         if needle not in guard:
-            raise Reject("%s must sit inside the room-size change guard"
+            raise Reject("%s must sit inside the room-size rate guard"
                          % label)
     require(begin, r"lastRoomSize\s*=\s*roomSize\s*;",
             "beginBlock never updates lastRoomSize - the guard would mute on "
             "every block")
     if begin.count("lastRoomSize = roomSize;") != 1:
         raise Reject("lastRoomSize = roomSize occurs %d times in beginBlock; "
-                     "it must move only inside the room-size change guard"
+                     "it must be tracked exactly once per block"
                      % begin.count("lastRoomSize = roomSize;"))
+    if "lastRoomSize = roomSize;" in guard:
+        raise Reject("lastRoomSize = roomSize sits inside the rate guard - a "
+                     "smoothed move would never update the reference and could "
+                     "accumulate into a late mute")
 
     # --- (b) the size mapping itself stays live ----------------------------
     for name in ("earlyL", "earlyR"):
@@ -321,7 +331,7 @@ def main():
     probes = [
         ("make the early-buffer mute unconditional",
          lambda s: s.replace(
-             "if (std::fabs(roomSize - lastRoomSize) > 1e-4f)",
+             "if (roomSizeRate > ROOM_SIZE_RATE_LIMIT)",
              "if (true)", 1)),
         ("add a memset of the early tap buffer to beginBlock",
          lambda s: s.replace(

@@ -1295,9 +1295,23 @@ struct UpgradedReverb
     float modCos = 1.0f;  // cos(modPhase * twoPi)
     int modTick = 0;      // master LFO renormalization tick counter
     double sampleRate = 44100.0;
-    // Last roomSize applied to earlyL/earlyR tap delays; mute-on-change guard
-    // in beginBlock() resets the tap buffers only when this actually moves.
+    // Last roomSize applied to earlyL/earlyR tap delays and how many samples
+    // the previous block actually rendered. Together they turn the early-tap
+    // re-seed into a RATE test instead of a "did it move at all" test.
+    //
+    // The size knob reaches beginBlock() through a 20 ms LinearSmoothedValue in
+    // PluginProcessor, so every ordinary change — a knob sweep, a host
+    // automation ramp, a preset load, the instrument's 50 ms flight smoother —
+    // arrives as a ramp. A full-range move therefore takes at least 20 ms,
+    // i.e. it cannot move faster than 1.0 / 0.020 s = 50 range-units per
+    // second. ROOM_SIZE_RATE_LIMIT keeps 20% headroom over that ceiling, so
+    // the limit cannot fire while the parameter is still travelling: the taps
+    // are re-derived every block and the early field keeps running. Only a raw
+    // (un-smoothed) discontinuity faster than any smoother can produce still
+    // re-seeds the buffers.
+    static constexpr float ROOM_SIZE_RATE_LIMIT = 60.0f;  // range-units/second
     float lastRoomSize = 0.0f;
+    int lastBlockSamples = 0;   // samples processSample() rendered last block
     // Last mix handed to beginBlock() and whether one has been applied yet.
     // A mix change arms the per-sample applied-gain ramp; the first block
     // after prepare() snaps instead of ramping from the dry-only default.
@@ -1406,23 +1420,38 @@ struct UpgradedReverb
             (int)(preDelayMs * 0.001f * sampleRate));
         blockCoeffs.width = width_;
 
-                // ── Early reflections scale with room size ──
-                // Small rooms: tight, bright, loud early reflections
-                // Large rooms: wide, diffuse, quiet early reflections
-                // Retarget every block, but mute the tap buffers only when the
-                // room actually changes — otherwise the new (larger) tap delays
-                // would read history written by the old room's taps and smear
-                // the early field with a blend of both rooms for several
-                // hundred ms. Muting on an unchanged size would silence the
-                // early energy every audio block.
-                if (std::fabs(roomSize - lastRoomSize) > 1e-4f)
-                {
-                    earlyL.mute();
-                    earlyR.mute();
-                    lastRoomSize = roomSize;
-                }
-                earlyL.setRoomSize(roomSize);
-                earlyR.setRoomSize(roomSize);
+        // ── Early reflections scale with room size ──
+        // Small rooms: tight, bright, loud early reflections
+        // Large rooms: wide, diffuse, quiet early reflections
+        // Retarget every block. CV-063: re-seed the tap buffers only on a
+        // genuinely discontinuous size jump, never on the smoothed travel of a
+        // knob or an automation ramp. The re-seed exists so a jumped tap delay
+        // cannot read history written by a different room; running it on every
+        // smoothed step was the bug. A jump is detected as a RATE over the
+        // previous block's rendered time: the upstream 20 ms smoother caps any
+        // smoothed change at 50 range-units/s, so ROOM_SIZE_RATE_LIMIT (60/s)
+        // leaves headroom and cannot trip mid-travel. Muting every block while
+        // the knob moved silenced and restarted the early field ~60-100 times a
+        // second; re-deriving the taps in place instead lets the field morph.
+        if (lastBlockSamples > 0)
+        {
+            const float blockSeconds = static_cast<float>(lastBlockSamples)
+                                     / static_cast<float>(sampleRate);
+            const float roomSizeRate = std::fabs(roomSize - lastRoomSize)
+                                     / juce::jmax(blockSeconds, 1.0e-6f);
+            if (roomSizeRate > ROOM_SIZE_RATE_LIMIT)
+            {
+                earlyL.mute();
+                earlyR.mute();
+            }
+        }
+        // Track the value just applied every block: the guard above is a rate
+        // test over one block, not "has this ever changed", so a slow move can
+        // never accumulate into a late mute.
+        lastRoomSize = roomSize;
+        lastBlockSamples = 0;
+        earlyL.setRoomSize(roomSize);
+        earlyR.setRoomSize(roomSize);
 
                 // ── Allpass feedback scaling with room size ──
         // Smaller rooms: less allpass diffusion (0.50) → tighter, less smeared
@@ -1498,6 +1527,10 @@ struct UpgradedReverb
     void prepare(double sr)
     {
         sampleRate = sr;
+        // Everything below is cleared, so the early-tap rate guard restarts
+        // with no history instead of comparing against the previous session.
+        lastRoomSize = 0.0f;
+        lastBlockSamples = 0;
         double ratio = sr / 44100.0;
 
         for (int i = 0; i < NUM_COMBS; ++i)
@@ -1536,6 +1569,13 @@ struct UpgradedReverb
 
     void processSample(float inL, float inR, float& outL, float& outR)
     {
+        // Count the samples the reverb actually rendered: beginBlock() turns
+        // the room-size delta into a per-second rate with it, so a big block
+        // and a small block are judged by the same limit. A block that is only
+        // partly rendered (reverb mix or bypass opening mid-block) counts
+        // short and overstates the rate; that can re-seed the taps once as the
+        // module re-engages from silence, where the early field is inaudible.
+        ++lastBlockSamples;
         inL = juce::jlimit(-4.0f, 4.0f, inL);
         inR = juce::jlimit(-4.0f, 4.0f, inR);
 

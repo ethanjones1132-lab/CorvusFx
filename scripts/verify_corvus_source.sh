@@ -44,6 +44,12 @@ test -f "$CORVUS_ROOT/scripts/check_cv061_engage_from_zero.py"
 # (scripts/check_cv066_default_preset.py). Same auto-registration applies;
 # this explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv066_default_preset.py"
+# CV-063: moving the reverb Size knob (or an automation ramp) must not memset
+# and restart the early-reflection taps while the parameter is still travelling;
+# only a genuinely discontinuous jump re-seeds them
+# (scripts/check_cv063_reverb_size_click.py). Same auto-registration applies;
+# this explicit assertion keeps it from being lost silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv063_reverb_size_click.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"

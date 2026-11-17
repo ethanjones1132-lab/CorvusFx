@@ -5,8 +5,10 @@ Asserts (in the style of check_undo_wiring.py):
   (a) UpgradedReverb::beginBlock() still retargets earlyL/earlyR room size
       on EVERY block (the size mapping must stay live)
   (b) beginBlock() guards the earlyL.mute()/earlyR.mute() calls behind a
-      lastRoomSize change test, so stale-tap clears only fire when the room
-      actually moves — and the guard state (lastRoomSize) is declared
+      lastRoomSize rate test (CV-063: change per second of rendered block
+      time, not a raw per-block delta), so stale-tap clears only fire on a
+      genuinely discontinuous jump — and the guard state (lastRoomSize) is
+      declared
   (c) per-sample EarlyReflections::process() is untouched (no mute call there)
   (d) negative check: temp-mutated copy with the mute guard removed (mute()
       called on every block) must FAIL
@@ -202,10 +204,14 @@ def main():
             return 1
 
         txt = t.read_text(encoding="utf-8")
-        # remove the guard condition line, leaving the mute() calls to fire
-        # unconditionally on every block, and drop the guard state
-        mut = re.sub(r"^\s*if\s*\([^\n]*lastRoomSize[^\n]*\)\s*$", "", txt,
-                     count=1, flags=re.M)
+        # Remove the room-size rate guard entirely: drop the rate computation,
+        # make the branch unconditional (mute() on every block) and drop the
+        # guard state. No line in beginBlock may still reference lastRoomSize.
+        mut = re.sub(
+            r"const float (?:blockSeconds|roomSizeRate)[^;]*;[^\n]*\n",
+            "", txt)
+        mut = mut.replace(
+            "if (roomSizeRate > ROOM_SIZE_RATE_LIMIT)", "if (true)", 1)
         mut = re.sub(r"\bfloat\s+lastRoomSize\b[^;]*;", "", mut, count=1)
         mut = mut.replace("lastRoomSize = roomSize;", "", 1)
         if mut == txt:
