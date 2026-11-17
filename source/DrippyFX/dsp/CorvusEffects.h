@@ -862,6 +862,7 @@ struct EnhancedDelay
 
     OnePole fbLP[2], fbHP[2];
     float smoothedDelay[2] = {};
+    bool firstSampleAfterReset = true;  // true on first sample after reset/prepare
     // 2x oversampling for tape saturation anti-aliasing — ONE instance per
     // channel. A single shared instance makes both channels reuse the same
     // up/down FIR history and the same read index, so the right channel's
@@ -970,6 +971,7 @@ struct EnhancedDelay
             std::fill(buffer[ch].begin(), buffer[ch].end(), 0.0f);
         writePos[0] = writePos[1] = 0;
         smoothedDelay[0] = smoothedDelay[1] = 0.0f;
+        firstSampleAfterReset = true;
         for (int ch = 0; ch < 2; ++ch)
         {
             fbLP[ch].reset(); fbHP[ch].reset();
@@ -1035,9 +1037,19 @@ struct EnhancedDelay
         float targetSmp = juce::jlimit(1.0f, blockCoeffs.maxDelayF,
             delayTimeMs * blockCoeffs.msToSamples);
 
-        smoothedDelay[0] = smoothedDelay[0] * blockCoeffs.smooth + (targetSmp + modSamples) * (1.0f - blockCoeffs.smooth);
-        smoothedDelay[1] = smoothedDelay[1] * blockCoeffs.smooth +
-            (targetSmp + targetSmp * 0.027f + modSamples * 0.65f) * (1.0f - blockCoeffs.smooth);
+        // On the first sample after reset, snap the smoothed delay to the clamped target
+        // rather than letting the one-pole climb from 0 ms
+        if (firstSampleAfterReset)
+        {
+            smoothedDelay[0] = smoothedDelay[1] = targetSmp;
+            firstSampleAfterReset = false;
+        }
+        else
+        {
+            smoothedDelay[0] = smoothedDelay[0] * blockCoeffs.smooth + (targetSmp + modSamples) * (1.0f - blockCoeffs.smooth);
+            smoothedDelay[1] = smoothedDelay[1] * blockCoeffs.smooth +
+                (targetSmp + targetSmp * 0.027f + modSamples * 0.65f) * (1.0f - blockCoeffs.smooth);
+        }
 
         for (int ch = 0; ch < 2; ++ch)
             smoothedDelay[ch] = juce::jlimit(1.0f, blockCoeffs.maxDelayF, smoothedDelay[ch]);
