@@ -1,28 +1,35 @@
 #!/usr/bin/env python3
 """Headless checker: per-block beginBlock() preconditioning fan pin.
 
-processBlock (source/DrippyFX/PluginProcessor.cpp:619-658) fans out 5
-per-block beginBlock() calls — `delay.beginBlock(delayDamping)`
-UNCONDITIONAL (:619), `upgradedReverb.beginBlock(...)` gated on
-`reverbMix > 0.001f` (:622-623), `distortion.beginBlock(fatness)`
-(:650), `chorus.beginBlock(...)` gated on `chorusDepth > 0.001f`
-(:653-654), `masterOutput.beginBlock()` unconditional (:658). These
-hoist per-sample std::exp() work into once-per-block coefficient
-caches (each site's comment says so). Grep over scripts/ showed ZERO
-checkers pin the 5 call sites (hits are effect-internal checkers that
+processBlock (source/DrippyFX/PluginProcessor.cpp) fans out 5 per-block
+beginBlock() calls — `delay.beginBlock(delayDamping)`,
+`upgradedReverb.beginBlock(...)`, `distortion.beginBlock(fatness)`,
+`chorus.beginBlock(...)` and `masterOutput.beginBlock()`. All five are
+UNCONDITIONAL. These hoist per-sample std::exp() work into once-per-block
+coefficient caches (each site's comment says so). Grep over scripts/ showed
+ZERO checkers pin the 5 call sites (hits are effect-internal checkers that
 pin the callee bodies, not the processBlock fan).
 
-An edit that deletes a beginBlock call ("looks unused"), tightens the
-reverb gate to `> 0.5f` (coeffs stale between 0.001-0.5 mixes), or
-moves a call after the per-sample `for (int s = 0; s < numSamples`
-loop (recomputes a coefficient cache mid-stream) compiles clean
-behind an otherwise-green gate.
+An edit that deletes a beginBlock call ("looks unused"), re-gates the reverb
+call on `reverbMix > 0.001f` or the chorus call on `chorusDepth > 0.001f`
+(coeffs stay zero while the per-sample smoothed value crosses the threshold
+mid-block → collapsed LFO phasor, CV-061), or moves a call after the
+per-sample `for (int s = 0; s < numSamples` loop (recomputes a coefficient
+cache mid-stream) compiles clean behind an otherwise-green gate.
+
+CV-061 note: the reverb and chorus calls used to be pinned as GATED. They are
+now pinned as the opposite — unconditional plain statements with no `if`
+(and no `?:`) between the previous statement boundary and the call. This
+checker asserts the new contract; check_cv061_engage_from_zero.py pins the
+same two sites plus the guarded renormalizers.
 
 Asserts (comment-stripped, brace-matched processBlock body):
   (a) all 5 beginBlock calls appear, in DSP order
       delay → upgradedReverb → distortion → chorus → masterOutput;
-  (b) the reverb call stays gated on `reverbMix > 0.001f` and the
-      chorus call on `chorusDepth > 0.001f` (exact thresholds);
+  (b) the reverb and chorus calls are unconditional: the statement text
+      immediately before each call contains no `if`/`else`/`?` guard, and
+      neither old gate literal (`reverbMix > 0.001f`, `chorusDepth > 0.001f`)
+      appears at block scope;
   (c) each call precedes the `for (int s = 0; s < numSamples` loop.
 
 Self-probes (negative checks, sibling checker style) run on mutated
@@ -44,8 +51,11 @@ CALLS = [
     ("chorus", "chorus.beginBlock("),
     ("masterOutput", "masterOutput.beginBlock("),
 ]
-REV_GATE = "reverbMix > 0.001f"
-CHO_GATE = "chorusDepth > 0.001f"
+# CV-061: the two calls whose former block-start gates must stay gone.
+UNGUARDED = [
+    ("upgradedReverb.beginBlock(", "reverbMix > 0.001f"),
+    ("chorus.beginBlock(", "chorusDepth > 0.001f"),
+]
 
 
 def fail(msg):
@@ -87,6 +97,17 @@ def extract_body(txt, fn_name):
     return strip_comments(txt[o:j + 1])
 
 
+def statement_prefix(body, call):
+    """Text between the previous statement boundary and `call` (None if absent)."""
+    p = body.find(call)
+    if p == -1:
+        return None
+    stmt_start = max(body.rfind(";", 0, p),
+                     body.rfind("{", 0, p),
+                     body.rfind("}", 0, p))
+    return body[stmt_start + 1:p]
+
+
 def check_fan(body):
     """Fan pin against a comment-stripped body. None = pass, else reason."""
     loop_at = body.find("for (int s = 0; s < numSamples")
@@ -102,14 +123,17 @@ def check_fan(body):
             return f"{call} appears AFTER the per-sample loop (mid-stream cache recompute)"
     if positions != sorted(positions):
         return f"beginBlock calls out of DSP order (found at {positions})"
-    rp = body.find(REV_GATE)
-    rcall = body.find("upgradedReverb.beginBlock(")
-    if rp == -1 or rp > rcall:
-        return f"reverb gate `{REV_GATE}` not found before the reverb call"
-    cp = body.find(CHO_GATE)
-    ccall = body.find("chorus.beginBlock(")
-    if cp == -1 or cp > ccall:
-        return f"chorus gate `{CHO_GATE}` not found before the chorus call"
+    # CV-061: neither call may be conditional on the block-start smoothed value.
+    for call, old_gate in UNGUARDED:
+        prefix = statement_prefix(body, call)
+        if prefix is None:
+            return f"{call} call missing from processBlock"
+        if "if" in prefix or "else" in prefix or "?" in prefix:
+            return (f"{call} is conditional again (`{prefix.strip()}`): it must "
+                    f"run every block regardless of the block-start smoothed value")
+        if old_gate in body:
+            return (f"old block-start gate `{old_gate}` is back at block scope: "
+                    f"the beginBlock call must not depend on the smoothed value")
     return None
 
 
@@ -132,12 +156,6 @@ def probe(name, mutate):
     if check_fan(body) is None:
         fail(f"probe '{name}' should be rejected but passed")
 
-def drop_call(txt, call):
-    for line in txt.splitlines(keepends=True):
-        if call in line:
-            return txt.replace(line, "")
-    return txt
-
 def _replace_once(txt, old, new):
     if old not in txt:
         return txt
@@ -159,13 +177,23 @@ def _move_master_after_loop(txt):
 probe("delete reverb beginBlock",
       lambda t: _replace_once(t, "    upgradedReverb.beginBlock(reverbSize,",
                               "    // removed"))
-probe("reverb gate 0.001f -> 0.5f",
-      lambda t: _replace_once(t, REV_GATE, "reverbMix > 0.5f"))
+probe("re-gate the reverb beginBlock on reverbMix > 0.001f",
+      lambda t: _replace_once(t, "    upgradedReverb.beginBlock(reverbSize,",
+                              "    if (reverbMix > 0.001f)\n"
+                              "        upgradedReverb.beginBlock(reverbSize,"))
 probe("move masterOutput.beginBlock after the loop",
       _move_master_after_loop)
 probe("delete chorus beginBlock",
       lambda t: _replace_once(t, "    chorus.beginBlock(chorusDepth",
                               "    // removed"))
+probe("re-gate the chorus beginBlock on chorusDepth > 0.001f",
+      lambda t: _replace_once(t, "    chorus.beginBlock(chorusDepth",
+                              "    if (chorusDepth > 0.001f)\n"
+                              "        chorus.beginBlock(chorusDepth"))
+probe("same-line guard around the chorus beginBlock",
+      lambda t: _replace_once(t, "    chorus.beginBlock(chorusDepth",
+                              "    if (chorusDepth > 0.001f) "
+                              "chorus.beginBlock(chorusDepth"))
 
 # benign no-op must still pass
 benign = proc_c.replace(
@@ -176,5 +204,6 @@ if benign == proc_c:
 if check_fan(extract_body(benign, "processBlock")) is not None:
     fail("benign no-op comment edit should be accepted")
 
-print("BEGINBLOCK-FAN OK: 5 beginBlock call sites + gates + loop-precede order pinned")
+print("BEGINBLOCK-FAN OK: 5 beginBlock call sites, reverb/chorus unconditional, "
+      "loop-precede order pinned")
 sys.exit(0)

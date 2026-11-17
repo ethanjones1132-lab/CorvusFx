@@ -1384,8 +1384,16 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     delay.beginBlock(delayDamping);
 
     // Pre-compute reverb coefficients once per block (avoids per-sample setFeedback/setDamp + mod calc)
-    if (reverbMix > 0.001f)
-        upgradedReverb.beginBlock(reverbSize, reverbDamping, reverbMix, sReverbMod, 1.0f, reverbPreDelay);
+    //
+    // CV-061: always refresh the block coefficients — never gate this on the
+    // block-start smoothed mix. The per-sample smoothed mix can cross 0.001
+    // INSIDE the loop below even when the block began at 0 (knob raise, preset
+    // load), and the first processSample() then rotates the master LFO with
+    // modLfoCosDelta/modLfoSinDelta still 0 from their zero initialisers: the
+    // phasor collapses to (0, 0) and the renormalizer divides by a zero
+    // magnitude, poisoning the reverb tail with NaN for the rest of the
+    // session. beginBlock() is cheap block-rate work, so it runs every block.
+    upgradedReverb.beginBlock(reverbSize, reverbDamping, reverbMix, sReverbMod, 1.0f, reverbPreDelay);
 
     // ── Level meter accumulation (merged into main loop) ──
     // Accumulates peak/RMS in the same pass as DSP processing,
@@ -1409,8 +1417,12 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     distortion.beginBlock(fatness);
 
     // Pre-compute chorus coefficients once per block (avoids redundant per-voice math)
-    if (chorusDepth > 0.001f)
-        chorus.beginBlock(chorusDepth, chorusMix, chorusRate);
+    //
+    // CV-061: unconditional for the same reason as the reverb call above — the
+    // per-sample smoothed depth can cross 0.001 inside the loop while
+    // voiceCosDelta/voiceSinDelta are still 0, collapsing the chorus LFO
+    // phasor to (0, 0) and dividing by zero in renormLFO().
+    chorus.beginBlock(chorusDepth, chorusMix, chorusRate);
 
     // Pre-compute master output coefficients once per block (avoids 3× std::exp() per sample)
     // Master output always runs, so call unconditionally

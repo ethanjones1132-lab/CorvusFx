@@ -32,6 +32,12 @@ test -f "$CORVUS_ROOT/scripts/check_cv033_render_console.py"
 # (scripts/check_cv011_preset_index_tables.py). Same auto-registration applies;
 # this explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv011_preset_index_tables.py"
+# CV-061: chorus Depth / reverb Mix engaged from 0 never leaves the block
+# coefficients at their zero initialisers, and every LFO phasor renormalizer
+# resets a collapsed pair instead of dividing by zero
+# (scripts/check_cv061_engage_from_zero.py). Same auto-registration applies;
+# this explicit assertion keeps it from being lost silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv061_engage_from_zero.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"

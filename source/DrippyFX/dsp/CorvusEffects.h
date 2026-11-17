@@ -67,6 +67,31 @@ inline float padeSoftClip(float x, float threshold = 1.0f, float scale = 0.2f)
 }
 
 //==============================================================================
+// UTILITY: guarded sin/cos phasor renormalizer
+// Keeps an incremental-rotation unit vector at unit magnitude (float32 rotation
+// drift). A phasor whose pair has collapsed to (near) zero carries no angle and
+// cannot be rescaled — dividing by that magnitude yields Inf/NaN and silences
+// the effect for the rest of the session. That collapse is reachable when an
+// effect processes samples while its block coefficients are still the zero
+// initialisers (a zero sin/cos delta rotates (s, c) to (0, 0)): CV-061.
+// Reset such a phasor to the canonical zero phase (sin 0, cos 1) instead of
+// dividing. No allocation.
+//==============================================================================
+inline void renormPhasor(float& sinPhase, float& cosPhase)
+{
+    const float magnitude = std::sqrt(sinPhase * sinPhase + cosPhase * cosPhase);
+    if (magnitude < 1.0e-6f)
+    {
+        sinPhase = 0.0f;
+        cosPhase = 1.0f;
+        return;
+    }
+    const float inv = 1.0f / magnitude;
+    sinPhase *= inv;
+    cosPhase *= inv;
+}
+
+//==============================================================================
 // UTILITY: DC blocker — Julius O. Smith topology
 //==============================================================================
 struct DCBlocker
@@ -667,17 +692,16 @@ struct EnhancedChorus
     // Keep LFO unit-vector magnitudes constant (prevents float32 rotation drift).
     // Renormalizes sin/cos recurrence pairs every 256 samples. Without this the
     // incremental rotation loses ~2.5%/min, breathing the modulation depth open.
+    // CV-061: every phasor goes through the guarded renormPhasor(), so a pair
+    // that collapsed to (0, 0) under zeroed block coefficients resets to zero
+    // phase instead of dividing by a zero magnitude (NaN → session silence).
     void renormLFO()
     {
         for (int i = 0; i < NUM_VOICES; ++i)
         {
-            float m = std::sqrt(lfoSin[i]*lfoSin[i] + lfoCos[i]*lfoCos[i]);
-            float inv = 1.0f / m;
-            lfoSin[i] *= inv; lfoCos[i] *= inv;
-            m = std::sqrt(driftSin1[i]*driftSin1[i] + driftCos1[i]*driftCos1[i]);
-            inv = 1.0f / m; driftSin1[i] *= inv; driftCos1[i] *= inv;
-            m = std::sqrt(driftSin2[i]*driftSin2[i] + driftCos2[i]*driftCos2[i]);
-            inv = 1.0f / m; driftSin2[i] *= inv; driftCos2[i] *= inv;
+            renormPhasor(lfoSin[i], lfoCos[i]);
+            renormPhasor(driftSin1[i], driftCos1[i]);
+            renormPhasor(driftSin2[i], driftCos2[i]);
         }
     }
     float process(float input, int channel, float rate, float depth,
@@ -1452,11 +1476,12 @@ struct UpgradedReverb
 
     // Keep master modulation LFO unit-vector magnitude constant (float32 rotation drift).
     // Renormalizes sin/cos every 256 samples (~0.34%/min drift otherwise).
+    // CV-061: shares the guarded renormPhasor() reset, so a phasor that rotated
+    // to (0, 0) with zeroed block coefficients snaps back to zero phase instead
+    // of dividing by a zero magnitude (NaN → session-long silence).
     void renormModLFO()
     {
-        float m = std::sqrt(modSin*modSin + modCos*modCos);
-        float inv = 1.0f / m;
-        modSin *= inv; modCos *= inv;
+        renormPhasor(modSin, modCos);
     }
     void prepare(double sr)
     {
