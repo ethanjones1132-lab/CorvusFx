@@ -173,7 +173,7 @@ void CorvusFXAudioProcessor::loadPreset(int index)
         // 7: Vintage Vibe — lo-fi warmth, rolled-off highs
         { 55, 30, 0.7f, 40, 280, 32, 22, 80, 20,  55, 75, 18, 15,  30, 100,  15,  10, 0, 0, 0, 0, 0, 100 },
         // 8: Thick Sauce — heavy saturation, chorus thickening
-        { 72, 35, 2.2f, 45, 200, 28, 18, 50, 35,  40, 55, 18, 30,  40, 100,  20,  15, 0, 0, 0, 0, 0, 100 },
+        { 72, 35, 2.2f, 45, 200, 28, 18, 50, 35,  40, 55, 18, 30,  40, 100,  20,  15, 0, 0, 0, 0, 0, 85 },
         // 9: Tight Punch — controlled, punchy, no excess
         { 45, 12, 2.0f, 22, 100, 18, 10, 55, 15,  28, 65,  8, 18,  15, 100,   5,   5, 0, 0, 0, 0, 0, 100 },
         // 10: Cozy Hiss — cassette deck warmth, gentle wow, lo-fi magic
@@ -199,7 +199,7 @@ void CorvusFXAudioProcessor::loadPreset(int index)
         // 18: Deep Echo — tape delay focus, dark repeats
         { 18, 12, 1.5f, 20, 520, 58, 55, 75, 50,  45, 60, 15, 25,  15, 100,  10,  10, 0, 0, 0, 0, 0, 100 },
         // 19: Aggressive Drive — in-your-face distortion character
-        { 88, 15, 2.0f, 25, 200, 25, 15, 60, 25,  30, 55, 10, 20,  70, 100,  30,  20, 0, 0, 0, 0, 0, 100 },
+        { 88, 15, 2.0f, 25, 200, 25, 15, 60, 25,  30, 55, 10, 20,  70, 100,  30,  20, 0, 0, 0, 0, 0, 70 },
         // 20: Lush Pad — massive reverb wash for sustained sounds
         { 15, 45, 1.0f, 50, 380, 30, 15, 35, 30,  92, 20, 65, 70,   5, 120,   0,  15, 0, 0, 0, 0, 0, 100 },
         // 21: Event Horizon — long delay + heavy feedback into massive reverb
