@@ -36,7 +36,7 @@ endif()
 
 # Plugin configuration
 juce_add_plugin(DrippyFX
-    COMPANY_NAME "DrippyFX"
+    COMPANY_NAME "Corvus Audio"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
@@ -48,12 +48,18 @@ juce_add_plugin(DrippyFX
     FORMATS VST3 AU Standalone
     # v1.0.0 buyer-facing product name (CV-034): the built Windows bundle is
     # "Corvus FX.vst3" and hosts see "Corvus FX" via the JUCE-generated
-    # JucePlugin_Name. Bundle identity is unaffected by this rename: with no
-    # explicit BUNDLE_ID here, JUCE derives the bundle ID from COMPANY_NAME
-    # plus the CMake target name (see JUCE docs/CMake API.md), both still
-    # "DrippyFX", and the VST3 class IDs come from the stable
-    # PLUGIN_MANUFACTURER_CODE/PLUGIN_CODE below. Do not add a BUNDLE_ID here
-    # without an approved identity decision; do not rename the target.
+    # JucePlugin_Name. The VST3 class IDs come from the stable
+    # PLUGIN_MANUFACTURER_CODE/PLUGIN_CODE below.
+    #
+    # CV-068: the FX now presents itself as manufacturer "Corvus Audio" in the
+    # host plugin list and bundled details, matching the Instrument. Because
+    # JUCE derives a missing bundle ID from COMPANY_NAME plus the CMake target
+    # name (see JUCE docs/CMake API.md), that rename alone would mint a new
+    # bundle identity and orphan every existing install. The pre-CV-068 value
+    # ("com." + COMPANY_NAME "DrippyFX" + "." + target "DrippyFX") is
+    # therefore pinned explicitly here and must not change without an approved
+    # identity decision. Do not rename the target.
+    BUNDLE_ID "com.DrippyFX.DrippyFX"
     PRODUCT_NAME "Corvus FX"
     VST3_CATEGORIES "Fx" "Dynamics" "Modulation" "Reverb" "Delay"
 )

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CV-034 product/identity check for the built Corvus FX bundle.
+"""CV-034 / CV-068 product+identity check for the built Corvus FX bundle.
 
 Pins the v1.0.0 buyer-facing product metadata in source/DrippyFX/CMakeLists.txt:
 
@@ -7,12 +7,15 @@ Pins the v1.0.0 buyer-facing product metadata in source/DrippyFX/CMakeLists.txt:
     PRODUCT_NAME "Corvus FX": JUCE turns this into a "Corvus FX.vst3"
     Windows bundle (folder and inner binary, see _juce_create_windows_package)
     and the host-visible JucePlugin_Name returned by getName();
-  - stable identity must survive the rename: COMPANY_NAME "DrippyFX" and the
-    PLUGIN_MANUFACTURER_CODE/PLUGIN_CODE pair Drip/Dfx1 are unchanged, and
-    with no explicit BUNDLE_ID on the block JUCE derives the bundle ID from
-    COMPANY_NAME plus the CMake target name (both still "DrippyFX", see
-    docs/CMake API.md), so the rename introduces no second identity. An
-    injected BUNDLE_ID would mint a different bundle identity and is rejected.
+  - the FX must present "Corvus Audio" as its manufacturer (CV-068), the same
+    company name the Instrument reports in the host plugin list;
+  - stable identity must survive that manufacturer rename: the
+    PLUGIN_MANUFACTURER_CODE/PLUGIN_CODE pair Drip/Dfx1 is unchanged, and the
+    bundle ID that JUCE used to derive from COMPANY_NAME "DrippyFX" plus the
+    CMake target name "DrippyFX" is now declared explicitly as BUNDLE_ID
+    "com.DrippyFX.DrippyFX". JUCE's fallback is "com.<COMPANY_NAME>.<target>"
+    (see docs/CMake API.md); without the explicit value the renamed company
+    would mint a second bundle identity and orphan existing installs.
   - the CorvusInstrument block keeps its independent identity unchanged
     ("Corvus Instrument", com.corvusaudio.CorvusInstrument, "Corvus Audio",
     Crvs/Cvi1) and must not collide with the Corvus FX product name.
@@ -20,10 +23,12 @@ Pins the v1.0.0 buyer-facing product metadata in source/DrippyFX/CMakeLists.txt:
 Negative probes temp-mutate an in-memory copy of the CMakeLists and require
 the checker itself to reject each mutation:
   1. restoring the original wrong product name PRODUCT_NAME "DrippyFX";
-  2. FX company drift DrippyFX -> Corvus Audio;
-  3. FX plugin-code drift Dfx1 -> Cvi1;
-  4. adding an explicit BUNDLE_ID to the FX block (second identity);
-  5. renaming the Instrument "Corvus FX" (identity collision).
+  2. FX manufacturer reverting Corvus Audio -> DrippyFX (CV-068 regression);
+  3. FX BUNDLE_ID drift away from com.DrippyFX.DrippyFX;
+  4. deleting the explicit FX BUNDLE_ID (JUCE would re-derive a new identity);
+  5. declaring a second BUNDLE_ID on the FX block;
+  6. FX plugin-code drift Dfx1 -> Cvi1;
+  7. renaming the Instrument "Corvus FX" (identity collision).
 
 Exits 0 on green, 1 with diagnostics otherwise.
 """
@@ -32,6 +37,12 @@ import sys
 from pathlib import Path
 
 CMAKE = Path(__file__).resolve().parent.parent / "source" / "DrippyFX" / "CMakeLists.txt"
+
+# The bundle ID JUCE derived for the FX before CV-068
+# ("com." + COMPANY_NAME "DrippyFX" + "." + CMake target "DrippyFX").
+# CV-068 pins it explicitly so the manufacturer rename cannot rewrite it.
+FX_BUNDLE_ID = "com.DrippyFX.DrippyFX"
+FX_BUNDLE_LITERAL = f'BUNDLE_ID "{FX_BUNDLE_ID}"'
 
 errors: list[str] = []
 
@@ -87,10 +98,26 @@ def check(text: str, source_name: str) -> None:
             "see 'Corvus FX', CV-034)")
 
     company = value(fx, "COMPANY_NAME")
-    if company != "DrippyFX":
+    if company != "Corvus Audio":
         err(f"[{source_name}] FX COMPANY_NAME is '{company}', expected "
-            "'DrippyFX' (company identity drift; the default BUNDLE_ID is "
-            "derived from COMPANY_NAME + the CMake target name)")
+            "'Corvus Audio' (CV-068: the FX must present the Corvus Audio "
+            "manufacturer in the host plugin list, like the Instrument)")
+
+    bundle_count = len(re.findall(r"\bBUNDLE_ID\b", fx))
+    bundle = value(fx, "BUNDLE_ID")
+    if bundle_count == 0:
+        err(f"[{source_name}] DrippyFX block declares no explicit BUNDLE_ID "
+            f"(expected {FX_BUNDLE_ID}: with COMPANY_NAME now 'Corvus Audio', "
+            "JUCE's com.<company>.<target> fallback would orphan existing "
+            "installs, CV-068)")
+    elif bundle_count > 1:
+        err(f"[{source_name}] DrippyFX block declares {bundle_count} BUNDLE_ID "
+            f"entries, expected exactly one ({FX_BUNDLE_ID}); a second entry "
+            "mints an unapproved bundle identity")
+    elif bundle != FX_BUNDLE_ID:
+        err(f"[{source_name}] FX BUNDLE_ID is '{bundle}', expected "
+            f"'{FX_BUNDLE_ID}' (the pre-CV-068 derived bundle identity must "
+            "survive the manufacturer rename; changing it orphans installs)")
 
     mfr = value(fx, "PLUGIN_MANUFACTURER_CODE")
     if mfr != "Drip":
@@ -102,12 +129,6 @@ def check(text: str, source_name: str) -> None:
         err(f"[{source_name}] FX PLUGIN_CODE is '{code}', expected 'Dfx1' "
             "(stable plugin code must survive the rename; JUCE derives the "
             "VST3 class IDs from the codes)")
-
-    if re.search(r"\bBUNDLE_ID\b", fx):
-        err(f"[{source_name}] DrippyFX block declares an explicit BUNDLE_ID "
-            "(JUCE already derives the bundle ID from the unchanged "
-            "COMPANY_NAME + target name; an override mints a second, "
-            "unapproved bundle identity)")
 
     # The Instrument keeps its own independent name/identity; it must not be
     # renamed or converged with the Corvus FX product.
@@ -165,28 +186,46 @@ def probe(base: str, mutated, desc: str, expect_substr: str) -> None:
 
 def main() -> int:
     raw = CMAKE.read_text(encoding="utf-8", errors="replace")
+    # Normalise line endings: the Windows checkout keeps CMakeLists.txt CRLF,
+    # the probe literals below are written with plain "\n".
+    raw = raw.replace("\r\n", "\n").replace("\r", "\n")
     base = strip_cmake_comments(raw)
     check(base, "CMakeLists.txt")
 
     # Negative probes: the checker must reject the original wrong product
-    # name and every unapproved identity drift.
+    # name, a manufacturer revert to the old company name, and every
+    # unapproved identity drift. The FX block anchors carry the target name so
+    # they never match the Instrument block (which shares "Corvus Audio").
+    fx_company_anchor = 'juce_add_plugin(DrippyFX\n    COMPANY_NAME "Corvus Audio"'
+    fx_company_revert = 'juce_add_plugin(DrippyFX\n    COMPANY_NAME "DrippyFX"'
+
     probe(base,
           apply_mutation(base, 'PRODUCT_NAME "Corvus FX"', 'PRODUCT_NAME "DrippyFX"'),
           "original wrong product name 'DrippyFX' restored", "PRODUCT_NAME")
 
     probe(base,
-          apply_mutation(base, 'COMPANY_NAME "DrippyFX"', 'COMPANY_NAME "Corvus Audio"'),
-          "FX company drift DrippyFX->Corvus Audio", "COMPANY_NAME")
+          apply_mutation(base, fx_company_anchor, fx_company_revert),
+          "FX manufacturer revert Corvus Audio->DrippyFX", "COMPANY_NAME")
+
+    probe(base,
+          apply_mutation(base, FX_BUNDLE_LITERAL,
+                         'BUNDLE_ID "com.corvusaudio.CorvusFX"'),
+          "FX bundle-ID drift com.DrippyFX.DrippyFX->com.corvusaudio.CorvusFX",
+          "BUNDLE_ID")
+
+    probe(base,
+          apply_mutation(base, "    " + FX_BUNDLE_LITERAL + "\n", ""),
+          "explicit FX BUNDLE_ID deleted", "BUNDLE_ID")
+
+    probe(base,
+          apply_mutation(base, "    " + FX_BUNDLE_LITERAL + "\n",
+                         "    " + FX_BUNDLE_LITERAL + "\n"
+                         '    BUNDLE_ID "com.corvusaudio.CorvusFX"\n'),
+          "second BUNDLE_ID injected on the FX block", "BUNDLE_ID")
 
     probe(base,
           apply_mutation(base, "PLUGIN_CODE Dfx1", "PLUGIN_CODE Cvi1"),
           "FX plugin-code drift Dfx1->Cvi1", "PLUGIN_CODE")
-
-    probe(base,
-          apply_mutation(base, 'PRODUCT_NAME "Corvus FX"',
-                         'BUNDLE_ID "com.drippyfx.drippyfx"\n    '
-                         'PRODUCT_NAME "Corvus FX"'),
-          "injected explicit BUNDLE_ID on the FX block", "BUNDLE_ID")
 
     probe(base,
           apply_mutation(base, 'PRODUCT_NAME "Corvus Instrument"',
@@ -200,10 +239,11 @@ def main() -> int:
             print(f"  - {e}")
         return 1
 
-    print("OK: CV-034 product identity pinned "
+    print("OK: CV-034/CV-068 product identity pinned "
           "(FX product 'Corvus FX' -> 'Corvus FX.vst3' bundle / host-visible "
-          "'Corvus FX'; stable identity DrippyFXTarget/DrippyFX/Drip/Dfx1 "
-          "with derived bundle ID; Instrument identity unchanged)")
+          "'Corvus FX'; manufacturer 'Corvus Audio'; stable identity "
+          "DrippyFXTarget/Drip/Dfx1 with explicit bundle ID "
+          f"'{FX_BUNDLE_ID}'; Instrument identity unchanged)")
     return 0
 
 
