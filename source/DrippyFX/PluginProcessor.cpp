@@ -38,6 +38,29 @@ private:
     std::atomic<std::uint32_t>& sequence;
     bool closed = false;
 };
+
+// CV-066: marks a construction-time preset load as silent. While the guard is
+// armed, loadPreset() writes every parameter with setValue() instead of
+// setValueNotifyingHost(), and opens no undo transaction: a freshly inserted
+// plugin has no history to amend and the host never asked for a program change,
+// so the default preset must not look like a user edit.
+class SilentPresetLoad final
+{
+public:
+    explicit SilentPresetLoad(std::atomic<bool>& flag) noexcept
+        : flag(flag)
+    {
+        flag.store(true, std::memory_order_seq_cst);
+    }
+
+    ~SilentPresetLoad() { flag.store(false, std::memory_order_seq_cst); }
+
+    SilentPresetLoad(const SilentPresetLoad&) = delete;
+    SilentPresetLoad& operator=(const SilentPresetLoad&) = delete;
+
+private:
+    std::atomic<bool>& flag;
+};
 }
 
 CorvusFXAudioProcessor::CorvusFXAudioProcessor()
@@ -100,6 +123,18 @@ apvts(*this, &undoManager, "Parameters", createParameterLayout())
     // CV-029: the message-thread drain runs from the processor's own timer so a
     // mapped CC reaches the host whether or not the editor window is open.
     startTimerHz(30);
+
+    // CV-066: a freshly inserted FX starts on the factory default — preset 0,
+    // "Clean Sparkle" — instead of whatever the parameter defaults happen to
+    // leave behind. The load is silent: no undo transaction, no change gesture
+    // and no host notification. Publishing/committing inside loadPreset() makes
+    // the completed set the published one, and the re-seed below adopts it so
+    // the first block never falls back on the pre-load generation.
+    {
+        SilentPresetLoad silentLoad(presetLoadSilent);
+        loadPreset(0);
+    }
+    lastGoodGeneration = readParameterGeneration(lastGoodGeneration);
 }
 
 CorvusFXAudioProcessor::~CorvusFXAudioProcessor()
@@ -143,7 +178,18 @@ void CorvusFXAudioProcessor::loadPreset(int index)
     // via setCurrentProgram's presetToId[] lookup.
     // Combo order: CLEAN [0-5], WARM [6-11], CREATIVE [12-17], EXTREME [18-23], SIGNATURE [24-29], DREAM [30-35]
     if (index < 0 || index >= 36) return;
-    undoManager.beginNewTransaction("Load Preset");
+
+    // CV-066: setCurrentProgram() loads the preset directly and then writes the
+    // "preset" parameter, whose listener would echo straight back here for the
+    // same index. Consume that echo instead of loading the same preset twice
+    // (and re-notifying every parameter behind the host's program change).
+    if (!presetLoadSilent.load() && hostProgramRecall.exchange(-1) == index)
+        return;
+
+    // CV-066: a construction-time load is silent — it must not leave an undo
+    // entry behind, because the plugin was just inserted and nothing was edited.
+    if (!presetLoadSilent.load())
+        undoManager.beginNewTransaction("Load Preset");
 
     // CV-028: the writes below are one recall. The batch epoch keeps a block
     // header that overlaps them from rendering a mix of the old preset and the
@@ -243,6 +289,13 @@ void CorvusFXAudioProcessor::loadPreset(int index)
         auto* param = apvts.getParameter(id);
         if (param)
         {
+            // CV-066: silent (construction-time) load — write the value without
+            // opening a gesture, notifying the host or touching the undo history.
+            if (presetLoadSilent.load())
+            {
+                param->setValue(param->convertTo0to1(v));
+                return;
+            }
             param->beginChangeGesture();
             try
             {
@@ -459,6 +512,14 @@ void CorvusFXAudioProcessor::setCurrentProgram(int i) {
        37,38,39,40,41,42                // DREAM [30-35]
     };
     if (i >= 0 && i < 36) {
+        // CV-066: load the selected preset directly, then tell the "preset"
+        // listener below not to echo that same preset back through
+        // parameterChanged() -> loadPreset() a second time. The marker is armed
+        // for the preset write below and consumed (reset to -1) by the echo it
+        // raises, so a later, unrelated change can never consume it.
+        hostProgramRecall.store(-1);
+        loadPreset(i);
+        hostProgramRecall.store(i);
         auto* p = apvts.getParameter("preset");
         if (p) p->beginChangeGesture();
         try

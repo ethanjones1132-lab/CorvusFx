@@ -38,6 +38,12 @@ test -f "$CORVUS_ROOT/scripts/check_cv011_preset_index_tables.py"
 # (scripts/check_cv061_engage_from_zero.py). Same auto-registration applies;
 # this explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv061_engage_from_zero.py"
+# CV-066: a freshly inserted FX plays the default preset (0, "Clean Sparkle")
+# silently — no undo transaction, gesture or host notification — and a host
+# program recall does not load the same preset twice
+# (scripts/check_cv066_default_preset.py). Same auto-registration applies;
+# this explicit assertion keeps it from being lost silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv066_default_preset.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"

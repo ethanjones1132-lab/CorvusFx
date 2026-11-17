@@ -4,8 +4,12 @@
 The loadPreset body opens with a definition-side bounds return BEFORE any
 side effect:
 
-  if (index < 0 || index >= 36) return;      (PluginProcessor.cpp:56)
-  undoManager.beginNewTransaction("Load Preset");  (:57)
+  if (index < 0 || index >= 36) return;      (the definition's own guard)
+  if (!presetLoadSilent.load() && hostProgramRecall.exchange(-1) == index)
+      return;                                (CV-066 echo-skip)
+  if (!presetLoadSilent.load())
+      undoManager.beginNewTransaction("Load Preset");   (CV-066: silent
+                                              construction-time load skips it)
   ... presets[36] static table read via `const auto& p = presets[index];`
 
 The call sites / tables are pinned elsewhere (check_preset_load_sites.py
@@ -28,7 +32,9 @@ Asserts (comment-stripped, on the real PluginProcessor.cpp):
   (a) the loadPreset body's FIRST statement is
       `if (index < 0 || index >= 36) return;`;
   (b) `undoManager.beginNewTransaction("Load Preset");` appears AFTER the
-      guard (transaction only begins once the index is proven in-range);
+      guard (transaction only begins once the index is proven in-range — it is
+      conditional on `!presetLoadSilent` for the CV-066 silent load, but it can
+      never move above the bounds check);
   (c) roster lock — the bound literal is EXACTLY 36 (sync with
       presets[36] and getNumPrograms()).
 
@@ -144,10 +150,9 @@ probes = [
     ("guard deleted (OOB presets[index] read on out-of-range index)",
      "    if (index < 0 || index >= 36) return;",
      ""),
-    ("guard hoisted BELOW beginNewTransaction (empty undo transaction "
-     "on out-of-range index)",
-     "    if (index < 0 || index >= 36) return;\n"
-     "    undoManager.beginNewTransaction(\"Load Preset\");",
+    ("guard hoisted BELOW an unconditional beginNewTransaction (empty undo "
+     "transaction on out-of-range index)",
+     "    if (index < 0 || index >= 36) return;",
      "    undoManager.beginNewTransaction(\"Load Preset\");\n"
      "    if (index < 0 || index >= 36) return;"),
     ("bound literal drifted 36 -> 43 (table/guard desync vs presets[36])",

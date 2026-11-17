@@ -301,6 +301,15 @@ private:
     // snapshots with identical live values.
     bool abSnapshotsPersisted = false;
     std::atomic<bool> restoringPresetState{false};
+    // CV-066: a freshly inserted FX must start on the factory default preset
+    // (0, "Clean Sparkle") without opening an undo transaction, a change
+    // gesture or a host notification. presetLoadSilent marks that
+    // construction-time load; hostProgramRecall carries the program index a
+    // setCurrentProgram() call is about to echo back through the "preset"
+    // parameter listener, so loadPreset() can skip loading the same preset
+    // twice (and -1 means "no program change in flight").
+    std::atomic<bool> presetLoadSilent{false};
+    std::atomic<int> hostProgramRecall{-1};
     // MIDI Learn State (accessed across audio/message threads)
     // CV-027: only the atomic arm flag is shared; the armed target lives in the
     // atomic roster slot above, so the audio thread never reads a juce::String.
