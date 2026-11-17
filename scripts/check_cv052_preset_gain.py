@@ -1,26 +1,32 @@
 #!/usr/bin/env python3
-"""CV-052 factory preset output-trim guard.
+"""CV-052/CV-060 factory preset output-trim guard.
 
-Pins the gain staging of the two factory presets that clipped at their default
-settings (Thick Sauce, index 8, and Aggressive Drive, index 19) inside the
-`static const P presets[36]` table in source/DrippyFX/PluginProcessor.cpp.
+Pins the gain staging of the three factory presets that clipped at their default
+settings inside the `static const P presets[36]` table in
+source/DrippyFX/PluginProcessor.cpp: Thick Sauce (index 8, CV-052), Aggressive
+Drive (index 19, CV-052) and Cathedral Drift (index 27, CV-060).
 
 The `oTrim` column is the last field of struct P and is what loadPreset()
 writes into the `output_trim` parameter, so it is the per-preset output gain.
-The fix is that pair of numbers only; no DSP, no drive/fatness, no clamp, and
+The fix is those three numbers only; no DSP, no drive/fatness, no clamp, and
 no other preset row may move.
 
 Asserted properties (source file only):
-  (a) row 8 and row 19 carry an `oTrim` above 0 and at or below the pinned
-      ceiling (85 for Thick Sauce, 70 for Aggressive Drive);
+  (a) rows 8, 19 and 27 carry an `oTrim` above 0 and at or below the pinned
+      ceiling (85 for Thick Sauce, 70 for Aggressive Drive, 92 for
+      Cathedral Drift);
   (b) every other row's `oTrim` is exactly 100;
-  (c) the fatness (`fat`) and master drive (`mDrv`) columns of rows 8 and 19
-      are unchanged (72/40 and 88/70);
-  (d) loadPreset() still routes the `oTrim` column into `output_trim`, so the
+  (c) the fatness (`fat`) and master drive (`mDrv`) columns of the trimmed
+      rows are unchanged (72/40, 88/70 and 0/0);
+  (d) where the pre-fix peak was measured, scaling it by oTrim/100 keeps the
+      preset at or below 0.98 float at its defaults: Cathedral Drift measured
+      1.003052 at oTrim 100, so 92 lands it at ~0.9228; Thick Sauce measured
+      1.023 and lands at ~0.8696;
+  (e) loadPreset() still routes the `oTrim` column into `output_trim`, so the
       trim column is really the preset's output gain.
 
 Negative probes re-run the gate on mutated copies of the parsed table and must
-reject: today's pre-fix trims (100/100), each ceiling + 1, a zero trim, a
+reject: today's pre-fix trims (100/100/100), each ceiling + 1, a zero trim, a
 non-target row trimmed down, a changed fatness/drive value, and a dropped
 output_trim write. A benign comment edit must still pass.
 
@@ -44,15 +50,31 @@ FAT_FIELD = "fat"
 DRIVE_FIELD = "mDrv"
 
 # Preset index -> pinned upper bound for the whole-number output trim (percent,
-# the `output_trim` parameter is 0..100 by default). Pre-fix both rows were 100
-# and clipped: Thick Sauce peaked at 1.023, Aggressive Drive put 36% of its
-# samples out of range.
-TRIMMED_ROWS = {8: 85, 19: 70}
+# the `output_trim` parameter is 0..100 by default). Pre-fix every row here was
+# 100 and clipped: Thick Sauce peaked at 1.023, Aggressive Drive put 36% of its
+# samples out of range, Cathedral Drift peaked at 1.003052.
+TRIMMED_ROWS = {8: 85, 19: 70, 27: 92}
 DEFAULT_TRIM = 100.0
 
-# The drive/fatness columns of the two trimmed rows must not move.
-PINNED_FAT = {8: 72.0, 19: 88.0}
-PINNED_DRIVE = {8: 40.0, 19: 70.0}
+# Render target behind CV-T1: at its defaults no factory preset may push the
+# output past 0.98 float. Where a single pre-fix peak is on record, the trim is
+# also checked arithmetically: peak * oTrim/100 <= HEADROOM_TARGET. Aggressive
+# Drive has no single peak on record (it was reported as a percentage of
+# out-of-range samples), so it is guarded by its ceiling alone.
+HEADROOM_TARGET = 0.98
+PREFIX_PEAK = {8: 1.023, 27: 1.003052}
+
+# The drive/fatness columns of the trimmed rows must not move.
+PINNED_FAT = {8: 72.0, 19: 88.0, 27: 0.0}
+PINNED_DRIVE = {8: 40.0, 19: 70.0, 27: 0.0}
+
+
+def row_label(indices):
+    ordered = sorted(indices)
+    return ", ".join(str(i) for i in ordered[:-1]) + f" and {ordered[-1]}"
+
+
+TRIMMED_LABEL = row_label(TRIMMED_ROWS)
 
 OUTPUT_TRIM_WRITE_RE = r'set\s*\(\s*"output_trim"\s*,\s*p\.oTrim\s*\)\s*;'
 
@@ -169,8 +191,18 @@ def evaluate(rows, fields, code):
                     f"for this row is {ceiling} (raised trim re-clips the preset)")
         elif value != DEFAULT_TRIM:
             errors.append(
-                f"preset row {index} oTrim is {value:g}; every row except 8 and "
-                f"19 must stay at {DEFAULT_TRIM:g}")
+                f"preset row {index} oTrim is {value:g}; every row except "
+                f"{TRIMMED_LABEL} must stay at {DEFAULT_TRIM:g}")
+
+    # CV-T1: the trimmed rows must land under the float ceiling at defaults.
+    for index, peak in sorted(PREFIX_PEAK.items()):
+        projected = peak * rows[index][trim] / DEFAULT_TRIM
+        if projected > HEADROOM_TARGET:
+            errors.append(
+                f"preset row {index} projects a peak of {projected:.4f} "
+                f"(measured {peak:g} at oTrim {DEFAULT_TRIM:g}, scaled by the "
+                f"row's oTrim {rows[index][trim]:g}); it must stay at or below "
+                f"{HEADROOM_TARGET:g} so the preset cannot clip at its defaults")
 
     for index, expected in PINNED_FAT.items():
         if rows[index][fat] != expected:
@@ -229,6 +261,10 @@ def main():
             print(f"FAIL: CV-052 {error}")
         return 1
 
+    trim = fields.index(TRIM_FIELD)
+    fat = fields.index(FAT_FIELD)
+    drive = fields.index(DRIVE_FIELD)
+
     for index in sorted(TRIMMED_ROWS):
         print(f"PASS: preset row {index} oTrim "
               f"{rows[index][fields.index(TRIM_FIELD)]:g} <= "
@@ -240,21 +276,27 @@ def main():
         print(f"PASS: preset row {index} fatness "
               f"{rows[index][fields.index(FAT_FIELD)]:g} / master_drive "
               f"{rows[index][fields.index(DRIVE_FIELD)]:g} unchanged")
+    for index, peak in sorted(PREFIX_PEAK.items()):
+        projected = peak * rows[index][trim] / DEFAULT_TRIM
+        print(f"PASS: preset row {index} projected peak {projected:.4f} <= "
+              f"{HEADROOM_TARGET:g} (measured {peak:g} at oTrim "
+              f"{DEFAULT_TRIM:g})")
     print('PASS: loadPreset() still writes the oTrim column into "output_trim"')
 
-    trim = fields.index(TRIM_FIELD)
-    fat = fields.index(FAT_FIELD)
-    drive = fields.index(DRIVE_FIELD)
-
-    # The exact pre-fix table: both rows at 100, i.e. today's clipped state.
+    # The exact pre-fix table: every trimmed row back at 100, i.e. today's
+    # clipped state.
     probe(rows, fields, code, "pre-fix Thick Sauce trim restored (100)",
           8, trim, 100.0)
     probe(rows, fields, code, "pre-fix Aggressive Drive trim restored (100)",
           19, trim, 100.0)
+    probe(rows, fields, code, "pre-fix Cathedral Drift trim restored (100)",
+          27, trim, 100.0)
     probe(rows, fields, code, "Thick Sauce trim raised above 85",
           8, trim, 86.0)
     probe(rows, fields, code, "Aggressive Drive trim raised above 70",
           19, trim, 71.0)
+    probe(rows, fields, code, "Cathedral Drift trim raised above 92",
+          27, trim, 93.0)
     probe(rows, fields, code, "Thick Sauce trim muted to 0",
           8, trim, 0.0)
     probe(rows, fields, code, "unrelated row trimmed away from 100",
@@ -263,6 +305,10 @@ def main():
           8, fat, 70.0)
     probe(rows, fields, code, "Aggressive Drive drive moved",
           19, drive, 65.0)
+    probe(rows, fields, code, "Cathedral Drift fatness moved",
+          27, fat, 5.0)
+    probe(rows, fields, code, "Cathedral Drift drive moved",
+          27, drive, 5.0)
 
     unwired = code.replace('set("output_trim", p.oTrim);', "")
     if unwired == code:

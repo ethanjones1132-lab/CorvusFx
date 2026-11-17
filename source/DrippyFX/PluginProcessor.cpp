@@ -217,7 +217,7 @@ void CorvusFXAudioProcessor::loadPreset(int index)
         // 26: Basement Sessions — gritty drive, dark delay, underground vibe
         { 62, 18, 1.1f, 20, 450, 45, 35, 65, 30,  40, 65, 12, 20,  45,  95,  18,  15, 0, 0, 0, 0, 0, 100 },
         // 27: Cathedral Drift — massive reverb, slow chorus, spiritual space
-        {  0, 48, 0.25f, 60, 900, 55, 30, 25, 50,  95, 20, 70, 85,   0, 130,   0,  20, 0, 0, 0, 0, 0, 100 },
+        {  0, 48, 0.25f, 60, 900, 55, 30, 25, 50,  95, 20, 70, 85,   0, 130,   0,  20, 0, 0, 0, 0, 0, 92 },
         // 28: Circuit Bent — experimental modulation, glitchy texture
         { 45, 70, 4.8f, 65,  45, 12, 25, 10, 60,  25, 40, 15, 60,  25, 105,   5,  18, 0, 0, 0, 0, 0, 100 },
         // 29: Midnight Oil — saturated warmth, tape echo, late-night intimacy
