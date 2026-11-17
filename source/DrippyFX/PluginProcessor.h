@@ -295,10 +295,18 @@ private:
     std::array<float, NUM_AB_PARAMS> snapshotA = {};
     std::array<float, NUM_AB_PARAMS> snapshotB = {};
     bool abSlotIsA = true;
-    // abSnapshotsPersisted: set true by setStateInformation when the host
-    // state carried an "abSlots" child, so the editor constructor can skip
-    // the blind reseed that would otherwise overwrite the restored
-    // snapshots with identical live values.
+    // CV-067: the slots belong to the processor. The constructor seeds both
+    // from the live parameter values once and marks them persisted, and
+    // setStateInformation seeds them for a state that carried no complete
+    // "abSlots" pair, so no session and no editor open/close ever leaves a
+    // slot unseeded (an all-zero mix).
+    void seedABSnapshotsFromLiveParameters();
+    // abSnapshotsPersisted: true when both slots were seeded or restored.
+    // The constructor sets it after seeding; setStateInformation sets it only
+    // when the host state carried a complete "abSlots" pair, and leaves it
+    // false when it derived the slots from the restored parameters instead.
+    // No code path gates behaviour on it any more (the editor never reseeds);
+    // it reports where the slots came from.
     bool abSnapshotsPersisted = false;
     std::atomic<bool> restoringPresetState{false};
     // CV-066: a freshly inserted FX must start on the factory default preset

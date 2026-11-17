@@ -50,6 +50,12 @@ test -f "$CORVUS_ROOT/scripts/check_cv066_default_preset.py"
 # (scripts/check_cv063_reverb_size_click.py). Same auto-registration applies;
 # this explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv063_reverb_size_click.py"
+# CV-067: the A/B compare slots belong to the processor - the constructor seeds
+# them once from the settled live values, the editor never reseeds, and a state
+# without a complete abSlots pair derives both slots instead of restoring zeros
+# (scripts/check_cv067_ab_snapshots.py). Same auto-registration applies; this
+# explicit assertion keeps it from being lost silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv067_ab_snapshots.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"

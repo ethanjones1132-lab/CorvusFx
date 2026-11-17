@@ -17,12 +17,14 @@ Asserts (comment-stripped):
   (b) PluginProcessor.cpp setStateInformation reads the abSlots child back
       (convertFromBase64) and only on full success sets abSnapshotsPersisted.
   (c) PluginProcessor.h declares abSnapshotsPersisted defaulting to false.
-  (d) PluginEditor.cpp constructor's saveSlotA()/saveSlotB() reseed runs ONLY
-      under if (!audioProcessor.hasPersistedABSnapshots()).
+  (d) CV-067: PluginEditor.cpp's constructor no longer writes the slots at
+      all (no saveSlot call, no snapshot array write) — the processor seeds
+      them, so opening the editor is inert.
 
 Negative self-probes on mutated copies (no-op mutation aborts as a stale
-alarm; real tree never mutated): strip the abSlots write; make the constructor
-reseed unconditional; strip the abSlots restore; drop the snapshotA child.
+alarm; real tree never mutated): strip the abSlots write; re-introduce the
+editor constructor reseed; strip the abSlots restore; drop the snapshotA
+child.
 Exit 0 = ok, 1 = violation.
 """
 import re
@@ -61,6 +63,17 @@ def body_of(stripped, pattern):
                 break
         j += 1
     return stripped[i : j + 1]
+
+
+def slot_write_outside_onclick(body):
+    """A saveSlot reference in the editor constructor that is NOT the SAVE
+    button's own onClick line. The user's SAVE handler legitimately calls
+    saveSlotA()/saveSlotB() from inside the constructor; an automatic reseed is
+    the statement that sits anywhere else (CV-067 pinned shape)."""
+    for line in body.splitlines():
+        if "saveSlot" in line and ".onClick" not in line:
+            return line.strip()
+    return None
 
 
 def run_core(cpp_text, ed_text):
@@ -105,8 +118,15 @@ def run_core(cpp_text, ed_text):
            ed_text) and _hdr and "bool abSnapshotsPersisted = false;" not in _hdr:
         raise _Rejected("abSnapshotsPersisted declaration missing")
 
-    if "if (!audioProcessor.hasPersistedABSnapshots())" not in e:
-        raise _Rejected("constructor reseed unconditional/un-gated again")
+    ed_ctor = body_of(
+        e, r"CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor\s*\(")
+    if ed_ctor is None:
+        raise _Rejected("PluginEditor.cpp constructor body missing")
+    if slot_write_outside_onclick(ed_ctor) is not None \
+            or "snapshotA" in ed_ctor or "snapshotB" in ed_ctor:
+        raise _Rejected("the editor constructor writes the A/B slots again — "
+                        "the processor seeds them (CV-067) and opening the "
+                        "editor must be inert")
     return True
 
 
@@ -138,34 +158,33 @@ if not re.search(r"bool\s+abSnapshotsPersisted\s*=\s*false\s*;", hdr_stripped):
     fail("PluginProcessor.h missing 'bool abSnapshotsPersisted = false;' — "
          "the editor must be able to read the restored-snapshots flag")
 ed_stripped = strip_comments(ed_raw)
-if not re.search(
-    r"if\s*\(!audioProcessor\.hasPersistedABSnapshots\(\)\s*\)\s*\{[^}]*saveSlotA\(\)",
-    ed_stripped,
-    flags=re.S,
-):
-    fail("PluginEditor.cpp constructor saveSlotA() reseed is not inside the "
-         "!abSnapshotsPersisted guard")
-if not re.search(
-    r"if\s*\(!audioProcessor\.hasPersistedABSnapshots\(\)\s*\)\s*\{[^}]*saveSlotB\(\)",
-    ed_stripped,
-    flags=re.S,
-):
-    fail("PluginEditor.cpp constructor saveSlotB() reseed is not inside the "
-         "!abSnapshotsPersisted guard")
+ed_ctor_body = body_of(
+    ed_stripped, r"CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor\s*\(")
+if ed_ctor_body is None:
+    fail("PluginEditor.cpp constructor body missing — cannot pin that the "
+         "editor no longer reseeds the A/B slots")
+if slot_write_outside_onclick(ed_ctor_body) is not None or "snapshotA" in ed_ctor_body \
+        or "snapshotB" in ed_ctor_body:
+    fail("PluginEditor.cpp constructor writes the A/B slots again — the "
+         "processor seeds them (CV-067) and opening the editor must be inert")
 print("ab-persist: getStateInformation serializes snapshotA+snapshotB+slot "
       "under abSlots before copyXmlToBinary")
 print("ab-persist: setStateInformation restores both snapshots + slot and "
       "flips abSnapshotsPersisted only on full success")
-print("ab-persist: PluginEditor constructor reseed gated on "
-      "!abSnapshotsPersisted")
+print("ab-persist: PluginEditor constructor no longer reseeds the A/B slots "
+      "(the processor owns them, CV-067)")
 
 # (5) negative self-probes on mutated copies (real tree never mutated)
 _hdr = hdr_raw  # run_core consults the header for the flag declaration
 probes = [
-    ("make the constructor reseed unconditional again",
+    ("re-introduce the editor constructor reseed",
      (lambda s: s,
-      lambda s: s.replace("if (!audioProcessor.hasPersistedABSnapshots())",
-                          "if (true)")),),
+      lambda s: s.replace(
+          "    btnSlotA.setToggleState(audioProcessor.isSlotA(), "
+          "juce::dontSendNotification);",
+          "    audioProcessor.saveSlotA();\n"
+          "    btnSlotA.setToggleState(audioProcessor.isSlotA(), "
+          "juce::dontSendNotification);", 1)),),
     ("strip the abSlots write from getStateInformation",
      (lambda s: s.replace('createNewChildElement("abSlots")',
                           'createNewChildElement("abSlotz")'),

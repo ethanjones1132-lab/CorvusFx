@@ -6,13 +6,14 @@ so no APVTS roster checker sees them:
   - btnSlotA.onClick  -> loadSlotA()  + toggle-state pairing     (:236)
   - btnSlotB.onClick  -> loadSlotB()  + mirrored pairing         (:247)
   - btnSaveAB.onClick -> isSlotA() ? saveSlotA() : saveSlotB()   (:254)
-And the first-run reseed block seeds both slots only when the processor
-has no persisted state (under `if (!audioProcessor.hasPersistedABSnapshots())`,
-:270-275). grep over all 72 scripts/check_*.py:
+CV-067 removed the editor's first-run reseed: the processor seeds both slots
+once in its own constructor, so the editor constructor must stay inert (no
+saveSlot call, no snapshot array write) and only reflect the active slot.
+grep over all 72 scripts/check_*.py:
 check_editor_attachment_pairs pins setupKnob/Attachment id rosters (lambdas
-are not attachments — zero hits); check_ab_snapshot_persistence pins the
-abSnapshotsPersisted GUARD and the processor-side restore; check_undo_wiring
-pins processor-side beginNewTransaction cardinality only;
+are not attachments — zero hits); check_ab_snapshot_persistence and
+check_cv067_ab_snapshots pin the processor-side seeding and the inert editor;
+check_undo_wiring pins processor-side beginNewTransaction cardinality only;
 check_ab_slot_preset_parity / check_ab_null_param_guard pin the PROCESSOR
 bodies. NO checker pins the editor-side lambda wiring.
 
@@ -27,9 +28,8 @@ Falsifications (all compile clean behind an otherwise-green gate):
   - the isSlotA() routing deleted in favour of an unconditional
     saveSlotA() — SAVE banked to A while the B radio is lit, silently
     overwriting slot A.
-  - the reseed block loses its saveSlotB() half — a fresh session's slot B
-    starts with whatever was restored, or stale default; the pair no longer
-    snapshot the same initial state.
+  - the editor constructor reseeds a slot again — opening or closing the
+    window overwrites the processor's compare pair (CV-067).
 
 Asserts (comment-stripped PluginEditor.cpp):
   (a) btnSlotA.onClick lambda: exactly one loadSlotA() call plus the
@@ -39,8 +39,9 @@ Asserts (comment-stripped PluginEditor.cpp):
       mirrored pairing (B true / A false);
   (c) btnSaveAB.onClick lambda: the `isSlotA()` conditional routing to
       saveSlotA()/saveSlotB();
-  (d) the reseed block under `if (!audioProcessor.hasPersistedABSnapshots())`
-      keeps exactly saveSlotA(); saveSlotB(); in order.
+  (d) the editor constructor writes no slot at all (no saveSlot call, no
+      snapshotA/snapshotB write) and still reflects the active slot through
+      isSlotA().
 
 Self-probes (negative checks, sibling checker style e.g.
 check_loadpreset_bounds.py) run on mutated in-memory texts — the real tree
@@ -91,17 +92,26 @@ def lambda_body(stripped, anchor):
     return stripped[b:j + 1]
 
 
-def extract_guard_block(stripped):
-    """Brace-matched body of the editor's !abSnapshotsPersisted guard."""
+def slot_write_outside_onclick(body):
+    """A saveSlot reference that is NOT the SAVE button's own onClick line.
+    The user's SAVE handler legitimately calls saveSlotA()/saveSlotB() from
+    inside the constructor; an automatic reseed is anything else."""
+    for line in body.splitlines():
+        if "saveSlot" in line and ".onClick" not in line:
+            return line.strip()
+    return None
+
+
+def extract_editor_ctor(stripped):
+    """Brace-matched body of the editor constructor (CV-067: must be inert)."""
     m = re.search(
-        r"if\s*\(\s*!audioProcessor\.hasPersistedABSnapshots\(\)\s*\)", stripped)
+        r"CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor\s*\(",
+        stripped)
     if not m:
-        raise Rejected(
-            "reseed guard `if (!audioProcessor.hasPersistedABSnapshots())` "
-            "missing")
-    i = stripped.find("{", m.start())
+        raise Rejected("editor constructor definition missing")
+    i = stripped.find("{", m.end() - 1)
     if i < 0:
-        raise Rejected("no brace after abSnapshotsPersisted guard")
+        raise Rejected("no brace after the editor constructor signature")
     depth = 0
     j = i
     while j < len(stripped):
@@ -113,7 +123,7 @@ def extract_guard_block(stripped):
                 break
         j += 1
     if depth != 0:
-        raise Rejected("unbalanced reseed guard body")
+        raise Rejected("unbalanced editor constructor body")
     return stripped[i:j + 1]
 
 
@@ -179,16 +189,21 @@ def check_pass(text, label, verbose=False):
     want("btnSaveAB.onClick no LOAD routine",
          "loadSlot" not in bodyS, "SAVE button wired to a LOAD routine")
 
-    guard = extract_guard_block(stripped)
-    want("reseed exactly one saveSlotA and one saveSlotB",
-         guard.count("saveSlotA()") == 1 and guard.count("saveSlotB()") == 1,
-         f"reseed must seed BOTH slots exactly once each "
-         f"(A={guard.count('saveSlotA()')}, B={guard.count('saveSlotB()')})")
-    want("reseed order",
-         guard.find("saveSlotA()") < guard.find("saveSlotB()"),
-         "reseed order drift (saveSlotA must precede saveSlotB)")
-    want("reseed no LOAD routine", "loadSlot" not in guard,
-         "reseed must not wire LOAD routines")
+    ctor = extract_editor_ctor(stripped)
+    want("constructor writes no A/B slot",
+         slot_write_outside_onclick(ctor) is None,
+         "opening the editor must not reseed the processor's compare pair")
+    want("constructor writes no snapshot array",
+         "snapshotA" not in ctor and "snapshotB" not in ctor,
+         "the snapshot arrays belong to the processor")
+    want("constructor reflects the active slot (A)",
+         re.search(r"btnSlotA\s*\.\s*setToggleState\s*\(\s*"
+                   r"audioProcessor\s*\.\s*isSlotA\s*\(\s*\)", ctor),
+         "missing the btnSlotA isSlotA() reflect")
+    want("constructor reflects the active slot (B)",
+         re.search(r"btnSlotB\s*\.\s*setToggleState\s*\(\s*!\s*"
+                   r"audioProcessor\s*\.\s*isSlotA\s*\(\s*\)", ctor),
+         "missing the btnSlotB !isSlotA() reflect")
 
 
 def _verify(obj):
@@ -225,10 +240,13 @@ PROBES = [
      "else audioProcessor.saveSlotB();",
      "audioProcessor.saveSlotA();",
      "audioProcessor.saveSlotA();"),
-    # probe 4: reseed block drops its saveSlotB() half
-    ("reseed drops saveSlotB",
-     "audioProcessor.saveSlotA();\n        audioProcessor.saveSlotB();",
-     "audioProcessor.saveSlotA();",
+    # probe 4: the editor constructor reseeds a slot again (CV-067)
+    ("editor constructor reseeds slot A",
+     "    btnSlotA.setToggleState(audioProcessor.isSlotA(), "
+     "juce::dontSendNotification);",
+     "    audioProcessor.saveSlotA();\n"
+     "    btnSlotA.setToggleState(audioProcessor.isSlotA(), "
+     "juce::dontSendNotification);",
      "audioProcessor.saveSlotA();"),
 ]
 
@@ -254,9 +272,9 @@ def main():
     except Rejected as r:
         print(f"AB-BUTTON-WIRING FAIL: {r}")
         return 1
-    print("ab-button-wiring: slot A/B/SAVE lambdas + reseed seeding pinned "
+    print("ab-button-wiring: slot A/B/SAVE lambdas + inert constructor pinned "
           "(1x loadSlotA + pairing, 1x loadSlotB + mirrored pairing, "
-          "isSlotA routing, both reseed saves)")
+          "isSlotA routing, no constructor reseed, active-slot reflect)")
 
     for label, old, new, needle in PROBES:
         mutated = text.replace(old, new, 1)

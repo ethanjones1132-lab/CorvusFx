@@ -32,7 +32,8 @@ Negative probes (in-memory only, each must be rejected):
   * squeeze the delay column until its last knob is below the usable width;
   * collapse the bypass width to zero;
   * reintroduce a raw `&k` capture in the async context menu;
-  * drop the slot-B reseed (the preserved A/B initialization contract).
+  * re-introduce the editor constructor's A/B slot reseed (the processor owns
+    the compare pair, CV-067).
 
 Exit 0 only when the real tree passes every assertion, every probe is
 rejected, and the benign edit is accepted.
@@ -131,21 +132,37 @@ def check_async_menu(code):
         raise Reject("the context menu is no longer asynchronous")
 
 
+def slot_write_outside_onclick(body):
+    """A saveSlot reference that is NOT the SAVE button's own onClick line.
+    The user's SAVE handler legitimately calls saveSlotA()/saveSlotB() from
+    inside the constructor; an automatic reseed is anything else."""
+    for line in body.splitlines():
+        if "saveSlot" in line and ".onClick" not in line:
+            return line.strip()
+    return None
+
+
 def check_ab_contract(code):
-    m = re.search(r"if\s*\(\s*!audioProcessor\.hasPersistedABSnapshots\(\)\s*\)",
-                  code)
-    if not m:
-        raise Reject("the A/B reseed guard (!hasPersistedABSnapshots) is gone")
-    brace = code.find("{", m.end())
+    # CV-067: the A/B headstock belongs to the processor — its constructor
+    # seeds both slots once, so the editor constructor must be inert (no
+    # saveSlot call) and only reflect the active slot the processor reports.
+    idx = code.find("CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(")
+    if idx < 0:
+        raise Reject("the editor constructor definition is missing")
+    brace = code.find("{", idx)
     if brace < 0:
-        raise Reject("the A/B reseed guard body is missing")
+        raise Reject("the editor constructor body is missing")
     body = brace_block(code, brace)
-    if body.count("saveSlotA()") != 1 or body.count("saveSlotB()") != 1:
-        raise Reject("the A/B reseed must keep exactly one saveSlotA() and one "
-                     "saveSlotB(); snapshotB is a zero-initialized array and "
-                     "an unsaved B loads every parameter minimum")
-    if body.find("saveSlotA()") > body.find("saveSlotB()"):
-        raise Reject("A/B reseed order drifted (saveSlotA must precede B)")
+    if slot_write_outside_onclick(body) is not None:
+        raise Reject("the editor constructor writes an A/B slot again — the "
+                     "processor seeds the slots (CV-067), so opening or "
+                     "closing the editor must never rewrite the compare pair")
+    for button, want in (
+            ("btnSlotA", r"audioProcessor\s*\.\s*isSlotA\s*\(\s*\)"),
+            ("btnSlotB", r"!\s*audioProcessor\s*\.\s*isSlotA\s*\(\s*\)")):
+        if not re.search(button + r"\s*\.\s*setToggleState\(\s*" + want, body):
+            raise Reject("the editor constructor no longer reflects the "
+                         "processor's active slot through %s" % button)
 
 
 def parse_constants(code):
@@ -529,8 +546,8 @@ def main():
 
     print("editor-layout-async: async menu captures paramID by value and "
           "guards knob/editor with SafePointer")
-    print("editor-layout-async: A/B reseed keeps saveSlotA() + saveSlotB() "
-          "under !hasPersistedABSnapshots()")
+    print("editor-layout-async: A/B compare pair owned by the processor — the "
+          "editor constructor stays inert and reflects isSlotA()")
 
     # ------------------------------------------------------------------
     # Negative probes (in-memory copies only; a no-op mutation is a stale
@@ -565,11 +582,14 @@ def main():
               "k.onRightClick = [this, paramID = k.linkedParamID,",
               "k.onRightClick = [this, &k, paramID = k.linkedParamID,",
               "deferred menu callbacks must not capture raw references")
-        probe("slot-B reseed dropped",
-              "        audioProcessor.saveSlotB();\n",
-              "",
-              "snapshotB is a zero-initialized array; removing the reseed "
-              "makes a fresh B load every parameter minimum")
+        probe("editor constructor reseeds slot B again",
+              "    btnSlotA.setToggleState(audioProcessor.isSlotA(), "
+              "juce::dontSendNotification);",
+              "    audioProcessor.saveSlotB();\n"
+              "    btnSlotA.setToggleState(audioProcessor.isSlotA(), "
+              "juce::dontSendNotification);",
+              "the processor owns the slots (CV-067); the editor constructor "
+              "must not reseed them")
 
         # Specificity guard: an edit outside the pinned shapes still passes.
         benign = raw.replace("// === BOTTOM ROW ===",

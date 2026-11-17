@@ -20,9 +20,10 @@ The settled shape, all pinned here:
     * `class SilentPresetLoad final` — RAII guard that arms the flag on
       construction and clears it in the destructor (every exit path).
     * the constructor, after startTimerHz(30), runs
-      `SilentPresetLoad silentLoad(presetLoadSilent); loadPreset(0);` and then
-      re-seeds `lastGoodGeneration = readParameterGeneration(...)`. It opens no
-      undo transaction, no change gesture and no host notification.
+      `SilentPresetLoad silentLoad(presetLoadSilent); loadPreset(0);`, then
+      re-seeds `lastGoodGeneration = readParameterGeneration(...)` and finally
+      seeds the A/B compare slots (CV-067). It opens no undo transaction, no
+      change gesture and no host notification.
     * loadPreset (signature unchanged): bounds guard, then the echo skip
       `if (!presetLoadSilent.load() && hostProgramRecall.exchange(-1) == index)
       return;`, then a CONDITIONAL `beginNewTransaction("Load Preset")`. The
@@ -375,9 +376,9 @@ probe("constructor's SilentPresetLoad guard dropped (the load notifies and "
 probe("constructor's lastGoodGeneration re-seed dropped (first block falls "
       "back on the pre-load generation)",
       lambda t: sub1(t, r"    lastGoodGeneration = readParameterGeneration"
-                        r"\(lastGoodGeneration\);\n\}\n\nCorvusFXAudioProcessor"
-                        r"::~CorvusFXAudioProcessor\(\)",
-                     "}\n\nCorvusFXAudioProcessor::~CorvusFXAudioProcessor()",
+                        r"\(lastGoodGeneration\);\n\n"
+                        r"    // CV-067: seed both A/B compare slots",
+                     "    // CV-067: seed both A/B compare slots",
                      "lastGoodGeneration re-seed dropped"))
 probe("constructor opens an undo transaction (a fresh insert looks like a "
       "user edit)",

@@ -135,6 +135,16 @@ apvts(*this, &undoManager, "Parameters", createParameterLayout())
         loadPreset(0);
     }
     lastGoodGeneration = readParameterGeneration(lastGoodGeneration);
+
+    // CV-067: seed both A/B compare slots from the settled live parameter
+    // values, once, and mark them persisted. The slots now exist in every
+    // session — including one whose host state carries no "abSlots" child —
+    // so the editor never has to seed them and a never-seeded slot can no
+    // longer recall an all-zero mix. This runs after the CV-066 default preset
+    // load above, so the seed captures the state a fresh insert actually
+    // plays.
+    seedABSnapshotsFromLiveParameters();
+    abSnapshotsPersisted = true;
 }
 
 CorvusFXAudioProcessor::~CorvusFXAudioProcessor()
@@ -751,6 +761,25 @@ static constexpr const char* abParamIds[24] = {
     "distortion_bypass","chorus_bypass","delay_bypass","reverb_bypass","master_bypass",
     "output_trim"
 };
+
+void CorvusFXAudioProcessor::seedABSnapshotsFromLiveParameters()
+{
+    // CV-067: the A/B compare slots belong to the processor. Both are seeded
+    // from the current parameter values by the constructor (once, after the
+    // default preset load settles them) and by setStateInformation for a state
+    // that carried no complete "abSlots" pair. Reading is all this does: no
+    // undo transaction, no gesture, no host notification, so a seed is never
+    // mistaken for a user edit.
+    for (int i = 0; i < NUM_AB_PARAMS; ++i)
+    {
+        auto* p = apvts.getParameter(abParamIds[i]);
+        if (p)
+        {
+            snapshotA[i] = p->getValue();
+            snapshotB[i] = p->getValue();
+        }
+    }
+}
 
 void CorvusFXAudioProcessor::saveSlotA()
 {
@@ -1778,9 +1807,10 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
         }
 
         // Restore A/B-compare snapshots only when the state carries them.
-        // Older states (no "abSlots" child) leave abSnapshotsPersisted
-        // false so the editor constructor reseed keeps its legacy role:
-        // initialising both slots with the recall's parameter values.
+        // Older states (no "abSlots" child) fall through to the CV-067 seed
+        // below: they still get both slots derived from the parameters the
+        // restore just applied, so a session saved before the slots existed
+        // recalls its own mix rather than an all-zero one.
         // Restored slots reopen a saved A/B compare instead of leaving both
         // slots in a state where a mere editor reopen destroys them.
         if (auto* abXml = xml->getChildByName("abSlots"))
@@ -1807,6 +1837,18 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
                 abSnapshotsPersisted = true;
             }
         }
+
+        // CV-067: no restore path may leave the slots unseeded. A state saved
+        // before the slots existed (no "abSlots" child) or carrying an
+        // incomplete pair falls through here and derives both slots from the
+        // parameters the restore just applied, instead of recalling an
+        // all-zero mix. The persisted flag stays false: this state did not
+        // carry a complete saved pair, the slots were derived from it. Nothing
+        // gates on the flag any more — the editor no longer reseeds — so a
+        // false value costs nothing and keeps "persisted" meaning "read back
+        // from the host state".
+        if (! abSnapshotsPersisted)
+            seedABSnapshotsFromLiveParameters();
 
         // Clear MIDI Learn mappings unconditionally: a saved state from an
         // older build (without a "midiMaps" child) must not silently keep the

@@ -358,19 +358,12 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     themeToggleButton.onClick = [this] { themeDark = !themeDark; toggleTheme(); };
     addAndMakeVisible(themeToggleButton);
 
-    // Default: A is active -- snapshot both slots with the restored init
-    // state, but ONLY when the processor didn't have saved snapshots
-    // restored by setStateInformation: state with an "abSlots" child
-    // already carries a saved A/B compare, and the blind reseed would
-    // overwrite both slots with the current (identical) live values.
-    if (!audioProcessor.hasPersistedABSnapshots())
-    {
-        btnSlotA.setToggleState(true, juce::dontSendNotification);
-        audioProcessor.saveSlotA();
-        audioProcessor.saveSlotB();
-    }
-
-    // Reflect the recalled active slot even when the persisted pair skips reseeding.
+    // CV-067: the A/B compare slots belong to the processor, which seeds them
+    // once (constructor, and the legacy-state fallback in
+    // setStateInformation). The editor therefore never writes them: opening or
+    // closing this window must not touch a saved or a recalled compare pair.
+    // All the constructor does is reflect the active slot the processor
+    // reports.
     btnSlotA.setToggleState(audioProcessor.isSlotA(), juce::dontSendNotification);
     btnSlotB.setToggleState(!audioProcessor.isSlotA(), juce::dontSendNotification);
 
