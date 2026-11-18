@@ -1298,13 +1298,19 @@ struct UpgradedReverb
             static constexpr int MAX_SIZE = 9600;
             float buf[MAX_SIZE] = {};
             int pos = 0;
-            int tapDelay[8] = {};
+            float tapDelay[8] = {};
+            float targetTapDelay[8] = {};
             float tapGain[8] = {};
+            float targetTapGain[8] = {};
             double sampleRate = 44100.0;
+            int transitionSamplesRemaining = 0;
+            bool roomSizeInitialized = false;
 
             void prepare(double sr)
             {
                 sampleRate = sr;
+                roomSizeInitialized = false;
+                transitionSamplesRemaining = 0;
                 setRoomSize(0.5f); // Default to mid-size room
                 mute();
             }
@@ -1321,14 +1327,31 @@ struct UpgradedReverb
                 // Room size 1.0 → 1.4x delays, 0.7x gains (large, diffuse, late)
                 float delayScale = 0.6f + roomSize * 0.8f;    // 0.6 to 1.4
                 float gainScale  = 1.3f - roomSize * 0.6f;     // 1.3 to 0.7
+                bool targetChanged = false;
 
                 for (int i = 0; i < 8; ++i)
                 {
-                    int delaySamps = juce::jlimit(1, MAX_SIZE - 1,
-                        (int)(baseMs[i] * delayScale * 0.001f * sampleRate));
-                    tapDelay[i] = delaySamps;
-                    tapGain[i] = baseGain[i] * gainScale;
+                    const float delaySamps = static_cast<float>(juce::jlimit(1, MAX_SIZE - 1,
+                        (int)(baseMs[i] * delayScale * 0.001f * sampleRate)));
+                    const float gain = baseGain[i] * gainScale;
+                    if (!roomSizeInitialized)
+                    {
+                        tapDelay[i] = targetTapDelay[i] = delaySamps;
+                        tapGain[i] = targetTapGain[i] = gain;
+                    }
+                    else
+                    {
+                        targetChanged = targetChanged
+                            || targetTapDelay[i] != delaySamps
+                            || targetTapGain[i] != gain;
+                        targetTapDelay[i] = delaySamps;
+                        targetTapGain[i] = gain;
+                    }
                 }
+                if (!roomSizeInitialized)
+                    roomSizeInitialized = true;
+                else if (targetChanged)
+                    transitionSamplesRemaining = juce::jmax(1, (int)(0.020f * sampleRate));
             }
 
             void mute() { std::memset(buf, 0, sizeof(buf)); pos = 0; }
@@ -1339,9 +1362,26 @@ struct UpgradedReverb
                 float output = 0.0f;
                 for (int i = 0; i < 8; ++i)
                 {
-                    int rp = pos - tapDelay[i];
-                    if (rp < 0) rp += MAX_SIZE;
-                    output += buf[rp] * tapGain[i];
+                    if (transitionSamplesRemaining > 0)
+                    {
+                        const float divisor = static_cast<float>(transitionSamplesRemaining);
+                        tapDelay[i] += (targetTapDelay[i] - tapDelay[i]) / divisor;
+                        tapGain[i] += (targetTapGain[i] - tapGain[i]) / divisor;
+                    }
+                    float readPos = static_cast<float>(pos) - tapDelay[i];
+                    if (readPos < 0.0f) readPos += static_cast<float>(MAX_SIZE);
+                    else if (readPos >= static_cast<float>(MAX_SIZE))
+                        readPos -= static_cast<float>(MAX_SIZE);
+                    const float delayed = hermiteInterp(buf, MAX_SIZE, readPos);
+                    output += delayed * tapGain[i];
+                }
+                if (transitionSamplesRemaining > 0 && --transitionSamplesRemaining == 0)
+                {
+                    for (int i = 0; i < 8; ++i)
+                    {
+                        tapDelay[i] = targetTapDelay[i];
+                        tapGain[i] = targetTapGain[i];
+                    }
                 }
                 if (++pos >= MAX_SIZE) pos = 0;
                 return output;
