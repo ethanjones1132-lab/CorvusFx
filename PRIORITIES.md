@@ -25,7 +25,7 @@
 - ✅ Hoist 7 sr-only constants from EnhancedDelay::beginBlock() to prepare() — 2026-07-29 (`b8ebf9a`)
 - ✅ Hoist 6 sr-only std::exp()/block from beginBlock() to prepare() — Distortion/Chorus/Delay — 2026-07-29 (`6f94d28`)
 - ✅ Compile warnings: 37 → 0 (FontOptions migration, casts, unicode fix) — 2026-07-27 (`6fa7349`)
-- ✅ Randomize preset button (RND button, 23-param randomization) — 2026-07-28 (`0ceb202`)
+- ✅ Randomize preset button (RND button, 24-param randomization) — 2026-07-28 (`0ceb202`)
 - ✅ Undo/Redo support (Ctrl+Z/Y) — 2026-07-28 (`69f4bc1`)
 - ✅ Knob right-click → MIDI learn — 2026-07-27 (`a5c09ae`)
 - ✅ Preset A/B compare — 2026-07-27 (`d4f7e81`)
@@ -48,7 +48,7 @@
 - ✅ Equal-power reverb wet/dry crossfade — 2026-07-26 (`82a6235`)
 - ✅ Cache msToSamples in ChorusBlockCoeffs (eliminates redundant double promotion in hot loop) — 2026-07-29 (`a79922c`)
 - ✅ Set NEEDS_MIDI_INPUT TRUE in CMakeLists.txt for MIDI Learn VST3 compatibility — 2026-07-30 (`d61ca20`)
-- ✅ Add output_trim parameter for final gain staging (0-200%, smooth, UI knob) — 2026-07-30 (`bcce791`)
+- ✅ Add output_trim parameter for final gain staging (0-100%, smooth, UI knob) — 2026-07-30 (`bcce791`)
 - ✅ Corvus Instrument design + vertical-slice plan docs — 2026-08-08 (`e4e8c72`, `89e0d67`)
 - ✅ Root planning docs refreshed to match Aug 2026 product reality — 2026-08-22
 - ✅ **Corvus Instrument vertical slice implemented** — band-limited wavetable oscillator, 16-voice polyphonic engine, ADSR, shared Corvus FX chain, 5 signature patches, deterministic DSP test harness, plugin codes Crvs/Cvi1 — 2026-09-20 (`1727ed9`, `4a73450`, `docs/integration/2026-10-14-clean-baseline.md`)

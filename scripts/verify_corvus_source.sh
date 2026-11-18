@@ -80,6 +80,12 @@ test -f "$CORVUS_ROOT/scripts/check_cv065_voice_steal_fade.py"
 # auto-registration applies; this explicit assertion keeps it from being lost
 # silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv071_silent_size_jump.py"
+# CV-069: the copy a buyer reads (tooltips) is plain ASCII with no spacebar
+# promise keyPressed() cannot keep, and README/ROADMAP/PRIORITIES state the
+# shipped ping-pong spread, Output Trim range and A/B snapshot count
+# (scripts/check_cv069_release_strings.py). Same auto-registration applies; this
+# explicit assertion keeps it from being lost silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv069_release_strings.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"

@@ -33,12 +33,12 @@
 ## Phase 4: UI Completeness ✅ (2026-07-26 through 2026-07-30)
 
 - ✅ Knob right-click → MIDI learn — 2026-07-27 (`a5c09ae`)
-- ✅ Preset A/B compare (snapshot/restore 23 parameters) — 2026-07-27 (`d4f7e81`)
+- ✅ Preset A/B compare (snapshot/restore 24 parameters) — 2026-07-27 (`d4f7e81`)
 - ✅ Combo box preset range fixed (0-29→0-42, all 36 presets reachable) — 2026-07-26 (`d9e9020`)
 - ✅ Compile warnings reduced 37→0 (JUCE 8 FontOptions migration, float→int casts, unicode separators) — 2026-07-27 (`6fa7349`)
 - ✅ Undo/redo support (Ctrl+Z/Y keyboard shortcuts, UndoManager) — 2026-07-28 (`69f4bc1`)
-- ✅ **Randomize preset button** (RND button, 23-param randomization) — 2026-07-28 (`0ceb202`)
-- ✅ **Output trim control** (per-sample smoothed, 0-200%, UI TRIM knob, MIDI learnable) — 2026-07-30 (`bcce791`)
+- ✅ **Randomize preset button** (RND button, 24-param randomization) — 2026-07-28 (`0ceb202`)
+- ✅ **Output trim control** (per-sample smoothed, 0-100%, UI TRIM knob, MIDI learnable) — 2026-07-30 (`bcce791`)
 - ✅ **Dark/light theme toggle** — Ctrl+T toggle, persisted preference, theme-aware look-and-feel for all panels and animated background, visible THEME button in editor — 2026-10-13/14 (`c5c7a8f`, `7fc4bbb`, `fde17c2`, `0549f69`, `31e1e71`, `bb2e6b6`, `ea0fbd1`, `82995c8`, `cc881e2`)
 
 ## Phase 5: CPU Optimization 🔶 (Mostly complete; residual backlog)

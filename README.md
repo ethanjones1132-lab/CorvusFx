@@ -97,7 +97,7 @@ The Drive knob smoothly morphs from transparent tape-style warmth (clean, musica
 | Feature | Detail |
 |---------|--------|
 | **Time range** | 0–2000 ms, fully smoothed |
-| **Ping-pong** | Stereo ping-pong mode with adjustable spread |
+| **Ping-pong** | Stereo ping-pong mode with a fixed 0.35 feedback spread (no spread control) |
 | **Interpolation** | **Hermite cubic interpolation** for artifact-free delay reads |
 | **Tape wow/flutter** | Slow modulation emulates tape machine instability |
 | **Filtered feedback** | Adjustable LP/HP feedback filtering with one-pole filters |
