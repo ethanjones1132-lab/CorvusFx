@@ -77,11 +77,11 @@ The same cascade is exposed as the shared `source/DrippyFX/dsp/CorvusEffects.h` 
 | **Drive types** | Smooth tape saturation → aggressive tube distortion with continuous Hermite crossfade |
 | **Pre-emphasis** | High-shelf filter pushes harmonics into the saturation for richer texture |
 | **Post-filter** | 2-pole low-pass shapes the distorted signal |
-| **Warmth shelf** | Gentle bass-boost shelf adds body post-saturation |
-| **Anti-aliasing** | **2x oversampling** (8-tap half-band FIR) on the waveshaper — the release's anti-aliasing measure; aliasing is not yet measured |
+| **Warmth shelf** | Gentle high-shelf tame of the 5-8 kHz harshness left by saturation |
+| **Anti-aliasing** | **2x oversampling** (8-tap half-band FIR) on the waveshaper - the release's anti-aliasing measure; aliasing is not yet measured |
 | **DC blocker** | Prevents offset buildup in the signal path |
 
-The Drive knob smoothly morphs from transparent tape-style warmth (clean, musical, soft-clipping) through to aggressive asymmetrical tube saturation (rich harmonics, compressed feel) using a smoothstep interpolation — designed to avoid zipper artifacts at the transition.
+The Drive knob smoothly morphs from transparent tape-style warmth (clean, musical, soft-clipping) through to aggressive asymmetrical tube saturation (rich harmonics, compressed feel) using a smoothstep interpolation — designed to avoid zipper artifacts at the transition. In the Clean Sparkle preset, Drive is set to 8% (near the tape saturation end of the range).
 
 ### 🌊 Chorus — 6-Voice Modulation
 | Feature | Detail |
@@ -135,19 +135,19 @@ The Drive knob smoothly morphs from transparent tape-style warmth (clean, musica
 | Control | Range | Default | Function |
 |---------|-------|---------|----------|
 | **Overall** | 0–100% | 100% | Global wet/dry mix |
-| **Drive** | 0–100% | 0% | Tape warmth → tube saturation with smooth Hermite crossfade |
-| **Chorus Depth** | 0–100% | 0% | Modulation depth (0 = bypass) |
-| **Chorus Rate** | 0.1–10 Hz | 2 Hz | LFO speed — 6 decorrelated voices never align |
-| **Chorus Mix** | 0–100% | 50% | Wet/dry balance |
-| **Delay Time** | 0–2000 ms | 250 ms | Echo timing with tape-style interpolation |
-| **Delay Feedback** | 0–100% | 30% | Repeat count (exponential mapping to internal feedback) |
+| **Drive** | 0–100% | 8% | Tape warmth → tube saturation with smooth Hermite crossfade |
+| **Chorus Depth** | 0–100% | 25% | Modulation depth (0 = bypass) |
+| **Chorus Rate** | 0.1–10 Hz | 1.2 Hz | LFO speed — 6 decorrelated voices never align |
+| **Chorus Mix** | 0–100% | 35% | Wet/dry balance |
+| **Delay Time** | 0–2000 ms | 0 ms | Echo timing with tape-style interpolation |
+| **Delay Feedback** | 0–100% | 0% | Repeat count (exponential mapping to internal feedback) |
 | **Delay Mix** | 0–100% | 0% | Wet/dry balance |
-| **Delay Damping** | 0–100% | 40% | High-frequency rolloff per repeat (darker = more tape-like) |
-| **Delay Mod** | 0–100% | 30% | Wow/flutter intensity for vintage tape character |
-| **Reverb Size** | 0–100% | 50% | Room size — controls both decay time and diffusion character |
-| **Reverb Damping** | 0–100% | 50% | High-frequency decay (higher = shorter, darker tail) |
-| **Reverb Mix** | 0–100% | 0% | Wet/dry balance (equal-power crossfade) |
-| **Reverb Mod** | 0–100% | 30% | Modulation depth for organic tail movement |
+| **Delay Damping** | 0–100% | 0% | High-frequency rolloff per repeat (darker = more tape-like) |
+| **Delay Mod** | 0–100% | 0% | Wow/flutter intensity for vintage tape character |
+| **Reverb Size** | 0–100% | 20% | Room size — controls both decay time and diffusion character |
+| **Reverb Damping** | 0–100% | 55% | High-frequency decay (higher = shorter, darker tail) |
+| **Reverb Mix** | 0–100% | 10% | Wet/dry balance (equal-power crossfade) |
+| **Reverb Mod** | 0–100% | 20% | Modulation depth for organic tail movement |
 | **Master Drive** | 0–100% | 0% | Master output push-pull saturation (even harmonics) |
 | **Master Width** | 0–200% | 100% | Stereo width via M/S side-signal scaling (0% mono; 100% original stereo image; 200% maximum width) |
 | **Master Mid Drive** | 0–100% | 0% | Mid channel saturation — affects center image |
@@ -188,7 +188,7 @@ All continuous parameters feature **20ms LinearSmoothedValue** interpolation for
 ### CLEAN — Transparent Enhancement, Pristine Highs
 | # | Name | Best For |
 |---|------|----------|
-| 0 | **Clean Sparkle** | Mix bus, acoustic instruments |
+| 0 | **Clean Sparkle** | Mix bus, acoustic instruments — subtle widening and air; near-clean reference |
 | 1 | **Crystal Shimmer** | Clean guitars, electric piano |
 | 2 | **Silk Thread** | Acoustic guitar, vocal sweetening |
 | 3 | **Subtle Glue** | Drum bus, master bus |
