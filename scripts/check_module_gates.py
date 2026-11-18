@@ -10,17 +10,27 @@ delay/reverb internal state keeps evolving), and a removed gX test makes
 the crossfade read an always-on wet path — all compile clean behind an
 otherwise-green gate.
 
+CV-064 changed the chorus gate on purpose: Depth is a modulation-depth
+control, so it must never gate the per-sample process/advance path again
+(the engage crossfade inside EnhancedChorus handles the inaudible state
+while the delay history keeps advancing). The chorus gate is therefore
+pinned as `gChorus > 0.001f` ONLY, and a re-added depth conjunct is a
+reported defect, not a valid variant.
+
 Asserts (comment-stripped, brace-matched processBlock body):
   (a) the 5 gate conditions appear verbatim, each PRECEDING its DSP call
       site in the body order:
       distortion:    gDist > 0.001f && sFatness > 0.001f
-      chorus:        gChorus > 0.001f && sChorusDepth > 0.001f
+      chorus:        gChorus > 0.001f            (CV-064: no Depth conjunct)
       delay:         gDelay > 0.001f && sDelayMix > 0.001f && sDelayTime > 0.0f
       reverb:        gReverb > 0.001f && sReverbMix > 0.001f
       master:        gMaster > 0.001f
   (b) each gate's crossfade (smpX = smpX * (1.0f - gX) + outX * gX)
       stays INSIDE the gate body (move one gate after its crossfade ->
       the DSP call runs uncrossfaded).
+  (c) the chorus gate is exactly `if (gChorus > 0.001f)`: no
+      `sChorusDepth` threshold may reappear around the process/advance
+      path (CV-064).
 
 Self-probes (negative checks, sibling checker style) run on mutated
 in-memory TEMP texts — the real tree is never mutated. A no-op mutation
@@ -42,7 +52,7 @@ MODULES = [
      "gDist > 0.001f && sFatness > 0.001f",
      "distortion.process("),
     ("chorus",
-     "gChorus > 0.001f && sChorusDepth > 0.001f",
+     "gChorus > 0.001f",
      "chorus.process(smpL, 0"),
     ("delay",
      "gDelay > 0.001f && sDelayMix > 0.001f && sDelayTime > 0.0f",
@@ -146,6 +156,17 @@ def check(body):
             return f"{name} crossfade must come AFTER the DSP call inside " \
                    f"the gate"
         cursor = cursor + m.end()
+    # (c) CV-064: the chorus gate must never re-acquire a depth threshold.
+    if re.search(r"if\s*\(\s*gChorus\s*>\s*0\.001f\s*\)\s*\{", body) is None:
+        return ("chorus gate is not exactly `if (gChorus > 0.001f)`: CV-064 "
+                "removed the Depth conjunct from the chorus process/advance "
+                "path (the engage crossfade inside EnhancedChorus owns the "
+                "transition)")
+    for cond in re.findall(r"if\s*\(([^)]*)\)", body):
+        if "sChorusDepth" in cond:
+            return ("an `if (...)` condition in the per-sample body tests "
+                    f"sChorusDepth (`{collapse_ws(cond)}`): Depth must not gate "
+                    "the chorus process/advance path again (CV-064)")
     return None
 
 
@@ -158,8 +179,9 @@ body = extract_body(proc_c, "processBlock")
 err = check(body)
 if err:
     fail(err + " (PluginProcessor.cpp processBlock)")
-print("module-gates: the 5 DSP-enable gate conjunctions pinned verbatim, "
-      "each preceding its DSP call + crossfade inside the gate body")
+print("module-gates: the 5 DSP-enable gate conditions pinned verbatim, each "
+      "preceding its DSP call + crossfade inside the gate body, and the chorus "
+      "gate kept free of any Depth conjunct (CV-064)")
 
 # ---------------------------------------------------------------------------
 # Self-probes on mutated in-memory texts (real tree never mutated)
@@ -208,7 +230,12 @@ if tmp != proc_c:
 else:
     print("module-gates: no-op mutation guard -> skipping gate-move probe")
 
-# 4. no-op guard: benign comment addition inside the per-sample body must
+# 4. CV-064: the removed Depth conjunct must not come back on the chorus gate
+probe("chorus gate re-gated on sChorusDepth > 0.001f",
+      "if (gChorus > 0.001f)",
+      "if (gChorus > 0.001f && sChorusDepth > 0.001f)")
+
+# 5. no-op guard: benign comment addition inside the per-sample body must
 #    stay accepted
 anchor = delay_if
 tmp5 = proc_c.replace(anchor, "// benign probe edit\n" + anchor, 1)

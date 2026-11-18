@@ -495,6 +495,17 @@ struct EnhancedChorus
     static constexpr int NUM_VOICES = 6;
     static constexpr int BUFFER_SIZE = 32768;
 
+    // CV-064: Depth is a modulation-depth control, not a wet/dry mix, so it must
+    // not switch the effect on and off in a single sample. When the smoothed
+    // depth sits at or below DEPTH_ENGAGE_EPSILON the chorus contribution is
+    // crossfaded out against the dry input over DEPTH_ENGAGE_SECONDS, and back
+    // in when Depth returns — while process() keeps writing the delay line and
+    // advancing the LFOs. The old per-sample gate on Depth skipped process()
+    // entirely, so the delay history froze and re-engagement read stale audio,
+    // and the dry->wet step at the 0.001 boundary was a one-sample hard switch.
+    static constexpr float DEPTH_ENGAGE_EPSILON = 0.001f;
+    static constexpr float DEPTH_ENGAGE_SECONDS = 0.020f;
+
     float delayBuffer[2][BUFFER_SIZE] = {};
     int writePos = 0;
     double sampleRate = 44100.0;
@@ -534,6 +545,12 @@ struct EnhancedChorus
     Oversampling2x oversample[2];  // 2x oversampling for feedback tanh anti-aliasing — per-channel to avoid state sharing
     int lfoTick = 0;               // LFO renormalization tick counter
 
+    // CV-064: depth-engage crossfade gain (0 = chorus contribution silent, the
+    // effect returns the untouched input; 1 = the full Mix blend). Ramped, never
+    // stepped, so crossing the depth threshold cannot click.
+    float engageGain = 1.0f;
+    bool engageSeeded = false;     // first rendered sample seeds the ramp exactly
+
     // Block-level coefficient cache — avoids redundant per-sample transcendental calls.
     // beginBlock() precomputes tone/smooth filter coefficients plus chorus-specific
     // parameters (allpass coeff, mix-adaptive depth, drift increment) that were
@@ -547,6 +564,7 @@ struct EnhancedChorus
             float maxSwingMs = 2.8f;        // max modulation swing in ms
             float driftDelta = 0.0f;        // drift phase increment per sample
             float rateToIncrement = 0.0f;   // twoPi / sr — cached for LFO rate→phase step
+            float engageStep = 0.0f;        // CV-064: per-sample depth-engage ramp step
             float invSr = 0.0f;
                     float msToSamples = 0.0f;  // sr * 0.001f -- cached to avoid redundant double conv               // 1.0 / sr — cached for normalized triangle phase advance
             // Phase recurrence constants per voice — replaces 2× std::sin()/sample with 4 multiplies
@@ -582,6 +600,9 @@ struct EnhancedChorus
         chorusBlockCoeffs.rateToIncrement = juce::MathConstants<float>::twoPi / sr;
         chorusBlockCoeffs.invSr = 1.0f / sr;
         chorusBlockCoeffs.msToSamples = sr * 0.001f;
+        // CV-064: 20 ms linear depth-engage ramp, matched to the bypass ramp so
+        // a Depth crossing fades rather than switches.
+        chorusBlockCoeffs.engageStep = 1.0f / (DEPTH_ENGAGE_SECONDS * sr);
         // Precompute per-voice phase recurrence constants
         // sin/cos of per-voice phase delta → 4 multiplies/sample instead of 2 std::sin()/sample
         for (int i = 0; i < NUM_VOICES; ++i)
@@ -635,6 +656,11 @@ struct EnhancedChorus
         dcBlock[0].reset(); dcBlock[1].reset();
         outputSmooth[0].reset(); outputSmooth[1].reset();
         inputTone[0].reset(); inputTone[1].reset();
+
+        // CV-064: a fresh instance seeds its engage gain on the first rendered
+        // sample (target-exact, so nothing steps) and ramps from there.
+        engageGain = 1.0f;
+        engageSeeded = false;
 
         // Voice configuration:
         // centerDelay (ms), panL, panR, rateScale, depthScale, triBlend
@@ -709,6 +735,33 @@ struct EnhancedChorus
     {
         input = juce::jlimit(-4.0f, 4.0f, input);
         feedback = std::min(feedback, 0.45f);
+
+        // CV-064: depth-engage crossfade. Channel 0 owns the shared ramp so L/R
+        // stay identical. Depth at/below DEPTH_ENGAGE_EPSILON fades the chorus
+        // contribution out over DEPTH_ENGAGE_SECONDS instead of skipping this
+        // call; the delay-line write below still runs every sample, so the
+        // history is current whenever Depth returns.
+        if (channel == 0)
+        {
+            const float engageTarget = (depth > DEPTH_ENGAGE_EPSILON) ? 1.0f : 0.0f;
+            if (! engageSeeded)
+            {
+                // Nothing has been rendered yet, so seeding exactly cannot step
+                // an output that does not exist.
+                engageGain = engageTarget;
+                engageSeeded = true;
+            }
+            else if (engageGain < engageTarget)
+            {
+                engageGain = std::min(engageTarget,
+                                      engageGain + chorusBlockCoeffs.engageStep);
+            }
+            else if (engageGain > engageTarget)
+            {
+                engageGain = std::max(engageTarget,
+                                      engageGain - chorusBlockCoeffs.engageStep);
+            }
+        }
 
         // Pre-filter: gentle HF rolloff on input before writing to delay
         // Reduces aliasing artifacts from modulated reads of HF content
@@ -829,7 +882,21 @@ struct EnhancedChorus
         float dryGain = chorusBlockCoeffs.dryGain;
         float wetGain = chorusBlockCoeffs.wetGain;
 
-        return juce::jlimit(-4.0f, 4.0f, input * dryGain + wetOut * wetGain);
+        const float mixed = input * dryGain + wetOut * wetGain;
+
+        // CV-064: fully engaged (the normal state) returns the Mix blend
+        // untouched, so a settled render keeps its exact samples; the crossfade
+        // only runs while a Depth crossing is fading the contribution in or out.
+        if (engageGain >= 1.0f)
+            return juce::jlimit(-4.0f, 4.0f, mixed);
+
+        // CV-064: the engage ramp crossfades that Mix blend against the untouched
+        // input. It is not a second wet/dry control — Dry/Wet stays the Mix path
+        // above (dryGain/wetGain) and Depth only moves the delay modulation — so
+        // at engageGain 0 the caller hears its own input, with no chorus colour
+        // and no stale history waiting on re-engagement.
+        return juce::jlimit(-4.0f, 4.0f,
+                            input * (1.0f - engageGain) + mixed * engageGain);
     }
 
     void advanceWritePos()

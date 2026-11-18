@@ -14,13 +14,21 @@ write slot (chorus texture shift), and a 0.25f rewrite to 0.0f kills the
 chorus feedback silently — all compile clean behind an otherwise-green
 gate.
 
+CV-064: the gate is the bypass crossfade only (`if (gChorus > 0.001f)`);
+Depth no longer gates the process/advance pair, so the delay history keeps
+advancing while the depth-engage crossfade has the chorus contribution
+faded out. A `sChorusDepth` threshold in the gate is therefore a reported
+defect.
+
 Asserts (comment-stripped, brace-matched processBlock body):
   (a) the `sChorusFb = sChorusDepth * 0.25f` form stays in the per-sample
       precompute block;
   (b) the chorus gate body keeps process(smpL, 0, ...) BEFORE
       process(smpR, 1, ...) with (sChorusRate, sChorusDepth, sChorusFb)
       trailing;
-  (c) chorus.advanceWritePos() sits AFTER both calls inside the gate.
+  (c) chorus.advanceWritePos() sits AFTER both calls inside the gate;
+  (d) the gate condition never mentions a `sChorusDepth > ...` threshold
+      (CV-064: Depth is modulation depth, not an on/off mix).
 
 Self-probes (negative checks, sibling checker style) run on mutated
 in-memory TEMP texts — the real tree is never mutated. A no-op mutation
@@ -89,11 +97,15 @@ def check(body):
     if not re.search(re.escape("= sChorusDepth * 0.25f;"), body):
         return "sChorusFb precompute `= sChorusDepth * 0.25f;` not found " \
                "in the per-sample body"
-    # isolate the chorus gate body: `if (gChorus > ... && sChorusDepth...)
-    # { ... chorus.advanceWritePos(); ... }`
-    m = re.search(r"if \((gChorus[^)]*&&\s*sChorusDepth[^)]*)\)\s*\{", body)
+    # isolate the chorus gate body: `if (gChorus > ...)` (CV-064: the bypass
+    # crossfade only) `{ ... chorus.advanceWritePos(); ... }`
+    m = re.search(r"if \((gChorus[^)]*)\)\s*\{", body)
     if not m:
-        return "chorus gate `if (gChorus ... && sChorusDepth ...)` not found"
+        return "chorus gate `if (gChorus ...)` not found"
+    if re.search(r"sChorusDepth\s*>\s*", m.group(1)):
+        return ("chorus gate is gated on a depth threshold again "
+                f"(`{collapse_ws(m.group(1))}`): CV-064 keeps Depth as "
+                "modulation depth, never as an on/off mix")
     o = m.end() - 1
     depth, j = 0, o
     while j < len(body):
@@ -184,7 +196,12 @@ if FB_LINE not in proc_c:
 probe("sChorusFb scale 0.25f -> 0.0f",
       "= sChorusDepth * 0.25f", "= sChorusDepth * 0.0f")
 
-# 4. no-op guard: benign comment addition inside the chorus gate must
+# 4. CV-064: re-adding the Depth conjunct to the chorus gate must be rejected
+probe("chorus gate re-gated on sChorusDepth > 0.001f",
+      "if (gChorus > 0.001f)",
+      "if (gChorus > 0.001f && sChorusDepth > 0.001f)")
+
+# 5. no-op guard: benign comment addition inside the chorus gate must
 #    stay accepted
 anchor = adv_line
 tmp5 = proc_c.replace(anchor, "// benign probe edit\n" + anchor, 1)

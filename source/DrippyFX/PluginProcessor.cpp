@@ -1600,7 +1600,14 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         }
 
         // 2. CHORUS (click-free bypass crossfade)
-        if (gChorus > 0.001f && sChorusDepth > 0.001f)
+        // CV-064: Depth is a modulation-depth control, not a wet/dry mix, so it
+        // no longer gates the per-sample call. Processing and advanceWritePos()
+        // run whenever the chorus is in the chain; the depth-engage crossfade
+        // inside chorus.process() fades the chorus contribution in and out, so
+        // the delay history keeps moving while the output is inaudible. The old
+        // `&& sChorusDepth > 0.001f` conjunct froze the delay line and stepped
+        // the output between the wet blend and dry in a single sample.
+        if (gChorus > 0.001f)
         {
             float cl = chorus.process(smpL, 0, sChorusRate, sChorusDepth, sChorusFb);
             float cr = chorus.process(smpR, 1, sChorusRate, sChorusDepth, sChorusFb);
