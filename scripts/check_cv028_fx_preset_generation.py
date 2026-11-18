@@ -458,9 +458,9 @@ def probe(description, old, new, count=1):
 # 1. the exact regression this checker exists for: a recall path writing its
 #    parameters one-by-one again
 probe("loadPreset batch dropped (parameters written one-by-one again)",
-      "    // new one; the completed set is published as one generation at the end.\n"
-      "    ParameterGenerationBatch batch(presetBatchSequence);\n",
-      "    // new one; the completed set is published as one generation at the end.\n")
+      "    ParameterGenerationBatch batch(presetBatchSequence);\n"
+      "    const auto& p = factoryPreset(index);",
+      "    const auto& p = factoryPreset(index);")
 
 # 2. the batch opened but the completed set published before it closes
 probe("loadPreset publishes before batch.close()",

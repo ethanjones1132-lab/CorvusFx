@@ -28,10 +28,10 @@ here because they meet in `UpgradedReverb::beginBlock()`:
          earlyL.setRoomSize(roomSize);
          earlyR.setRoomSize(roomSize);
 
-  2. the host smooths reverb_mix, but beginBlock only receives a block-level
-     mix; multiplying the block-constant equal-power gains into the output
-     made the wet/dry step once per block. The applied gains now ramp per
-     sample toward the block target and land exactly when settled.
+  2. multiplying block-constant equal-power gains into the output made
+     the wet/dry balance step once per block. The DSP now owns the Mix ramp:
+     the applied gains move per sample and land exactly on the target.
+     CV-073 keeps that ramp running when the next callback repeats the target.
 
 Asserts on the real tree (comment-stripped, brace-matched UpgradedReverb):
   (a) beginBlock contains no memset and exactly two mute() calls (earlyL and
@@ -42,7 +42,8 @@ Asserts on the real tree (comment-stripped, brace-matched UpgradedReverb):
   (b) earlyL/earlyR are still retargeted every block (setRoomSize outside the
       guard) and `float lastRoomSize = 0.0f;` is declared on the struct;
   (c) beginBlock keeps the equal-power dry/wet targets from wetMix, arms a
-      per-sample ramp only on a mix change, and snaps when the mix is settled;
+      per-sample ramp only on a mix change, snaps only on the first block,
+      and leaves an in-flight ramp alone when the target is repeated;
   (d) processSample advances the applied gains before the output multiply and
       uses appliedDryGain/appliedWetGain, never the block constants;
   (e) prepare() resets the ramp state so a fresh instance snaps to its first
@@ -55,6 +56,7 @@ alarm, the real tree is never mutated):
   - add a memset of the early tap buffer to beginBlock -> rejected;
   - restore the block-constant wet/dry multiply -> rejected;
   - drop the per-sample ramp advance -> rejected;
+  - snap or re-arm the ramp when the next block repeats the target -> rejected;
   - benign comment edit naming the pinned members -> accepted.
 
 Exit 0 = ok, 1 = violation with a cited diagnostic, 2 = setup/read failure.
@@ -204,29 +206,34 @@ def verify(header_text):
             r"blockCoeffs\.wetGain\s*=\s*std::sin\s*\(\s*wetMix\s*\*",
             "beginBlock no longer derives the equal-power wet target from "
             "wetMix")
-    require(begin, r"std::fabs\s*\(\s*wetMix\s*-\s*lastWetMix\s*\)",
-            "beginBlock no longer compares the requested mix against "
-            "lastWetMix - the ramp cannot be armed only on a change")
-    require(begin, r"rampSamples\s*=\s*juce::jmax\s*\(\s*1\s*,",
+    mix_update = re.search(
+        r"\bif\s*\(\s*!wetMixValid\s*\)\s*\{(?P<first>[^{}]*)\}\s*"
+        r"else\s+if\s*\(\s*wetMix\s*!=\s*lastWetMix\s*\)\s*"
+        r"\{(?P<changed>[^{}]*)\}\s*"
+        r"lastWetMix\s*=\s*wetMix\s*;\s*wetMixValid\s*=\s*true\s*;", begin)
+    if mix_update is None:
+        raise Reject("beginBlock must snap only on the first mix and arm only "
+                     "on a changed target; a repeated target must leave the "
+                     "in-flight ramp alone")
+    first, changed = mix_update.group("first", "changed")
+    require(changed, r"rampSamples\s*=\s*juce::jmax\s*\(\s*1\s*,",
             "beginBlock no longer derives a non-zero ramp length")
-    require(begin, r"mixRampSamplesLeft\s*=\s*rampSamples\s*;",
+    require(changed, r"mixRampSamplesLeft\s*=\s*rampSamples\s*;",
             "beginBlock no longer arms the per-sample ramp")
-    require(begin,
+    require(changed,
             r"dryGainStep\s*=\s*\(\s*blockCoeffs\.dryGain\s*-\s*"
             r"blockCoeffs\.appliedDryGain\s*\)",
             "beginBlock no longer computes the dry ramp slope")
-    require(begin,
+    require(changed,
             r"wetGainStep\s*=\s*\(\s*blockCoeffs\.wetGain\s*-\s*"
             r"blockCoeffs\.appliedWetGain\s*\)",
             "beginBlock no longer computes the wet ramp slope")
-    require(begin, r"blockCoeffs\.appliedDryGain\s*=\s*blockCoeffs\.dryGain\s*;",
-            "beginBlock no longer snaps appliedDryGain on a settled mix")
-    require(begin, r"blockCoeffs\.appliedWetGain\s*=\s*blockCoeffs\.wetGain\s*;",
-            "beginBlock no longer snaps appliedWetGain on a settled mix")
-    require(begin, r"lastWetMix\s*=\s*wetMix\s*;",
-            "beginBlock no longer stores lastWetMix")
-    require(begin, r"wetMixValid\s*=\s*true\s*;",
-            "beginBlock no longer marks the mix state valid")
+    require(first, r"blockCoeffs\.appliedDryGain\s*=\s*blockCoeffs\.dryGain\s*;",
+            "beginBlock no longer snaps appliedDryGain on the first mix")
+    require(first, r"blockCoeffs\.appliedWetGain\s*=\s*blockCoeffs\.wetGain\s*;",
+            "beginBlock no longer snaps appliedWetGain on the first mix")
+    require(first, r"blockCoeffs\.mixRampSamplesLeft\s*=\s*0\s*;",
+            "beginBlock must leave no ramp after snapping to the first mix")
 
     # --- (d) per-sample state declared + advanced before the multiply ------
     for pattern, why in (
@@ -356,6 +363,11 @@ def main():
          lambda s: s.replace(
              "if (blockCoeffs.mixRampSamplesLeft > 0)",
              "if (false)", 1)),
+        ("snap on a repeated mix target",
+         lambda s: s.replace(
+             "if (!wetMixValid)", "if (!wetMixValid || wetMix == lastWetMix)", 1)),
+        ("restart the ramp on a repeated mix target",
+         lambda s: s.replace("else if (wetMix != lastWetMix)", "else", 1)),
     ]
     for label, mutate in probes:
         mutated = mutate(text)
@@ -392,7 +404,7 @@ def main():
     if run(SRC.read_text(encoding="utf-8", errors="replace")) is not None:
         print("REVERB-ROOM-RAMP FAIL: final live-source re-verification failed")
         return 1
-    print("REVERB-ROOM-RAMP OK (4 negatives, comment edit accepted)")
+    print(f"REVERB-ROOM-RAMP OK ({len(probes)} negatives, comment edit accepted)")
     return 0
 
 

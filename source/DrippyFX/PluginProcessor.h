@@ -42,8 +42,8 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-    juce::AudioProcessorValueTreeState apvts;
     juce::UndoManager undoManager;
+    juce::AudioProcessorValueTreeState apvts;
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     void loadPreset(int index);
     void randomizePreset();
@@ -309,14 +309,8 @@ private:
     // it reports where the slots came from.
     bool abSnapshotsPersisted = false;
     std::atomic<bool> restoringPresetState{false};
-    // CV-066: a freshly inserted FX must start on the factory default preset
-    // (0, "Clean Sparkle") without opening an undo transaction, a change
-    // gesture or a host notification. presetLoadSilent marks that
-    // construction-time load; hostProgramRecall carries the program index a
-    // setCurrentProgram() call is about to echo back through the "preset"
-    // parameter listener, so loadPreset() can skip loading the same preset
-    // twice (and -1 means "no program change in flight").
-    std::atomic<bool> presetLoadSilent{false};
+    // CV-066: suppress the "preset" listener echo of a host program change
+    // that setCurrentProgram has already applied (-1 means no pending echo).
     std::atomic<int> hostProgramRecall{-1};
     // MIDI Learn State (accessed across audio/message threads)
     // CV-027: only the atomic arm flag is shared; the armed target lives in the

@@ -55,6 +55,7 @@ mutated). Each mutation must be rejected:
   - ROADMAP restores the 0-200% Output Trim range;
   - PRIORITIES restores the 0-200% Output Trim range;
   - README's Output Trim table row widens to 0-200%;
+  - Output Trim's default comes from the wrong factory field;
   - ROADMAP restores the 23-parameter A/B count;
   - PRIORITIES restores the 23-param randomization count.
 A specificity probe rewords one tooltip without changing any fact and must stay
@@ -67,6 +68,8 @@ Exit 0 = ok, 1 = violation with diagnostics.
 import re
 import sys
 from pathlib import Path
+
+from _fx_factory_defaults import factory_default
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "source" / "DrippyFX"
@@ -99,7 +102,7 @@ PCTPARAM_RANGE_RE = re.compile(
     r"auto\s+pctParam\s*=[^{]*\{[^{}]*?NormalisableRange<float>\s*\(\s*"
     r"([-0-9.]+)\s*,\s*([-0-9.]+)", re.S)
 TRIM_RE = re.compile(
-    r'pctParam\s*\(\s*"output_trim"\s*,\s*"([^"]*)"\s*,\s*([-0-9.]+)\s*\)')
+    r'\bpctParam\s*\(\s*"output_trim"\s*,\s*"([^"]*)"\s*,\s*p\.(\w+)\s*\)')
 NUMAB_RE = re.compile(r"NUM_AB_PARAMS\s*=\s*(\d+)\s*;")
 ABIDS_RE = re.compile(
     r"abParamIds\s*\[\s*(\d+)\s*\]\s*=\s*\{(.*?)\}", re.S)
@@ -322,11 +325,14 @@ def verify(ed, proc, hdr, readme, roadmap, priorities):
                       "code fact to match")
     if trim is None:
         errors.append('PluginProcessor.cpp no longer registers "output_trim" '
-                      'through pctParam(...) - the documented range has no '
-                      "code fact to match")
+                      "through pctParam(...) with a factory default")
     if helper is not None and trim is not None:
         trim_name = trim.group(1)
-        trim_default = float(trim.group(2))
+        try:
+            trim_default = factory_default(proc_code, trim.group(2))
+        except ValueError as exc:
+            errors.append(f"could not read the Output Trim default: {exc}")
+            trim_default = None
         lo, hi = float(helper.group(1)), float(helper.group(2))
         if trim_name != "Output Trim":
             errors.append(f'host-visible name for "output_trim" is '
@@ -347,7 +353,8 @@ def verify(ed, proc, hdr, readme, roadmap, priorities):
                               f"{row.group(1).strip()!r}, the parameter is "
                               f"{lo:g}-{hi:g}%")
             defaults = percents(row.group(2))
-            if len(defaults) != 1 or abs(defaults[0] - trim_default) > 1e-6:
+            if trim_default is not None and (
+                    len(defaults) != 1 or abs(defaults[0] - trim_default) > 1e-6):
                 errors.append("README's Output Trim row states default "
                               f"{row.group(2).strip()!r}, the parameter "
                               f"defaults to {trim_default:g}%")
@@ -451,6 +458,12 @@ def in_editor(old, new):
     return mutate
 
 
+def in_processor(old, new):
+    def mutate(ed, proc, hdr, readme, roadmap, priorities):
+        return (ed, proc.replace(old, new, 1), hdr, readme, roadmap, priorities)
+    return mutate
+
+
 def in_readme(old, new):
     def mutate(ed, proc, hdr, readme, roadmap, priorities):
         if old not in readme:
@@ -516,6 +529,9 @@ PROBES = [
      in_priorities("(0-100%, smooth, UI knob)", "(0-200%, smooth, UI knob)")),
     ("README's Output Trim table row widens to 0-200%",
      widen_readme_trim_row),
+    ("Output Trim's default comes from the wrong factory field",
+     in_processor('pctParam("output_trim", "Output Trim", p.oTrim)',
+                  'pctParam("output_trim", "Output Trim", p.mDrv)')),
     ("ROADMAP restores the 23-parameter A/B count",
      in_roadmap("snapshot/restore 24 parameters",
                 "snapshot/restore 23 parameters")),

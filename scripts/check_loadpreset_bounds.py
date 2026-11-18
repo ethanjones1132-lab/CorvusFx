@@ -5,15 +5,13 @@ The loadPreset body opens with a definition-side bounds return BEFORE any
 side effect:
 
   if (index < 0 || index >= 36) return;      (the definition's own guard)
-  if (!presetLoadSilent.load() && hostProgramRecall.exchange(-1) == index)
+  if (hostProgramRecall.exchange(-1) == index)
       return;                                (CV-066 echo-skip)
-  if (!presetLoadSilent.load())
-      undoManager.beginNewTransaction("Load Preset");   (CV-066: silent
-                                              construction-time load skips it)
-  ... presets[36] static table read via `const auto& p = presets[index];`
+  undoManager.beginNewTransaction("Load Preset");
+  ... presets[36] static table read via `const auto& p = factoryPreset(index);`
 
 The call sites / tables are pinned elsewhere (check_preset_load_sites.py
-pins the sole call site + transaction ordering, check_preset_tables.py pins
+pins the live call sites + transaction ordering, check_preset_tables.py pins
 row contents, check_paramchanged_guard.py pins the 2..42 caller window) —
 all of those defend the CALLER. NOTHING pins the CALLEE's own guard.
 Falsifications (all compile clean behind an otherwise-green gate):
@@ -32,9 +30,7 @@ Asserts (comment-stripped, on the real PluginProcessor.cpp):
   (a) the loadPreset body's FIRST statement is
       `if (index < 0 || index >= 36) return;`;
   (b) `undoManager.beginNewTransaction("Load Preset");` appears AFTER the
-      guard (transaction only begins once the index is proven in-range — it is
-      conditional on `!presetLoadSilent` for the CV-066 silent load, but it can
-      never move above the bounds check);
+       guard (live recall begins a transaction only once the index is proven in-range);
   (c) roster lock — the bound literal is EXACTLY 36 (sync with
       presets[36] and getNumPrograms()).
 

@@ -201,8 +201,10 @@ probes = [
          "ranged->setValueNotifyingHost(rng.nextFloat() < 0.15f ? 0.0f : 1.0f);")),
     ("one bypass id demoted off AudioParameterBool in the layout",
      cpp_raw.replace(
-         'params.push_back(std::make_unique<juce::AudioParameterBool>("distortion_bypass", "Distortion Bypass", false));',
-         'params.push_back(pctParam("distortion_bypass", "Distortion Bypass", 0));')),
+         'std::make_unique<juce::AudioParameterBool>("distortion_bypass", '
+         '"Distortion Bypass", p.distByp > 0.5f)',
+         'pctParam("distortion_bypass", "Distortion Bypass", '
+         'p.distByp > 0.5f ? 100.0f : 0.0f)', 1)),
 ]
 for label, mutated in probes:
     if mutated == cpp_raw:

@@ -196,8 +196,7 @@ probes = [
     ("add 'preset' to abParamIds",
      lambda s: s.replace('    "output_trim"\n};', '    "output_trim", "preset"\n};')),
     ("rename layout id without the table",
-     lambda s: s.replace('pctParam("delay_mod", "Delay Mod", 30)',
-                         'pctParam("delay_modx", "Delay Mod", 30)')),
+     lambda s: s.replace('pctParam("delay_mod",', 'pctParam("delay_modx",', 1)),
     # master_width is registered with its own direct AudioParameterFloat (its
     # 0..200% range cannot come from the shared pctParam helper). Renaming that
     # standalone declaration must still be rejected: the Float branch of the

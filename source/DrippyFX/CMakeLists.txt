@@ -208,6 +208,7 @@ target_sources(CorvusFXStateTests PRIVATE
     PluginProcessor.cpp
     PluginEditor.cpp
     tests/CorvusFxStateTests.cpp
+    tests/CorvusFxRenderTests.cpp
 )
 target_include_directories(CorvusFXStateTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(CorvusFXStateTests PRIVATE

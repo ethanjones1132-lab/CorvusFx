@@ -164,7 +164,7 @@ def probe(description, mutator):
 # 1. move distortion_bypass to a pctParam-style 0-100 float registration
 #    (convertTo0to1(1) = 0.01 -> preset-on module loads bypassed)
 probe("distortion_bypass registration moved to pctParam-style float",
-      ('std::make_unique<juce::AudioParameterBool>("distortion_bypass", "Distortion Bypass", false)',
+      ('std::make_unique<juce::AudioParameterBool>("distortion_bypass", "Distortion Bypass", p.distByp > 0.5f)',
        'pctParam("distortion_bypass", "Distortion Bypass", 0)'))
 
 # 2. drop one bypass set() line from loadPreset

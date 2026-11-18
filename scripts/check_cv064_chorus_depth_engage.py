@@ -16,10 +16,8 @@ ramp instead of the current signal.
 
 Fix, pinned here:
 
-  * PluginProcessor's per-sample gate is the bypass crossfade contract only,
-    `if (gChorus > 0.001f)`. The chorus process pair and advanceWritePos() run
-    every sample while the module sits in the chain, so delay history never
-    freezes on a Depth move.
+  * Bypass only blends the output (CV-080). The chorus process pair and
+    advanceWritePos() run every sample, regardless of Depth or bypass.
   * EnhancedChorus owns a depth-engage crossfade: DEPTH_ENGAGE_EPSILON (the
     old 0.001 boundary) plus a DEPTH_ENGAGE_SECONDS (20 ms) linear ramp in
     `engageGain` drive
@@ -35,9 +33,9 @@ Fix, pinned here:
 
 Asserts (comment-stripped, brace-matched bodies):
   FX processBlock
-    (a) the chorus gate is exactly `if (gChorus > 0.001f)` — no Depth conjunct;
+    (a) the chorus bypass only gates the output blend;
     (b) no `if (...)` condition in the per-sample body tests `sChorusDepth`;
-    (c) the gate body calls chorus.process(smpL, 0, ...) then
+    (c) the sample loop calls chorus.process(smpL, 0, ...) then
         chorus.process(smpR, 1, ...) and chorus.advanceWritePos() after both,
         with no depth branch around them;
   EnhancedChorus (dsp/CorvusEffects.h)
@@ -76,7 +74,7 @@ CHORUS_CALL_RE = re.compile(
     r"sChorusRate\s*,\s*sChorusDepth\s*,\s*sChorusFb\s*\)")
 IF_COND_RE = re.compile(r"if\s*\(([^)]*)\)")
 
-GATE_RE = re.compile(r"if\s*\(\s*gChorus\s*>\s*0\.001f\s*\)\s*\{")
+GATE_RE = re.compile(r"if\s*\(\s*gChorus\s*>\s*0\.0f\s*\)\s*\{")
 
 
 def strip_comments(src):
@@ -150,17 +148,13 @@ def check_fx(text):
 
     gate_match = GATE_RE.search(body)
     if gate_match is None:
-        return ("the chorus gate is not `if (gChorus > 0.001f)`: CV-064 removed "
-                "the `sChorusDepth > 0.001f` conjunct so the bypass crossfade "
-                "alone decides whether the process/advance pair runs")
-    gate = brace_body(body, gate_match.end() - 1)
-    if gate is None:
-        return "could not brace-match the chorus gate body"
+        return "missing the chorus output-blend gate"
+    if not re.search(r"sChorusFb\s*=\s*sChorusDepth\s*\*\s*0\.25f\s*;", body):
+        return "chorus feedback must still scale with Depth"
 
-    calls = list(CHORUS_CALL_RE.finditer(gate))
+    calls = list(CHORUS_CALL_RE.finditer(body))
     if len(calls) != 2:
-        return ("expected exactly 2 chorus.process calls inside the bypass "
-                f"gate, found {len(calls)}")
+        return f"expected exactly 2 chorus.process calls, found {len(calls)}"
     if (calls[0].group(1), calls[0].group(2)) != ("smpL", "0"):
         return ("first chorus.process must be the L voice with channel index "
                 f"0, got ({calls[0].group(1)}, {calls[0].group(2)})")
@@ -168,20 +162,17 @@ def check_fx(text):
         return ("second chorus.process must be the R voice with channel index "
                 f"1, got ({calls[1].group(1)}, {calls[1].group(2)})")
 
-    advance_at = gate.find("chorus.advanceWritePos();")
+    advance_at = body.find("chorus.advanceWritePos();")
     if advance_at == -1:
-        return ("chorus.advanceWritePos() is missing from the bypass gate - "
+        return ("chorus.advanceWritePos() is missing - "
                 "the delay line would stop advancing on every rendered sample")
     if advance_at < calls[1].end():
         return ("chorus.advanceWritePos() must follow both chorus.process "
                 "calls (hoisting it shifts the read/write slot every sample)")
 
-    for cond in IF_COND_RE.findall(gate):
-        if re.search(r"depth", cond, flags=re.I):
-            return ("the chorus gate body branches on depth "
-                    f"(`if ({cond.strip()})`) - the process/advance pair must "
-                    "run unconditionally so silent engagement keeps the delay "
-                    "history moving")
+    other_bypass_checks = [cond for cond in IF_COND_RE.findall(body) if "gChorus" in cond]
+    if advance_at > gate_match.start() or len(other_bypass_checks) != 1:
+        return "chorus processing and write position must not be gated by bypass"
 
     if re.search(r"sChorusDepth\s*>\s*0\.001f", body):
         return ("the old `sChorusDepth > 0.001f` process-and-advance gate is "
@@ -247,13 +238,6 @@ def check_header(text):
                 "beginBlock no longer derives engageStep from "
                 "DEPTH_ENGAGE_SECONDS and the sample rate - the engage ramp "
                 "must be time-based, not per-sample-per-block luck"),
-        require(begin, r"float\s+effectiveMix\s*=\s*mix\s*\*\s*0\.90f\s*;",
-                "beginBlock no longer derives effectiveMix from the Mix "
-                "control - the independent Dry/Wet blend must survive CV-064"),
-        require(begin, r"chorusBlockCoeffs\s*\.\s*dryGain\s*=\s*std::cos\(",
-                "beginBlock no longer computes the Mix dry gain"),
-        require(begin, r"chorusBlockCoeffs\s*\.\s*wetGain\s*=\s*std::sin\(",
-                "beginBlock no longer computes the Mix wet gain"),
     ])
     if err:
         return err
@@ -419,8 +403,8 @@ def main():
     if verdict is not None:
         print("CV064-CHORUS-DEPTH FAIL: %s" % verdict)
         return 1
-    print("cv064-chorus-depth: the bypass gate alone runs the chorus "
-          "process/advance pair; the EnhancedChorus depth-engage crossfade "
+    print("cv064-chorus-depth: bypass only gates the output blend; "
+          "the EnhancedChorus depth-engage crossfade "
           "fades the contribution in and out over 20 ms while the delay "
           "history keeps advancing, and Depth stays independent of Mix")
 
@@ -428,7 +412,7 @@ def main():
     probes = [
         ("FX: restore the old `gChorus && sChorusDepth > 0.001f` gate", "fx",
          lambda s: _replace_once(
-             s, "if (gChorus > 0.001f)",
+              s, "if (gChorus > 0.0f)",
              "if (gChorus > 0.001f && sChorusDepth > 0.001f)")),
         ("FX: delete chorus.advanceWritePos() (history frozen)", "fx",
          lambda s: _replace_once(s, "chorus.advanceWritePos();", "")),
@@ -484,10 +468,10 @@ def main():
     # Specificity: edits that only add prose naming the pinned members must
     # stay accepted.
     fx_neutral = fx_text.replace(
-        "        if (gChorus > 0.001f)",
-        "        // A comment naming gChorus, sChorusDepth, advanceWritePos()\n"
-        "        // and chorus.process() is prose, not a gate.\n"
-        "        if (gChorus > 0.001f)", 1)
+        "            if (gChorus > 0.0f)",
+        "            // A comment naming gChorus, sChorusDepth, advanceWritePos()\n"
+        "            // and chorus.process() is prose, not a gate.\n"
+        "            if (gChorus > 0.0f)", 1)
     if fx_neutral == fx_text:
         print("CV064-CHORUS-DEPTH FAIL: benign FX comment probe is stale: the "
               "edit did not apply")

@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """Headless checker: per-block beginBlock() preconditioning fan pin.
 
-processBlock (source/DrippyFX/PluginProcessor.cpp) fans out 5 per-block
+processBlock (source/DrippyFX/PluginProcessor.cpp) fans out four per-block
 beginBlock() calls — `delay.beginBlock(delayDamping)`,
-`upgradedReverb.beginBlock(...)`, `distortion.beginBlock(fatness)`,
-`chorus.beginBlock(...)` and `masterOutput.beginBlock()`. All five are
-UNCONDITIONAL. These hoist per-sample std::exp() work into once-per-block
-coefficient caches (each site's comment says so). Grep over scripts/ showed
-ZERO checkers pin the 5 call sites (hits are effect-internal checkers that
-pin the callee bodies, not the processBlock fan).
+`upgradedReverb.beginBlock(...)`, `chorus.beginBlock(...)`, and
+`masterOutput.beginBlock()`. Drive now follows a per-sample control (CV-078).
 
 An edit that deletes a beginBlock call ("looks unused"), re-gates the reverb
 call on `reverbMix > 0.001f` or the chorus call on `chorusDepth > 0.001f`
@@ -24,8 +20,8 @@ checker asserts the new contract; check_cv061_engage_from_zero.py pins the
 same two sites plus the guarded renormalizers.
 
 Asserts (comment-stripped, brace-matched processBlock body):
-  (a) all 5 beginBlock calls appear, in DSP order
-      delay → upgradedReverb → distortion → chorus → masterOutput;
+  (a) all four beginBlock calls appear, in DSP order
+      delay → upgradedReverb → chorus → masterOutput;
   (b) the reverb and chorus calls are unconditional: the statement text
       immediately before each call contains no `if`/`else`/`?` guard, and
       neither old gate literal (`reverbMix > 0.001f`, `chorusDepth > 0.001f`)
@@ -47,7 +43,6 @@ SRC = ROOT / "source" / "DrippyFX"
 CALLS = [
     ("delay", "delay.beginBlock(", ),
     ("upgradedReverb", "upgradedReverb.beginBlock("),
-    ("distortion", "distortion.beginBlock("),
     ("chorus", "chorus.beginBlock("),
     ("masterOutput", "masterOutput.beginBlock("),
 ]
@@ -204,6 +199,6 @@ if benign == proc_c:
 if check_fan(extract_body(benign, "processBlock")) is not None:
     fail("benign no-op comment edit should be accepted")
 
-print("BEGINBLOCK-FAN OK: 5 beginBlock call sites, reverb/chorus unconditional, "
+print("BEGINBLOCK-FAN OK: 4 beginBlock call sites, reverb/chorus unconditional, "
       "loop-precede order pinned")
 sys.exit(0)

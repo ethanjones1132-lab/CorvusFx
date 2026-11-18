@@ -39,28 +39,6 @@ private:
     bool closed = false;
 };
 
-// CV-066: marks a construction-time preset load as silent. While the guard is
-// armed, loadPreset() writes every parameter with setValue() instead of
-// setValueNotifyingHost(), and opens no undo transaction: a freshly inserted
-// plugin has no history to amend and the host never asked for a program change,
-// so the default preset must not look like a user edit.
-class SilentPresetLoad final
-{
-public:
-    explicit SilentPresetLoad(std::atomic<bool>& flag) noexcept
-        : flag(flag)
-    {
-        flag.store(true, std::memory_order_seq_cst);
-    }
-
-    ~SilentPresetLoad() { flag.store(false, std::memory_order_seq_cst); }
-
-    SilentPresetLoad(const SilentPresetLoad&) = delete;
-    SilentPresetLoad& operator=(const SilentPresetLoad&) = delete;
-
-private:
-    std::atomic<bool>& flag;
-};
 }
 
 CorvusFXAudioProcessor::CorvusFXAudioProcessor()
@@ -114,7 +92,7 @@ apvts(*this, &undoManager, "Parameters", createParameterLayout())
     // has a coherent view instead of waiting for the first message-thread edit.
     publishMidiMap();
 
-    // CV-028: commit the initial parameter set and seed the block header's
+    // CV-028 / CV-070: publish the layout's Clean Sparkle values and seed the block header's
     // last-good generation before the first render, so a block that lands while
     // a recall is already in flight still has a coherent set to fall back on.
     publishParameterGeneration();
@@ -124,25 +102,12 @@ apvts(*this, &undoManager, "Parameters", createParameterLayout())
     // mapped CC reaches the host whether or not the editor window is open.
     startTimerHz(30);
 
-    // CV-066: a freshly inserted FX starts on the factory default — preset 0,
-    // "Clean Sparkle" — instead of whatever the parameter defaults happen to
-    // leave behind. The load is silent: no undo transaction, no change gesture
-    // and no host notification. Publishing/committing inside loadPreset() makes
-    // the completed set the published one, and the re-seed below adopts it so
-    // the first block never falls back on the pre-load generation.
-    {
-        SilentPresetLoad silentLoad(presetLoadSilent);
-        loadPreset(0);
-    }
-    lastGoodGeneration = readParameterGeneration(lastGoodGeneration);
-
     // CV-067: seed both A/B compare slots from the settled live parameter
     // values, once, and mark them persisted. The slots now exist in every
     // session — including one whose host state carries no "abSlots" child —
     // so the editor never has to seed them and a never-seeded slot can no
-    // longer recall an all-zero mix. This runs after the CV-066 default preset
-    // load above, so the seed captures the state a fresh insert actually
-    // plays.
+    // longer recall an all-zero mix. The seed captures the same layout values
+    // that the fresh insert plays.
     seedABSnapshotsFromLiveParameters();
     abSnapshotsPersisted = true;
 }
@@ -181,33 +146,12 @@ void CorvusFXAudioProcessor::parameterChanged(const juce::String& parameterID, f
     }
 }
 
-void CorvusFXAudioProcessor::loadPreset(int index)
+namespace
 {
-    // index is the preset array index (0-35), mapped from combo item ID
-    // via idToPreset[] in parameterChanged(), or directly from DAW host
-    // via setCurrentProgram's presetToId[] lookup.
-    // Combo order: CLEAN [0-5], WARM [6-11], CREATIVE [12-17], EXTREME [18-23], SIGNATURE [24-29], DREAM [30-35]
-    if (index < 0 || index >= 36) return;
+struct P { float fat, cD, cR, cM, dT, dFb, dM, dDmp, dMod, rS, rDmp, rM, rMod, mDrv, mWid, mMid, mSide, distByp, chorusByp, delayByp, reverbByp, masterByp, oTrim; };
 
-    // CV-066: setCurrentProgram() loads the preset directly and then writes the
-    // "preset" parameter, whose listener would echo straight back here for the
-    // same index. Consume that echo instead of loading the same preset twice
-    // (and re-notifying every parameter behind the host's program change).
-    if (!presetLoadSilent.load() && hostProgramRecall.exchange(-1) == index)
-        return;
-
-    // CV-066: a construction-time load is silent — it must not leave an undo
-    // entry behind, because the plugin was just inserted and nothing was edited.
-    if (!presetLoadSilent.load())
-        undoManager.beginNewTransaction("Load Preset");
-
-    // CV-028: the writes below are one recall. The batch epoch keeps a block
-    // header that overlaps them from rendering a mix of the old preset and the
-    // new one; the completed set is published as one generation at the end.
-    ParameterGenerationBatch batch(presetBatchSequence);
-
-    //                    fat  cD   cR    cM   dT   dFb  dM   dDmp dMod rS   rDmp rM   rMod  mDrv mWid mMid mSide dByp cByp dByp rByp mByp
-    struct P { float fat, cD, cR, cM, dT, dFb, dM, dDmp, dMod, rS, rDmp, rM, rMod, mDrv, mWid, mMid, mSide, distByp, chorusByp, delayByp, reverbByp, masterByp, oTrim; };
+const P& factoryPreset(int index)
+{
     static const P presets[36] = {
         // ── CLEAN (pos 0-5): transparent enhancement, pristine highs ──────
         // 0: Clean Sparkle — subtle widening, pristine highs
@@ -293,19 +237,31 @@ void CorvusFXAudioProcessor::loadPreset(int index)
         // 35: Solar Flare — bright piercing drive, fast chorus, explosive decay
         { 65, 70, 5.5f, 45, 180, 25, 22, 20, 50,  30, 40, 10, 75,  60, 110,  25,  35, 0, 0, 0, 0, 0, 100 },
     };
-    
-    const auto& p = presets[index];
+    return presets[index];
+}
+}
+
+void CorvusFXAudioProcessor::loadPreset(int index)
+{
+    // index is the preset array index (0-35), mapped from combo item ID
+    // via idToPreset[] in parameterChanged(), or directly from DAW host
+    // via setCurrentProgram's presetToId[] lookup.
+    if (index < 0 || index >= 36) return;
+
+    // CV-066: setCurrentProgram loads directly and then updates the "preset"
+    // parameter; consume its listener echo rather than loading twice.
+    if (hostProgramRecall.exchange(-1) == index)
+        return;
+
+    undoManager.beginNewTransaction("Load Preset");
+
+    // CV-028: publish the recall as one coherent parameter generation.
+    ParameterGenerationBatch batch(presetBatchSequence);
+    const auto& p = factoryPreset(index);
     auto set = [this](const juce::String& id, float v) {
         auto* param = apvts.getParameter(id);
         if (param)
         {
-            // CV-066: silent (construction-time) load — write the value without
-            // opening a gesture, notifying the host or touching the undo history.
-            if (presetLoadSilent.load())
-            {
-                param->setValue(param->convertTo0to1(v));
-                return;
-            }
             param->beginChangeGesture();
             try
             {
@@ -393,6 +349,11 @@ bool CorvusFXAudioProcessor::isParameterLocked(const juce::String& paramID) cons
 
 juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::createParameterLayout()
 {
+    // CV-070: JUCE 8's ParameterAdapter seeds its raw atomic from
+    // getDefaultValue(), not getValue(). Declare the actual startup program
+    // here, before APVTS registers the parameters: no post-registration
+    // setter, listener notification, change gesture or undo step is needed.
+    const auto& p = factoryPreset(0); // Clean Sparkle
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
     // Helper lambda for percentage parameters with proper formatting
@@ -433,38 +394,38 @@ juce::AudioProcessorValueTreeState::ParameterLayout CorvusFXAudioProcessor::crea
     // prints and the README parameter table lists. The parameter ID stays
     // "fatness" byte-for-byte so saved sessions, factory presets, MIDI maps
     // and state round-trips keep their identity.
-    params.push_back(pctParam("fatness", "Drive", 0));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("distortion_bypass", "Distortion Bypass", false));
-    params.push_back(pctParam("chorus_depth", "Chorus Depth", 0));
-    params.push_back(hzParam("chorus_rate", "Chorus Rate", 0.1f, 10, 2));
-    params.push_back(pctParam("chorus_mix", "Chorus Mix", 50));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("chorus_bypass", "Chorus Bypass", false));
-    params.push_back(msParam("delay_time", "Delay Time", 0, 2000, 250));
-    params.push_back(pctParam("delay_feedback", "Delay Feedback", 30));
-    params.push_back(pctParam("delay_mix", "Delay Mix", 0));
-    params.push_back(pctParam("delay_damping", "Delay Damping", 40));
-    params.push_back(pctParam("delay_mod", "Delay Mod", 30));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("delay_bypass", "Delay Bypass", false));
-    params.push_back(pctParam("reverb_size", "Reverb Size", 50));
-    params.push_back(pctParam("reverb_damping", "Reverb Damping", 50));
-    params.push_back(pctParam("reverb_mix", "Reverb Mix", 0));
-    params.push_back(pctParam("reverb_mod", "Reverb Mod", 30));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("reverb_bypass", "Reverb Bypass", false));
-    params.push_back(pctParam("master_drive", "Master Drive", 0));
+    params.push_back(pctParam("fatness", "Drive", p.fat));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("distortion_bypass", "Distortion Bypass", p.distByp > 0.5f));
+    params.push_back(pctParam("chorus_depth", "Chorus Depth", p.cD));
+    params.push_back(hzParam("chorus_rate", "Chorus Rate", 0.1f, 10, p.cR));
+    params.push_back(pctParam("chorus_mix", "Chorus Mix", p.cM));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("chorus_bypass", "Chorus Bypass", p.chorusByp > 0.5f));
+    params.push_back(msParam("delay_time", "Delay Time", 0, 2000, p.dT));
+    params.push_back(pctParam("delay_feedback", "Delay Feedback", p.dFb));
+    params.push_back(pctParam("delay_mix", "Delay Mix", p.dM));
+    params.push_back(pctParam("delay_damping", "Delay Damping", p.dDmp));
+    params.push_back(pctParam("delay_mod", "Delay Mod", p.dMod));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("delay_bypass", "Delay Bypass", p.delayByp > 0.5f));
+    params.push_back(pctParam("reverb_size", "Reverb Size", p.rS));
+    params.push_back(pctParam("reverb_damping", "Reverb Damping", p.rDmp));
+    params.push_back(pctParam("reverb_mix", "Reverb Mix", p.rM));
+    params.push_back(pctParam("reverb_mod", "Reverb Mod", p.rMod));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("reverb_bypass", "Reverb Bypass", p.reverbByp > 0.5f));
+    params.push_back(pctParam("master_drive", "Master Drive", p.mDrv));
     // CV-036: master_width owns a 0..200% range so the stored preset widths
     // through 140% are not clamped to 100%. Every other percentage knob keeps
     // the shared pctParam helper's 0..100 range and formatting.
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         "master_width", "Master Width",
-        juce::NormalisableRange<float>(0.0f, 200.0f, 0.1f), 100.0f,
+        juce::NormalisableRange<float>(0.0f, 200.0f, 0.1f), p.mWid,
         juce::AudioParameterFloatAttributes()
             .withLabel("%")
             .withStringFromValueFunction([](float value, int) { return juce::String(value, 1) + " %"; })
             .withValueFromStringFunction([](const juce::String& text) { return text.replace("%", "").getFloatValue(); })));
-    params.push_back(pctParam("master_mid_drive", "Master Mid Drive", 0));
-    params.push_back(pctParam("master_side_drive", "Master Side Drive", 0));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("master_bypass", "Master Bypass", false));
-    params.push_back(pctParam("output_trim", "Output Trim", 100));
+    params.push_back(pctParam("master_mid_drive", "Master Mid Drive", p.mMid));
+    params.push_back(pctParam("master_side_drive", "Master Side Drive", p.mSide));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("master_bypass", "Master Bypass", p.masterByp > 0.5f));
+    params.push_back(pctParam("output_trim", "Output Trim", p.oTrim));
     // CV-041: "preset" is a recall trigger, not a mix parameter. Registering it
     // non-automatable keeps hosts from exposing/recording an automation lane
     // for it, so a plain automation write can no longer reach parameterChanged()
@@ -1135,14 +1096,14 @@ void CorvusFXAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     smoothChorusDepth.reset(sampleRate, smoothTime);
     smoothChorusRate.reset(sampleRate, smoothTime);
     smoothChorusMix.reset(sampleRate, smoothTime);
-    smoothDelayTime.reset(sampleRate, smoothTime);
+    smoothDelayTime.reset(sampleRate, 0.0); // EnhancedDelay crossfades fixed taps
     smoothDelayFeedback.reset(sampleRate, smoothTime);
     smoothDelayMix.reset(sampleRate, smoothTime);
     smoothDelayDamping.reset(sampleRate, smoothTime);
     smoothDelayMod.reset(sampleRate, smoothTime);
     smoothReverbSize.reset(sampleRate, smoothTime);
     smoothReverbDamping.reset(sampleRate, smoothTime);
-    smoothReverbMix.reset(sampleRate, smoothTime);
+    smoothReverbMix.reset(sampleRate, 0.0); // UpgradedReverb already ramps its applied gains
     smoothReverbMod.reset(sampleRate, smoothTime);
     smoothMasterDrive.reset(sampleRate, smoothTime);
     smoothMasterWidth.reset(sampleRate, smoothTime);
@@ -1443,7 +1404,7 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 stageMidiHostNotify(p, normValue);
         }
     }
-// Snapshot smoothed values for the beginning of this block.
+    // Snapshot smoothed values for the beginning of this block.
     // beginBlock() calls use these block-level snapshots since their
     // coefficient caches don't need per-sample ramping (the cached
     // exp() values are ~constant over a 64-sample block).
@@ -1457,7 +1418,6 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // value. getCurrentValue() is a pure read and does NOT advance the ramp
     // — it must never be getNextValue() here, which would consume one ramp
     // step per block and desync the per-sample getNextValue() loop below.
-    const float fatness     = smoothFatness.getCurrentValue();
     const float chorusDepth = smoothChorusDepth.getCurrentValue();
     const float chorusRate  = smoothChorusRate.getCurrentValue();
     const float chorusMix   = smoothChorusMix.getCurrentValue();
@@ -1472,17 +1432,12 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     // Pre-compute delay coefficients once per block (avoids 2× std::exp() per sample)
     delay.beginBlock(delayDamping);
+    const float sDelayTime = smoothDelayTime.getTargetValue();
 
     // Pre-compute reverb coefficients once per block (avoids per-sample setFeedback/setDamp + mod calc)
     //
-    // CV-061: always refresh the block coefficients — never gate this on the
-    // block-start smoothed mix. The per-sample smoothed mix can cross 0.001
-    // INSIDE the loop below even when the block began at 0 (knob raise, preset
-    // load), and the first processSample() then rotates the master LFO with
-    // modLfoCosDelta/modLfoSinDelta still 0 from their zero initialisers: the
-    // phasor collapses to (0, 0) and the renormalizer divides by a zero
-    // magnitude, poisoning the reverb tail with NaN for the rest of the
-    // session. beginBlock() is cheap block-rate work, so it runs every block.
+    // CV-061/CV-073: the tank advances even at zero blend, so its block
+    // coefficients must be current before every processSample() call.
     upgradedReverb.beginBlock(reverbSize, reverbDamping, reverbMix, sReverbMod, 1.0f, reverbPreDelay);
 
     // ── Level meter accumulation (merged into main loop) ──
@@ -1503,9 +1458,6 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // Chain: Distortion → Chorus → Delay → Reverb → Master → Limiter
     // ══════════════════════════════════════════════════════════════
 
-    // Pre-compute distortion coefficients once per block (avoids 4× std::exp() per sample)
-    distortion.beginBlock(fatness);
-
     // Pre-compute chorus coefficients once per block (avoids redundant per-voice math)
     //
     // CV-061: unconditional for the same reason as the reverb call above — the
@@ -1520,7 +1472,6 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
 
     // These smoothers feed only block-level coefficient caches, so advance
     // their ramps once for the samples this block will render.
-    smoothChorusMix.skip(numSamples);
     smoothDelayDamping.skip(numSamples);
     smoothReverbSize.skip(numSamples);
     smoothReverbDamping.skip(numSamples);
@@ -1544,11 +1495,10 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         const float sFatness      = smoothFatness.getNextValue();
         const float sChorusDepth  = smoothChorusDepth.getNextValue();
         const float sChorusRate   = smoothChorusRate.getNextValue();
+        const float sChorusMix    = smoothChorusMix.getNextValue();
         const float sChorusFb     = sChorusDepth * 0.25f;
-        const float sDelayTime    = smoothDelayTime.getNextValue();
         const float sDelayFb      = smoothDelayFeedback.getNextValue();
         const float sDelayMix     = smoothDelayMix.getNextValue();
-        const float sReverbMix    = smoothReverbMix.getNextValue();
         const float sDelayMod    = smoothDelayMod.getNextValue();
         const float sOverall      = smoothOverall.getNextValue(); // Per-sample Overall smoothing — eliminates zipper noise on global wet/dry
         const float sMasterDrive  = smoothMasterDrive.getNextValue(); // Per-sample Master Drive smoothing
@@ -1591,49 +1541,55 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         smpR = std::isfinite(smpR) ? smpR : 0.0f;
 
         // 1. DISTORTION (click-free bypass crossfade)
-        if (gDist > 0.001f && sFatness > 0.001f)
+        if (gDist > 0.0f && sFatness > 0.0f)
         {
+            distortion.setAmount(sFatness);
             float dL, dR;
             distortion.process(smpL, smpR, dL, dR);
-            smpL = smpL * (1.0f - gDist) + dL * gDist;
-            smpR = smpR * (1.0f - gDist) + dR * gDist;
+            // Fade the oversampled path in over the bottom 1% of Drive so
+            // crossing zero doesn't hard-switch its FIR history into the signal.
+            const float driveGain = gDist * std::min(1.0f, sFatness * 100.0f);
+            smpL = smpL * (1.0f - driveGain) + dL * driveGain;
+            smpR = smpR * (1.0f - driveGain) + dR * driveGain;
         }
 
-        // 2. CHORUS (click-free bypass crossfade)
-        // CV-064: Depth is a modulation-depth control, not a wet/dry mix, so it
-        // no longer gates the per-sample call. Processing and advanceWritePos()
-        // run whenever the chorus is in the chain; the depth-engage crossfade
-        // inside chorus.process() fades the chorus contribution in and out, so
-        // the delay history keeps moving while the output is inaudible. The old
-        // `&& sChorusDepth > 0.001f` conjunct froze the delay line and stepped
-        // the output between the wet blend and dry in a single sample.
-        if (gChorus > 0.001f)
+        // 2. CHORUS: bypass blends the output, not the delay line, LFOs or
+        // Depth engage ramp. Both channels share this sample's Mix.
         {
+            chorus.setMix(sChorusMix);
             float cl = chorus.process(smpL, 0, sChorusRate, sChorusDepth, sChorusFb);
             float cr = chorus.process(smpR, 1, sChorusRate, sChorusDepth, sChorusFb);
-            smpL = smpL * (1.0f - gChorus) + cl * gChorus;
-            smpR = smpR * (1.0f - gChorus) + cr * gChorus;
             chorus.advanceWritePos();
+            if (gChorus > 0.0f)
+            {
+                smpL = smpL * (1.0f - gChorus) + cl * gChorus;
+                smpR = smpR * (1.0f - gChorus) + cr * gChorus;
+            }
         }
 
-        // 3. DELAY (click-free bypass crossfade)
-        if (gDelay > 0.001f && sDelayMix > 0.001f && sDelayTime > 0.0f)
+        // 3. DELAY: keep writing and retiming even at zero output blend.
         {
             float dL, dR;
             delay.processSample(smpL, smpR, dL, dR,
                 sDelayTime, sDelayFb, sDelayMix,
                 pingPong, sDelayMod);
-            smpL = smpL * (1.0f - gDelay) + dL * gDelay;
-            smpR = smpR * (1.0f - gDelay) + dR * gDelay;
+            if (gDelay > 0.0f && sDelayMix > 0.0f)
+            {
+                smpL = smpL * (1.0f - gDelay) + dL * gDelay;
+                smpR = smpR * (1.0f - gDelay) + dR * gDelay;
+            }
         }
 
-        // 4. REVERB (click-free bypass crossfade)
-        if (gReverb > 0.001f && sReverbMix > 0.001f)
+        // 4. REVERB: let the tank decay in real time; its own gain ramp
+        // controls Mix, and bypass crossfades the result without pausing it.
         {
             float rL, rR;
             upgradedReverb.processSample(smpL, smpR, rL, rR);
-            smpL = smpL * (1.0f - gReverb) + rL * gReverb;
-            smpR = smpR * (1.0f - gReverb) + rR * gReverb;
+            if (gReverb > 0.0f)
+            {
+                smpL = smpL * (1.0f - gReverb) + rL * gReverb;
+                smpR = smpR * (1.0f - gReverb) + rR * gReverb;
+            }
         }
 
         // 5. MASTER OUTPUT STAGE — analog warmth and professional polish

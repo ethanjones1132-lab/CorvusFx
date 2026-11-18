@@ -19,10 +19,10 @@ The live shape this checker enforces for (2):
 
     blockCoeffs.dryGain = std::cos(wetMix * halfPi);
     blockCoeffs.wetGain = std::sin(wetMix * halfPi) * 1.5f;
-    if (!wetMixValid || std::fabs(wetMix - lastWetMix) <= 1e-6f) {
-        appliedDryGain = dryGain;  appliedWetGain = wetGain;  // settled/exact
+    if (!wetMixValid) {
+        appliedDryGain = dryGain;  appliedWetGain = wetGain;  // initial seed
         mixRampSamplesLeft = 0;
-    } else {
+    } else if (wetMix != lastWetMix) {
         const int rampSamples = jmax(1, (int)(MIX_RAMP_SECONDS * sampleRate));
         mixRampSamplesLeft = rampSamples;
         dryGainStep = (dryGain - appliedDryGain) / rampSamples; ...
@@ -41,8 +41,8 @@ Asserts on the real tree (comment-stripped, brace-matched UpgradedReverb):
       staging trade for the ramp);
   (b) beginBlock() arms the ramp only on a mix change: it tests `lastWetMix`,
       computes a per-sample step from the distance to the target over a
-      MIX_RAMP_SECONDS-long ramp, and snaps applied* to the targets when the
-      mix has not moved (a settled mix stays bit-exact);
+      MIX_RAMP_SECONDS-long ramp, and leaves an in-flight ramp alone when the
+      requested target has not moved;
   (c) the ramp state is declared at class scope with a defined start, and
       prepare() resets it so the first block snaps instead of ramping from
       stale gain state;
@@ -166,20 +166,19 @@ def _verify(header_text):
              "wetMix (blockCoeffs.wetGain = std::sin(wetMix * ...) * 1.5f) - "
              "the reverb gain staging must not be traded for the ramp")
 
-    # (b) A mix change arms a per-sample ramp; an unchanged mix snaps.
+    # (b) A change starts a ramp; the next block's identical target must not snap.
     _require(begin,
-             r"std::fabs\s*\(\s*wetMix\s*-\s*lastWetMix\s*\)",
+             r"if\s*\(\s*!wetMixValid\s*\)\s*\{[^}]*\}\s*"
+             r"else\s+if\s*\(\s*wetMix\s*!=\s*lastWetMix\s*\)",
              "beginBlock no longer compares the requested mix against "
              "lastWetMix - without a change test the applied gains either jump "
              "every block or ramp forever")
     _require(begin,
              r"appliedDryGain\s*=\s*blockCoeffs\.dryGain\s*;",
-             "beginBlock no longer snaps appliedDryGain to the target when the "
-             "mix is unchanged - a settled mix must stay bit-exact")
+             "beginBlock no longer seeds the initial dry gain")
     _require(begin,
              r"appliedWetGain\s*=\s*blockCoeffs\.wetGain\s*;",
-             "beginBlock no longer snaps appliedWetGain to the target when the "
-             "mix is unchanged - a settled mix must stay bit-exact")
+             "beginBlock no longer seeds the initial wet gain")
     _require(begin,
              r"rampSamples\s*=\s*juce::jmax\s*\(\s*1\s*,",
              "beginBlock no longer derives a non-zero ramp length in samples")
@@ -323,6 +322,9 @@ def main():
          lambda s: s.replace(
              "blockCoeffs.mixRampSamplesLeft = rampSamples;",
              "blockCoeffs.mixRampSamplesLeft = 0;", 1)),
+        ("snap an in-flight ramp when the target repeats at a block boundary",
+         lambda s: s.replace("if (!wetMixValid)",
+                             "if (!wetMixValid || wetMix == lastWetMix)", 1)),
         ("drop the per-sample ramp advance in processSample",
          lambda s: s.replace(
              "if (blockCoeffs.mixRampSamplesLeft > 0)",

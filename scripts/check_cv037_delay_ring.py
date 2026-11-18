@@ -25,11 +25,11 @@ Asserts on the real tree (comment-stripped, brace-matched EnhancedDelay):
       the right channel's 2.7% stretch plus modulation on top of it, at 44.1,
       48, 96 and 192 kHz (evaluated from the source clamp expression and the
       ring model) - the 192 kHz case is the reported defect (~1000 ms);
-  (g) processSample()/beginBlock() never assign/resize/clear the ring; the
+  (g) the render entry points and tap helpers never assign/resize/clear the ring; the
       reads still go through hermiteInterp over ringLength and the write
       heads still wrap at ringLength;
-  (h) the 44.1/48 kHz delay math is untouched: msToSamples =
-      sampleRate * 0.001f, the 0.9997 smoothing coefficient, and
+  (h) the knob still uses the same units and positive range: msToSamples =
+       sampleRate * 0.001f, and
       `jlimit(1.0f, maxDelayF, delayTimeMs * msToSamples)`.
 
 Negative probes (in-memory mutated copies; a stale mutation aborts, the real
@@ -285,32 +285,32 @@ def verify(header_text):
     proc = procs[0]
 
     blocks = function_bodies(delay, r"void\s+beginBlock\s*\([^)]*\)")
-    hot = [(proc, "processSample()")] + [(b, "beginBlock()") for b in blocks]
+    reads = function_bodies(delay, r"float\s+readTap\s*\(")
+    writes = function_bodies(delay, r"void\s+writeInput\s*\(")
+    if not reads or not writes:
+        raise Reject("delay tap read or ring write helper missing")
+    hot = ([(proc, "processSample()"), (reads[0], "readTap()"),
+            (writes[0], "writeInput()")] + [(b, "beginBlock()") for b in blocks])
     for body, label in hot:
         alloc = re.search(ALLOC_ON_AUDIO_THREAD, body)
         if alloc is not None:
             raise Reject("%s allocates or clears ring memory (%r) - that is "
                          "audio-thread work" % (label, alloc.group(0)))
 
-    for ch in (0, 1):
-        if re.search(r"hermiteInterp\s*\(\s*buffer\s*\[\s*%d\s*\]\s*\.\s*data"
-                     r"\s*\(\s*\)\s*,\s*ringLength\s*," % ch, proc) is None:
-            raise Reject("processSample() no longer reads channel %d with "
-                         "hermiteInterp over ringLength" % ch)
-    wraps = re.findall(r"\+\+writePos\s*\[\s*\d\s*\]\s*>=\s*ringLength", proc)
+    if re.search(r"hermiteInterp\s*\(\s*buffer\s*\[\s*channel\s*\]\s*\.\s*data"
+                 r"\s*\(\s*\)\s*,\s*ringLength\s*,", reads[0]) is None:
+        raise Reject("readTap() must use Hermite interpolation over the prepared ring")
+    wraps = re.findall(r"\+\+writePos\s*\[\s*\d\s*\]\s*>=\s*ringLength", writes[0])
     if len(wraps) < 2:
         raise Reject("processSample() no longer wraps both write heads at "
                      "ringLength - the ring end must follow the allocation")
 
-    # --- (h) the 44.1/48 kHz delay math is unchanged -----------------------
+    # --- (h) the units and clamping are independent of the time transition ---
     if re.search(r"msToSamples\s*=\s*static_cast<float>\s*\(\s*sampleRate\s*\)"
                  r"\s*\*\s*0\.001f", prepare) is None:
         raise Reject("prepare() no longer derives "
                      "`msToSamples = sampleRate * 0.001f` - the knob's "
                      "ms-to-samples math changed")
-    if re.search(r"smooth\s*=\s*0\.9997f", prepare) is None:
-        raise Reject("prepare() lost the 0.9997 delay-time smoothing "
-                     "coefficient - the delay-time ramp changed")
     if re.search(r"jlimit\s*\(\s*1\.0f\s*,\s*blockCoeffs\.maxDelayF\s*,\s*"
                  r"delayTimeMs\s*\*\s*blockCoeffs\.msToSamples\s*\)",
                  proc) is None:
@@ -390,8 +390,7 @@ def main():
     print("cv037: delay ring is sized from prepare()'s sample rate (2.06 s: "
           "2000 ms + stereo stretch + mod + guard), "
           "both write heads restart on resize, the clamp admits the full "
-          "0..2000 ms knob range at 44.1/48/96/192 kHz, and the delay math is "
-          "unchanged")
+          "0..2000 ms knob range at 44.1/48/96/192 kHz")
 
     probes = [
         ("restore the fixed 192000-sample ring",

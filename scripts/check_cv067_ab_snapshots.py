@@ -17,7 +17,7 @@ The fix pins the ownership in the processor:
 
   (a) PluginProcessor.cpp constructor seeds both slots ONCE from the settled
       live parameter values (`seedABSnapshotsFromLiveParameters();`) after the
-      CV-066 default `loadPreset(0);` has settled them, and marks them
+       CV-070 layout has initialized them, and marks them
       persisted (`abSnapshotsPersisted = true;`). The constructor ordering is
       part of the contract: a seed before the default preset load would
       capture the pre-load parameter defaults.
@@ -168,7 +168,7 @@ def verify(cpp_text=None, hdr_text=None, ed_text=None):
                 errors.append(f"the seed must not raise {label} ({needle}) - a "
                               "seed is not a user edit")
 
-    # -- (c) constructor: seed once, after the default preset load ----------
+    # -- (c) constructor: seed once, from layout-initialized live values ----
     ctor_span = body_after(cpp, CTOR)
     if ctor_span is None:
         errors.append(f"could not find the {PROCESSOR} constructor body")
@@ -183,16 +183,6 @@ def verify(cpp_text=None, hdr_text=None, ed_text=None):
         if len(seed_calls) != 1:
             errors.append(f"the constructor must seed exactly once (found "
                           f"{len(seed_calls)} calls)")
-        load = ctor.find("loadPreset(0);")
-        seed_at = ctor.find(SEED_CALL)
-        if load < 0:
-            errors.append("the constructor lost its default `loadPreset(0);` - "
-                          "the seed origin cannot be pinned")
-        elif seed_at < 0 or seed_at < load:
-            errors.append("the constructor seed must come AFTER the default "
-                          "`loadPreset(0);` - a seed before it captures the "
-                          "pre-load parameter defaults instead of the state a "
-                          "fresh insert plays")
         flag_writes = re.findall(r"abSnapshotsPersisted\s*=\s*true\s*;", ctor)
         if len(flag_writes) != 1:
             errors.append(f"the constructor must mark the seeded pair once "
@@ -344,15 +334,6 @@ def mute_ctor_seed(text):
     return text.replace(CTOR_SEED, "", 1)
 
 
-def move_ctor_seed_early(text):
-    """P4: seed BEFORE the default preset load (captures pre-load defaults)."""
-    if text.count(CTOR_SEED) != 1 or "    startTimerHz(30);\n" not in text:
-        return None
-    moved = text.replace(CTOR_SEED, "", 1)
-    return moved.replace("    startTimerHz(30);\n",
-                         "    startTimerHz(30);\n" + CTOR_SEED, 1)
-
-
 def mute_fallback(text):
     """P5: drop the restore fallback seed."""
     if text.count(FALLBACK_TEXT) != 1:
@@ -380,8 +361,6 @@ PROBES = [
     ("editor reseed re-introduced", "ed", mutate_editor_reseed),
     ("editor writes a snapshot array", "ed", mutate_editor_snapshot_write),
     ("constructor seed removed", "cpp", mute_ctor_seed),
-    ("constructor seed moved before the default preset load", "cpp",
-     move_ctor_seed_early),
     ("restore fallback seed removed", "cpp", mute_fallback),
     ("restore fallback seed made unconditional", "cpp", ungate_fallback),
     ("return between the stale reset and the fallback seed", "cpp",

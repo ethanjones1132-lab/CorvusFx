@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check block-cache-only FX smoothers advance once per rendered block.
 
-The five snapshots must remain non-consuming getCurrentValue() reads, then
+The four snapshots must remain non-consuming getCurrentValue() reads, then
 their ramps advance with skip(numSamples) after the block caches use them and
 before per-sample processing. In-memory probes guard each invariant without
 modifying source files.
@@ -18,7 +18,6 @@ SOURCE = ROOT / "source" / "DrippyFX" / "PluginProcessor.cpp"
 PROCESSOR = "CorvusFXAudioProcessor"
 
 SMOOTHERS = {
-    "smoothChorusMix": "chorusMix",
     "smoothDelayDamping": "delayDamping",
     "smoothReverbSize": "reverbSize",
     "smoothReverbDamping": "reverbDamping",
@@ -86,12 +85,9 @@ def verify(source_text=None):
                           "per-sample loop")
 
     if len(snapshot_positions) == len(SMOOTHERS) and max(snapshot_positions.values()) >= loop.start():
-        errors.append("all five block snapshots must precede the per-sample loop")
+        errors.append("all block snapshots must precede the per-sample loop")
 
     cache_uses = (
-        (r'\bchorus\s*\.\s*beginBlock\s*'
-         r'\([^;]*\bchorusMix\b[^;]*\)\s*;',
-         ("smoothChorusMix",)),
         (r'\bdelay\s*\.\s*beginBlock\s*'
          r'\([^;]*\bdelayDamping\b[^;]*\)\s*;',
          ("smoothDelayDamping",)),
@@ -140,7 +136,7 @@ if errors:
     for error in errors:
         print(f"  - {error}")
     sys.exit(1)
-print("OK: five block-cache-only smoothers retain getCurrentValue snapshots")
+print("OK: four block-cache-only smoothers retain getCurrentValue snapshots")
 print("OK: each smoother advances once after cache setup and before sample processing")
 
 # A comment-only change must not affect the source invariants.

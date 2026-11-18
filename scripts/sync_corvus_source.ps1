@@ -32,7 +32,9 @@ $relativePaths = @(
     'instrument\CorvusVoice.h',
     'instrument\WavetableOscillator.h',
     'tests\CorvusDspTests.cpp',
-    'tests\CorvusFxStateTests.cpp'
+    'tests\CorvusFxStateTests.cpp',
+    'tests\CorvusFxRenderTests.cpp',
+    'tests\CorvusRenderHarness.h'
 )
 
 if (-not (Test-Path -LiteralPath $SourceRoot -PathType Container)) {

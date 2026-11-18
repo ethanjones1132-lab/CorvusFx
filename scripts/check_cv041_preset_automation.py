@@ -246,9 +246,9 @@ def verify(raw_cpp, raw_header, raw_editor):
     preset = method_body(code, "loadPreset")
     if preset is None:
         raise Reject("PluginProcessor.cpp: loadPreset body is missing")
-    struct_m = re.search(r"struct\s+P\s*\{([^}]*)\}", preset)
+    struct_m = re.search(r"struct\s+P\s*\{([^}]*)\}", code)
     if not struct_m:
-        raise Reject("PluginProcessor.cpp:loadPreset — `struct P` declaration "
+        raise Reject("PluginProcessor.cpp — `struct P` declaration "
                      "is missing")
     fields = [f.strip() for f in
               struct_m.group(1).replace("float", " ").replace(";", " ").split(",")

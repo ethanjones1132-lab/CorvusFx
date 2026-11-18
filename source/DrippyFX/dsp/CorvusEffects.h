@@ -28,6 +28,32 @@ inline float hermiteInterp(const float* buf, int bufSize, float readPos)
     return ((c3 * frac + c2) * frac + c1) * frac + c0;
 }
 
+// Small, prepare-time coefficient tables keep sample-accurate automation from
+// adding exp/sin/cos to the render loop. Linear interpolation includes both
+// endpoints (including exact unity/zero gains).
+struct CorvusUnitLookup
+{
+    static constexpr int intervals = 256;
+    std::array<float, intervals + 1> values {};
+
+    template <typename Fn>
+    void prepare(Fn coefficient)
+    {
+        for (int i = 0; i <= intervals; ++i)
+            values[static_cast<std::size_t>(i)] = coefficient(static_cast<float>(i) / intervals);
+    }
+
+    float at(float unit) const noexcept
+    {
+        const float position = juce::jlimit(0.0f, 1.0f, unit) * intervals;
+        const auto index = static_cast<std::size_t>(position);
+        if (index == intervals)
+            return values.back();
+        return values[index] + (position - static_cast<float>(index))
+                             * (values[index + 1] - values[index]);
+    }
+};
+
 //==============================================================================
 // UTILITY: Padé [3/2] rational approximant for tanh with correct saturation
 // Accurate to <0.04% for |z| ≤ 1.0, <1% for |z| ≤ 2.5, and correctly
@@ -313,17 +339,23 @@ struct ProfessionalDistortion
     OnePole warmthL, warmthR;     // Post-saturation warmth shelf
     DCBlocker dcL, dcR;
     Oversampling2x oversample;    // 2x oversampling for zero aliasing
-    double sampleRate = 44100.0;
+    float appliedAmount = -1.0f;
+    CorvusUnitLookup postTone;
 
     void prepare(double sr)
     {
-        sampleRate = sr;
         oversample.prepare(sr);
         reset();
+        appliedAmount = -1.0f;
         // Cache sample-rate-dependent filter coefficients (not on every block)
         blockCoeffs.hpCoeff  = static_cast<float>(std::exp(-6.2832f * 30.0f / sr));
         blockCoeffs.empCoeff = static_cast<float>(std::exp(-6.2832f * 4500.0f / sr));
         blockCoeffs.warmCoeff = static_cast<float>(std::exp(-6.2832f * 5500.0f / sr));
+        postTone.prepare([rate = static_cast<float>(sr)](float amount)
+        {
+            const float cutoff = 6000.0f + (1.0f - amount) * 10000.0f;
+            return std::exp(-6.2832f * cutoff / rate);
+        });
     }
 
     void reset()
@@ -356,10 +388,8 @@ struct ProfessionalDistortion
         return d / (1.0f + std::abs(d));
     }
 
-    // Block-level coefficient cache — avoids recomputing std::exp() every sample.
-    // Call beginBlock() once per audio block with the current drive amount,
-    // then call process() for each sample. This eliminates 4 redundant
-    // transcendental function calls per sample (320 wasted calls per 64-sample block).
+    // Keep the coefficients cached at a steady amount. During FX automation
+    // the curve (including the tone pole) follows the amount sample by sample.
     struct BlockCoeffs
     {
         float drive = 1.0f;
@@ -377,18 +407,19 @@ struct ProfessionalDistortion
         float driveScaled = 1.0f;  // drive * 0.7 for tape side at high amounts
     } blockCoeffs;
 
-    void beginBlock(float amount)
+    void setAmount(float amount)
     {
+        if (amount == appliedAmount)
+            return;
+        appliedAmount = amount;
         if (amount < 0.001f)
         {
             blockCoeffs.bypass = true;
             return;
         }
         blockCoeffs.bypass = false;
-        float sr = static_cast<float>(sampleRate);
         blockCoeffs.drive = 1.0f + amount * amount * 7.0f;
-        float postFreq = 6000.0f + (1.0f - amount) * 10000.0f;
-        blockCoeffs.postCoeff = std::exp(-6.2832f * postFreq / sr);
+        blockCoeffs.postCoeff = postTone.at(amount);
         blockCoeffs.empAmount = amount * 0.18f;
         blockCoeffs.warmAmt = amount * 0.12f;
         blockCoeffs.makeup = 1.0f + amount * 0.8f;
@@ -401,6 +432,8 @@ struct ProfessionalDistortion
         blockCoeffs.tapeBlend = amount;
         blockCoeffs.driveScaled = blockCoeffs.drive * 0.7f;
     }
+
+    void beginBlock(float amount) { setAmount(amount); }
 
     void process(float inL, float inR, float& outL, float& outR)
     {
@@ -543,7 +576,7 @@ struct EnhancedChorus
     float driftSin2[NUM_VOICES] = {};  // sin(5.71 * driftPhase + offset2) per voice
     float driftCos2[NUM_VOICES] = {};  // cos(5.71 * driftPhase + offset2) per voice
     Oversampling2x oversample[2];  // 2x oversampling for feedback tanh anti-aliasing — per-channel to avoid state sharing
-    int lfoTick = 0;               // LFO renormalization tick counter
+    unsigned int lfoTick = 0;      // LFO renormalization tick counter
 
     // CV-064: depth-engage crossfade gain (0 = chorus contribution silent, the
     // effect returns the untouched input; 1 = the full Mix blend). Ramped, never
@@ -580,22 +613,35 @@ struct EnhancedChorus
                     float driftPhaseOffset1[NUM_VOICES] = {};  // i * 2.1f * 2.32 per voice
                     float driftPhaseOffset2[NUM_VOICES] = {};  // i * 1.3f * 5.71 per voice
 
-                    // Equal-power dry/wet crossfade gains — cached per-block
-                    // Replaces 2 std::sin()+std::cos()/sample with single block-level computation.
-                    // mix changes at block rate (via parameter smoothing), NOT per-sample.
+                     // Equal-power gains, recalculated only while Mix moves.
                     float dryGain = 1.0f;  // cos(effectiveMix * halfPi) — default to dry-only
                     float wetGain = 0.0f;  // sin(effectiveMix * halfPi) — default to dry-only
                     // Per-voice sum normalization: constant 1/sqrt(NUM_VOICES).
                     // Cached here (hoisted from per-sample square-root in process()).
                     float voiceGain = 1.0f / std::sqrt(static_cast<float>(NUM_VOICES));
-                } chorusBlockCoeffs;
+                 } chorusBlockCoeffs;
+
+    float appliedMix = -1.0f;
+    CorvusUnitLookup mixDry, mixWet;
+    // The 10% dry anchor is part of the original chorus voicing.
+    static constexpr float mixAngle = 0.90f * juce::MathConstants<float>::halfPi;
+
+    void setMix(float mix)
+    {
+        if (mix == appliedMix)
+            return;
+        appliedMix = mix;
+        chorusBlockCoeffs.mixDepthScale = 1.0f - mix * 0.35f;
+        chorusBlockCoeffs.maxSwingMs = 2.8f * chorusBlockCoeffs.mixDepthScale;
+        chorusBlockCoeffs.dryGain = mixDry.at(mix);
+        chorusBlockCoeffs.wetGain = mixWet.at(mix);
+    }
 
     void beginBlock(float depth, float mix, float rate)
     {
         float sr = static_cast<float>(sampleRate);
         chorusBlockCoeffs.apCoeff = 0.3f + depth * 0.15f;
-        chorusBlockCoeffs.mixDepthScale = 1.0f - mix * 0.35f;
-        chorusBlockCoeffs.maxSwingMs = 2.8f * chorusBlockCoeffs.mixDepthScale;
+        setMix(mix);
         chorusBlockCoeffs.driftDelta = 0.07f / sr;
         chorusBlockCoeffs.rateToIncrement = juce::MathConstants<float>::twoPi / sr;
         chorusBlockCoeffs.invSr = 1.0f / sr;
@@ -635,11 +681,6 @@ struct EnhancedChorus
             chorusBlockCoeffs.driftPhaseOffset2[i] = static_cast<float>(i) * 1.3f * 5.71f;
         }
 
-        // Precompute equal-power crossfade gains — eliminates 2 std::sin()+std::cos() per sample
-        // effectiveMix = mix * 0.90f (10% dry anchor at full wet for pitch stability)
-        float effectiveMix = mix * 0.90f;
-        chorusBlockCoeffs.dryGain = std::cos(effectiveMix * juce::MathConstants<float>::halfPi);
-        chorusBlockCoeffs.wetGain = std::sin(effectiveMix * juce::MathConstants<float>::halfPi);
     }
 
     void prepare(double sr)
@@ -652,6 +693,10 @@ struct EnhancedChorus
         chorusBlockCoeffs.smoothCoeff = static_cast<float>(std::exp(-6.2832f * 14000.0f / sr));
         std::memset(delayBuffer, 0, sizeof(delayBuffer));
         writePos = 0;
+        lfoTick = 0;
+        appliedMix = -1.0f;
+        mixDry.prepare([](float mix) { return std::cos(mix * mixAngle); });
+        mixWet.prepare([](float mix) { return std::sin(mix * mixAngle); });
         feedbackState[0] = feedbackState[1] = 0.0f;
         dcBlock[0].reset(); dcBlock[1].reset();
         outputSmooth[0].reset(); outputSmooth[1].reset();
@@ -780,7 +825,7 @@ struct EnhancedChorus
 
         // ── Mix-adaptive depth compression ──
         // At high mix, less modulation excursion is needed (you hear more of it)
-        // and pitch stability matters more. Pre-computed once per block.
+        // and pitch stability matters more. Updated with the Mix gain pair.
         // NOTE: modMs is computed per-voice inside the loop below since it depends on lfo, v.depthScale, and drift
 
         float wetOut = 0.0f;
@@ -831,7 +876,7 @@ struct EnhancedChorus
             float drift = driftSin1[i] * 0.12f + driftSin2[i] * 0.06f;
 
             // ── Modulation with mix-adaptive depth ──
-            // maxSwingMs pre-computed once per block
+            // maxSwingMs follows the applied Mix
             float modMs = lfo * depth * v.depthScale * chorusBlockCoeffs.maxSwingMs * (1.0f + drift);
             float delayMs = juce::jlimit(1.0f, 25.0f, v.centerDelay + modMs);
             float delaySmp = juce::jlimit(1.0f, static_cast<float>(BUFFER_SIZE - 4),
@@ -877,8 +922,7 @@ struct EnhancedChorus
         // ── Equal-power crossfade with subliminal dry bleed ──
         // At 100% mix, keep 10% dry as subliminal pitch anchor
         // This is the key to pitch-stable chorus at high mix settings
-        // Use cached equal-power crossfade gains from beginBlock()
-        // Eliminates 2 std::sin()+std::cos() per sample per channel — computed once per block
+        // Both voices use the same cached gains, including during Mix automation.
         float dryGain = chorusBlockCoeffs.dryGain;
         float wetGain = chorusBlockCoeffs.wetGain;
 
@@ -928,15 +972,19 @@ struct EnhancedDelay
     double sampleRate = DEFAULT_SAMPLE_RATE;
 
     OnePole fbLP[2], fbHP[2];
-    float smoothedDelay[2] = {};
-    bool firstSampleAfterReset = true;  // true on first sample after reset/prepare
+    // Fixed base-time taps (in samples); zero denotes a dry, feedback-free tap.
+    float fromTap = 0.0f, toTap = 0.0f;
+    float wowOffset = 0.0f;
+    int tapFadeLength = 1, tapFadeRemaining = 0;
+    float tapFadeStep = 1.0f;
+    bool firstSampleAfterReset = true;
     // 2x oversampling for tape saturation anti-aliasing — ONE instance per
     // channel. A single shared instance makes both channels reuse the same
     // up/down FIR history and the same read index, so the right channel's
     // saturation tail bleeds into the left and back again (same class of bug
     // the chorus feedback was fixed for in 30427ef).
     Oversampling2x oversample[2];
-    int lfoTick = 0;              // LFO renormalization tick counter
+    unsigned int lfoTick = 0;     // LFO renormalization tick counter
 
     // Block-level coefficient cache — avoids recomputing 2× std::exp() every sample.
     // Call beginBlock() once per audio block with current damping,
@@ -951,7 +999,7 @@ struct EnhancedDelay
         float sampleRateK = 0.0f;
         float maxDelayF = 0.0f;
         float msToSamples = 0.0f;  // sr * 0.001f -- ms to samples conversion
-        float smooth = 0.9997f;
+        float wowStep = 0.0003f;
 
         // LFO phase recurrence: replaces 2 std::sin() calls/sample with 4 multiplies.
         // sin(φ + d) = sin(φ)cos(d) + cos(φ)sin(d)
@@ -1025,7 +1073,9 @@ struct EnhancedDelay
         blockCoeffs.sampleRateK = static_cast<float>(sampleRate) * 0.0006f;
         blockCoeffs.maxDelayF = static_cast<float>(ringLength - RING_GUARD_SAMPLES);
         blockCoeffs.msToSamples = static_cast<float>(sampleRate) * 0.001f;
-        blockCoeffs.smooth = 0.9997f;
+        blockCoeffs.wowStep = static_cast<float>(1.0 - std::pow(0.9997, 48000.0 / sampleRate));
+        tapFadeLength = juce::jmax(1, static_cast<int>(0.020 * sampleRate));
+        tapFadeStep = 1.0f / static_cast<float>(tapFadeLength);
     }
 
     // Clear every piece of delay state so a reset (or a re-prepare) restarts
@@ -1037,14 +1087,11 @@ struct EnhancedDelay
         for (int ch = 0; ch < 2; ++ch)
             std::fill(buffer[ch].begin(), buffer[ch].end(), 0.0f);
         writePos[0] = writePos[1] = 0;
-        smoothedDelay[0] = smoothedDelay[1] = 0.0f;
+        fromTap = toTap = 0.0f;
+        wowOffset = 0.0f;
+        tapFadeRemaining = 0;
         firstSampleAfterReset = true;
-        for (int ch = 0; ch < 2; ++ch)
-        {
-            fbLP[ch].reset(); fbHP[ch].reset();
-        }
-        oversample[0].reset();
-        oversample[1].reset();
+        resetFeedback();
         // Initialize LFO phase recurrence state: sin(0)=0, cos(0)=1
         blockCoeffs.lfoSin = 0.0f;
         blockCoeffs.lfoCos = 1.0f;
@@ -1054,6 +1101,16 @@ struct EnhancedDelay
         // must restart the cadence, otherwise a re-prepared delay is not
         // bit-identical to a freshly prepared one.
         lfoTick = 0;
+    }
+
+    void resetFeedback()
+    {
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            fbLP[ch].reset();
+            fbHP[ch].reset();
+            oversample[ch].reset();
+        }
     }
 
     void beginBlock(float damping)
@@ -1079,6 +1136,31 @@ struct EnhancedDelay
         float delayTimeMs, float feedback, float mix,
         float pingPong, float modAmount)
     {
+        const float targetSmp = delayTimeMs <= 0.0f ? 0.0f
+            : juce::jlimit(1.0f, blockCoeffs.maxDelayF, delayTimeMs * blockCoeffs.msToSamples);
+        if (firstSampleAfterReset)
+        {
+            fromTap = toTap = targetSmp;
+            firstSampleAfterReset = false;
+        }
+        else if (tapFadeRemaining == 0 && targetSmp != fromTap)
+        {
+            // Don't move a head with a nonzero gain. During rapid automation
+            // finish this short fade, then pick up the latest requested time.
+            toTap = targetSmp;
+            tapFadeRemaining = tapFadeLength;
+        }
+
+        // With Time off, keep recording the actual input so engagement can
+        // read recent history. Skip the entire read/feedback path in this case.
+        if (fromTap == 0.0f && tapFadeRemaining == 0)
+        {
+            writeInput(inL, inR);
+            outL = inL;
+            outR = inR;
+            return;
+        }
+
         feedback = std::min(feedback, 0.92f);
 
         // Tape wow/flutter — phase increment cached per-block
@@ -1099,36 +1181,22 @@ struct EnhancedDelay
         if ((++lfoTick & 255) == 0)
             renormLFO();
         float lfo = blockCoeffs.lfoSin + blockCoeffs.lfo2Sin * 0.25f;
-        float modSamples = lfo * modAmount * blockCoeffs.sampleRateK;
+        const float modSamples = lfo * modAmount * blockCoeffs.sampleRateK;
+        // Only musical wow/flutter moves a head, not a knob/host time edit.
+        wowOffset += (modSamples - wowOffset) * blockCoeffs.wowStep;
 
-        float targetSmp = juce::jlimit(1.0f, blockCoeffs.maxDelayF,
-            delayTimeMs * blockCoeffs.msToSamples);
-
-        // On the first sample after reset, snap the smoothed delay to the clamped target
-        // rather than letting the one-pole climb from 0 ms
-        if (firstSampleAfterReset)
+        float dryTap = fromTap == 0.0f ? 1.0f : 0.0f;
+        float delayedL = readTap(0, fromTap);
+        float delayedR = readTap(1, fromTap);
+        const bool fading = tapFadeRemaining > 0;
+        if (fading)
         {
-            smoothedDelay[0] = smoothedDelay[1] = targetSmp;
-            firstSampleAfterReset = false;
+            // Linear weights sum to one: no boosted correlated taps in feedback.
+            const float blend = static_cast<float>(tapFadeLength - tapFadeRemaining) * tapFadeStep;
+            dryTap += ((toTap == 0.0f ? 1.0f : 0.0f) - dryTap) * blend;
+            delayedL += (readTap(0, toTap) - delayedL) * blend;
+            delayedR += (readTap(1, toTap) - delayedR) * blend;
         }
-        else
-        {
-            smoothedDelay[0] = smoothedDelay[0] * blockCoeffs.smooth + (targetSmp + modSamples) * (1.0f - blockCoeffs.smooth);
-            smoothedDelay[1] = smoothedDelay[1] * blockCoeffs.smooth +
-                (targetSmp + targetSmp * 0.027f + modSamples * 0.65f) * (1.0f - blockCoeffs.smooth);
-        }
-
-        for (int ch = 0; ch < 2; ++ch)
-            smoothedDelay[ch] = juce::jlimit(1.0f, blockCoeffs.maxDelayF, smoothedDelay[ch]);
-
-        // Read with Hermite interpolation
-        float readL = static_cast<float>(writePos[0]) - smoothedDelay[0];
-        if (readL < 0.0f) readL += static_cast<float>(ringLength);
-        float delayedL = hermiteInterp(buffer[0].data(), ringLength, readL);
-
-        float readR = static_cast<float>(writePos[1]) - smoothedDelay[1];
-        if (readR < 0.0f) readR += static_cast<float>(ringLength);
-        float delayedR = hermiteInterp(buffer[1].data(), ringLength, readR);
 
         // Feedback with ping-pong cross-feed
         float fbL = delayedL * (1.0f - pingPong) + delayedR * pingPong;
@@ -1157,15 +1225,39 @@ struct EnhancedDelay
         fbL = fbHP[0].processHP(fbL, blockCoeffs.fbHPCoeff);
         fbR = fbHP[1].processHP(fbR, blockCoeffs.fbHPCoeff);
 
-        // Write to buffers
-        buffer[0][writePos[0]] = juce::jlimit(-4.0f, 4.0f, inL + fbL * feedback);
-        buffer[1][writePos[1]] = juce::jlimit(-4.0f, 4.0f, inR + fbR * feedback);
+        writeInput(inL + fbL * feedback, inR + fbR * feedback);
+        const float dryGain = 1.0f - mix + dryTap * mix;
+        outL = juce::jlimit(-4.0f, 4.0f, inL * dryGain + delayedL * mix);
+        outR = juce::jlimit(-4.0f, 4.0f, inR * dryGain + delayedR * mix);
 
+        if (fading && --tapFadeRemaining == 0)
+        {
+            fromTap = toTap;
+            if (fromTap == 0.0f)
+                resetFeedback();
+        }
+    }
+
+private:
+    float readTap(int channel, float tap) const
+    {
+        if (tap == 0.0f)
+            return 0.0f;
+        const float offset = channel == 0 ? tap + wowOffset
+                                         : tap + tap * 0.027f + wowOffset * 0.65f;
+        const float delay = juce::jlimit(1.0f, blockCoeffs.maxDelayF, offset);
+        float read = static_cast<float>(writePos[channel]) - delay;
+        if (read < 0.0f)
+            read += static_cast<float>(ringLength);
+        return hermiteInterp(buffer[channel].data(), ringLength, read);
+    }
+
+    void writeInput(float left, float right)
+    {
+        buffer[0][writePos[0]] = juce::jlimit(-4.0f, 4.0f, left);
+        buffer[1][writePos[1]] = juce::jlimit(-4.0f, 4.0f, right);
         if (++writePos[0] >= ringLength) writePos[0] = 0;
         if (++writePos[1] >= ringLength) writePos[1] = 0;
-
-        outL = juce::jlimit(-4.0f, 4.0f, inL * (1.0f - mix) + delayedL * mix);
-        outR = juce::jlimit(-4.0f, 4.0f, inR * (1.0f - mix) + delayedR * mix);
     }
 };
 
@@ -1400,7 +1492,7 @@ struct UpgradedReverb
     // Master modulation LFO state — using sin/cos recurrence instead of phase + sin/cos per sample
     float modSin = 0.0f;  // sin(modPhase * twoPi)
     float modCos = 1.0f;  // cos(modPhase * twoPi)
-    int modTick = 0;      // master LFO renormalization tick counter
+    unsigned int modTick = 0; // master LFO renormalization tick counter
     double sampleRate = 44100.0;
     // Last roomSize applied to earlyL/earlyR tap delays and how many samples
     // the previous block actually rendered. Together they turn the early-tap
@@ -1419,21 +1511,17 @@ struct UpgradedReverb
     static constexpr float ROOM_SIZE_RATE_LIMIT = 60.0f;  // range-units/second
     float lastRoomSize = 0.0f;
     int lastBlockSamples = 0;   // samples processSample() rendered last block
-    // CV-071: whether lastRoomSize was set by a block that actually rendered
-    // audio. A block that renders nothing (reverb bypassed or mix at zero, so
-    // processSample() never runs) must not move the baseline; prepare() clears
-    // the flag so the first audible block establishes the baseline instead of
-    // reading the initial 0 as a jump across the room.
+    // CV-071: the size baseline belongs to blocks that advanced the tank.
+    // prepare() clears it so the first processed block cannot compare its
+    // room size against an unrelated initial value.
     bool roomSizeValid = false;
     // Last mix handed to beginBlock() and whether one has been applied yet.
     // A mix change arms the per-sample applied-gain ramp; the first block
     // after prepare() snaps instead of ramping from the dry-only default.
     float lastWetMix = 0.0f;
     bool wetMixValid = false;
-    // Ramp length for the applied wet/dry balance. Matches the 20 ms
-    // LinearSmoothedValue the processor uses for reverb_mix (PluginProcessor.cpp
-    // smoothTime), so the applied balance moves over the same 20 ms the knob
-    // ramp does instead of stepping at the block boundary.
+    // Ramp length for the applied wet/dry balance; the FX processor hands
+    // us the target directly, avoiding a second, block-sampled ramp.
     static constexpr float MIX_RAMP_SECONDS = 0.020f;
 
     // Block-level coefficient cache — avoids recomputing feedback/damp per sample
@@ -1501,15 +1589,9 @@ struct UpgradedReverb
         // cos(mix*pi/2) for dry, sin(mix*pi/2) * 1.5 for wet (reverb level compensation)
         blockCoeffs.dryGain = std::cos(wetMix * juce::MathConstants<float>::halfPi);
         blockCoeffs.wetGain = std::sin(wetMix * juce::MathConstants<float>::halfPi) * 1.5f;
-        // The host smooths reverb_mix, but this block only receives the mix as a
-        // block-level value, so applying the two gains above as block constants
-        // froze the applied wet/dry on the block's mix for its whole length: the
-        // 20 ms ramp moved the smoothed mix, never the balance multiplied into
-        // the output. Apply the gains per sample instead: a mix change arms a
-        // linear ramp of the applied gains across MIX_RAMP_SECONDS, and an
-        // unchanged mix snaps them to the target (they are already there), so a
-        // static setting keeps exactly the former equal-power gain staging.
-        if (!wetMixValid || std::fabs(wetMix - lastWetMix) <= 1e-6f)
+        // An identical target in the next host block must leave a ramp in
+        // flight alone. Only a fresh prepare snaps directly to the target.
+        if (!wetMixValid)
         {
             blockCoeffs.appliedDryGain = blockCoeffs.dryGain;
             blockCoeffs.appliedWetGain = blockCoeffs.wetGain;
@@ -1517,7 +1599,7 @@ struct UpgradedReverb
             blockCoeffs.wetGainStep = 0.0f;
             blockCoeffs.mixRampSamplesLeft = 0;
         }
-        else
+        else if (wetMix != lastWetMix)
         {
             const int rampSamples = juce::jmax(1, (int)(MIX_RAMP_SECONDS * sampleRate));
             blockCoeffs.mixRampSamplesLeft = rampSamples;
@@ -1563,15 +1645,9 @@ struct UpgradedReverb
                 earlyL.mute();
                 earlyR.mute();
             }
-            // CV-071: advance the "value just applied" baseline only on a
-            // block that actually rendered audio. A silent block (reverb
-            // bypassed or mix at zero, so processSample() never ran) leaves
-            // the tap history untouched; advancing the baseline there would
-            // swallow a size jump made while silent, and the first audible
-            // block would read the old room's history against taps already
-            // re-derived for the new one. Still a one-block rate over
-            // rendered time and never an accumulator: every rendered block
-            // moves the baseline, so smoothed travel cannot mute late.
+            // CV-071: only advance the baseline when samples ran through the
+            // tank. Output bypass is not a pause; the Size transition now
+            // has the same amount of audio time whether audible or not.
             lastRoomSize = roomSize;
             roomSizeValid = true;
         }
@@ -1682,6 +1758,7 @@ struct UpgradedReverb
         // Initialize master modulation LFO state: sin(0)=0, cos(0)=1
         modSin = 0.0f;
         modCos = 1.0f;
+        modTick = 0;
         // A freshly prepared reverb starts from the dry-only default and snaps to
         // the first requested mix instead of ramping from stale gain state.
         blockCoeffs.appliedDryGain = 1.0f;

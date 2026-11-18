@@ -50,9 +50,8 @@ test -f "$CORVUS_ROOT/scripts/check_cv066_default_preset.py"
 # (scripts/check_cv063_reverb_size_click.py). Same auto-registration applies;
 # this explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv063_reverb_size_click.py"
-# CV-064: the chorus process/advance pair is gated by the bypass crossfade
-# alone and the EnhancedChorus depth-engage crossfade fades the contribution
-# in/out while the delay history keeps advancing
+# CV-064/CV-080: chorus bypass and Depth fade the output without stopping
+# the process/advance pair.
 # (scripts/check_cv064_chorus_depth_engage.py). Same auto-registration applies;
 # this explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv064_chorus_depth_engage.py"

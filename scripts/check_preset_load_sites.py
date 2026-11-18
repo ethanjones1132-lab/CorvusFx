@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Headless checker: pin the loadPreset call-site roster + its undo transaction.
 
-CV-066 leaves exactly THREE loadPreset call sites in the whole plugin source,
+CV-070 leaves exactly TWO loadPreset call sites in the whole plugin source,
 one per recall path, and each one has to stay where it belongs:
 
   1. CorvusFXAudioProcessor::parameterChanged  -> loadPreset(idToPreset[id]);
@@ -10,12 +10,10 @@ one per recall path, and each one has to stay where it belongs:
   2. CorvusFXAudioProcessor::setCurrentProgram -> loadPreset(i);
      the direct host program-change reload (CV-066), followed by the
      presetToId[] parameter write that raises the echo loadPreset() skips;
-  3. CorvusFXAudioProcessor::CorvusFXAudioProcessor -> loadPreset(0);
-     the silent construction-time default load (CV-066), inside its
-     SilentPresetLoad guard so it raises no transaction/gesture/notification.
 
-loadPreset itself opens its named undo transaction (conditionally, so the
-silent construction load skips it) BEFORE any setValueNotifyingHost write.
+Construction seeds APVTS from the factory defaults instead of calling
+loadPreset. Live recall opens its named undo transaction BEFORE any
+setValueNotifyingHost write.
 
 Risk being pinned: a future caller (an editor click handler, a processBlock
 convenience call, or a second processor path) would stomp all 24 parameters
@@ -25,12 +23,12 @@ EXISTENCE only, not call-site topology, and the combo-runtime checker pins
 table composition only.
 
 Asserts (comment-stripped):
-  (a) exactly THREE `loadPreset(` call sites across PluginProcessor.cpp AND
+  (a) exactly TWO `loadPreset(` call sites across PluginProcessor.cpp AND
       PluginEditor.cpp (the CorvusFXAudioProcessor::loadPreset definition,
       the header declaration, and comments are excluded from the count);
-  (b) each site lives in one of the three named processor functions and takes
+  (b) each site lives in one of the two named processor functions and takes
       that function's pinned argument: `idToPreset[` (parameterChanged),
-      `i` (setCurrentProgram), `0` (the constructor). No site may live in
+       `i` (setCurrentProgram). No site may live in the constructor or in
       PluginEditor.cpp, setStateInformation, processBlock or randomizePreset.
   (c) the loadPreset definition body still opens with
       beginNewTransaction("Load Preset") before any setValueNotifyingHost
@@ -51,7 +49,6 @@ SRC = ROOT / "source" / "DrippyFX"
 # The CV-066 call-site roster: function -> the argument prefix that identifies
 # the site as that function's own load.
 ALLOWED = {
-    "CorvusFXAudioProcessor": "loadPreset(0)",
     "parameterChanged": "loadPreset(idToPreset[",
     "setCurrentProgram": "loadPreset(i)",
 }
@@ -149,9 +146,9 @@ def call_site_roster(texts):
 
 def check(texts):
     """All parts against the list of (path, stripped_text). True = pass."""
-    # (a) exactly THREE call sites, none of them in the editor
+    # (a) exactly two call sites, none of them in the editor
     sites = call_site_roster(texts)
-    if len(sites) != 3:
+    if len(sites) != len(ALLOWED):
         return False
     proc_path = None
     proc = None
@@ -178,7 +175,7 @@ def check(texts):
                 owner = signature
                 break
         if owner is None or owner in seen:
-            return False  # outside the three named paths, or a duplicate
+            return False  # outside the named paths, or a duplicate
         seen.add(owner)
         if not s[i:].startswith(ALLOWED[owner]):
             return False  # wrong argument for that path
@@ -204,16 +201,15 @@ def check(texts):
 texts = load_sources()
 proc_c_path = texts[0][0]
 if not check(texts):
-    fail("loadPreset call-site roster drifted: need exactly THREE call sites, "
+    fail("loadPreset call-site roster drifted: need exactly TWO call sites, "
          "each inside its own processor path — loadPreset(idToPreset[id]) in "
-         "parameterChanged, loadPreset(i) in setCurrentProgram, loadPreset(0) "
-         "in the constructor — and none in PluginEditor.cpp, "
+         "parameterChanged and loadPreset(i) in setCurrentProgram "
+         "— and none in the constructor, PluginEditor.cpp, "
          "setStateInformation, processBlock or randomizePreset; the "
          '<beginNewTransaction("Load Preset") must stay before any '
          "setValueNotifyingHost in the loadPreset body (PluginProcessor.cpp)")
-print("load-sites: exactly three loadPreset call sites — parameterChanged's "
-      "guarded idToPreset[id], setCurrentProgram's direct i and the "
-      "constructor's silent 0; 'Load Preset' transaction pinned")
+print("load-sites: two live recall call sites and no construction-time recall; "
+      "'Load Preset' transaction pinned")
 
 # ---------------------------------------------------------------------------
 # Self-probes on mutated in-memory texts (real tree never mutated)
@@ -278,10 +274,10 @@ probe("loadPreset call added in setStateInformation",
           ts, 0, "CorvusFXAudioProcessor::setStateInformation(",
           "loadPreset(0);"))
 
-# 5. the constructor's silent default load dropped (a fresh insert would no
-#    longer play preset 0)
-probe("constructor default loadPreset(0) removed",
-      lambda ts: mutate(ts, 0, "        loadPreset(0);\n", ""))
+# 5. a constructor call would reintroduce host writes at insertion
+probe("loadPreset call added in the constructor",
+      lambda ts: insert_in_function(
+          ts, 0, "CorvusFXAudioProcessor::CorvusFXAudioProcessor(", "loadPreset(0);"))
 
 # 6. 'Load Preset' transaction stripped from the loadPreset body
 probe("'Load Preset' transaction stripped",

@@ -43,6 +43,7 @@ never a silently skipped probe:
   - desync the editor caption from the host-visible name -> rejected;
   - advertise 300% on the width tooltip -> rejected;
   - promise 0-500% on the README width row -> rejected;
+  - bind the width default to the wrong factory field -> rejected;
   - benign reword of an unrelated tooltip -> accepted (specificity).
 
 Exit 0 = ok, 1 = violation with diagnostics.
@@ -50,6 +51,8 @@ Exit 0 = ok, 1 = violation with diagnostics.
 import re
 import sys
 from pathlib import Path
+
+from _fx_factory_defaults import factory_default
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "source" / "DrippyFX"
@@ -64,14 +67,15 @@ WIDTH_ID = "master_width"
 TRIM_ID = "output_trim"
 
 PCT_PARAM_RE = re.compile(
-    r'pctParam\(\s*"([a-z_0-9]+)"\s*,\s*"([^"]*)"\s*,\s*([-\d.]+)\s*\)')
+    r'\bpctParam\s*\(\s*"([a-z_0-9]+)"\s*,\s*"([^"]*)"\s*,')
 SETUPKNOB_RE = re.compile(
     r'setupKnob\(\s*(\w+)\s*,\s*(\w+)\s*,\s*"([^"]*)"\s*,\s*"([a-z_0-9]+)"'
     r'\s*,\s*"([^"]*)"\s*\)')
 WIDTH_RANGE_RE = re.compile(
-    r'"master_width"\s*,\s*"([^"]*)"\s*,\s*'
+    r'make_unique<juce::AudioParameterFloat>\s*\(\s*"master_width"'
+    r'\s*,\s*"([^"]*)"\s*,\s*'
     r'juce::NormalisableRange<float>\(\s*([-\d.]+)f\s*,\s*([-\d.]+)f'
-    r'\s*,\s*[-\d.]+f\s*\)\s*,\s*([-\d.]+)f')
+    r'\s*,\s*[-\d.]+f\s*\)\s*,\s*p\.(\w+)\s*,')
 # README parameter-table row: group(1) = range cell, group(2) = default cell.
 README_WIDTH_ROW_RE = re.compile(
     r"^\|\s*\*\*Master Width\*\*\s*\|\s*([^|]*)\|\s*([^|]*)\|", re.M)
@@ -121,7 +125,7 @@ def check(proc_text, ed_text, readme_text):
     if not pct_params:
         return "no pctParam(...) registrations found in PluginProcessor.cpp"
     names = {}
-    for pid, name, _default in pct_params:
+    for pid, name in pct_params:
         if pid in names:
             return f"parameter id {pid!r} registered more than once"
         names[pid] = name
@@ -166,13 +170,16 @@ def check(proc_text, ed_text, readme_text):
                 f"0..200% range and that range must stay")
     wm = WIDTH_RANGE_RE.search(proc)
     if not wm:
-        return ('could not read the declared range of "master_width" from '
-                "PluginProcessor.cpp")
+        return ('could not read the declared range and factory default of '
+                '"master_width" from PluginProcessor.cpp')
     if wm.group(1) != "Master Width":
         return (f'host-visible name for "master_width" is {wm.group(1)!r}, '
                 f'expected "Master Width"')
     wmin, wmax = float(wm.group(2)), float(wm.group(3))
-    wdefault = float(wm.group(4))
+    try:
+        wdefault = factory_default(proc, wm.group(4))
+    except ValueError as exc:
+        return f"could not read the master_width default: {exc}"
     if wmax <= PCT_CEILING:
         return (f'"master_width" range is 0..{wmax:g}% - the CV-036 widening '
                 f"to 0..200% is gone, so the tooltip/README copy would "
@@ -197,6 +204,8 @@ def check(proc_text, ed_text, readme_text):
                 f"declared {wmin:g}..{wmax:g}% range: {width_tip!r}")
 
     # ---- (c)/(d) every percentage knob tooltip stays inside 0..100 --------
+    if TRIM_ID not in names:
+        return f'"{TRIM_ID}" is no longer registered through pctParam'
     for pid in sorted(names):
         if pid not in rows:
             return f'no editor knob row is wired to paramID "{pid}"'
@@ -274,8 +283,8 @@ def main():
 
     probes = [
         ("pre-patch 'Fatness' display name restored",
-         in_proc('pctParam("fatness", "Drive", 0)',
-                 'pctParam("fatness", "Fatness", 0)')),
+         in_proc('pctParam("fatness", "Drive",',
+                 'pctParam("fatness", "Fatness",')),
         ("pre-patch width tooltip restored (no 200% ceiling)",
          in_ed('200% = maximum width");', '>100% = widened");')),
         ("pre-patch Output Trim 200% promise restored",
@@ -287,6 +296,8 @@ def main():
          in_ed('200% = maximum width");', '300% = maximum width");')),
         ("README Master Width row promises 0-500%",
          readme_row_overpromises),
+        ("Master Width default comes from the wrong factory field",
+         in_proc("0.1f), p.mWid,", "0.1f), p.mDrv,")),
     ]
 
     for desc, mutate in probes:

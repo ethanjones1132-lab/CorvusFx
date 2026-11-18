@@ -3,10 +3,10 @@
 AUDIBLE smoothed value (getCurrentValue()), never the ramp target.
 
 `CorvusFXAudioProcessor::processBlock` seeds its once-per-block coefficient
-caches (delay / reverb / distortion / chorus beginBlock + the reverb pre-delay
-geometry) from a 9-line block-scope snapshot of smooth<X> values:
+caches (delay / reverb / chorus beginBlock + the reverb pre-delay
+geometry) from a block-scope snapshot of smooth<X> values:
 
-    fatness, chorusDepth, chorusRate, chorusMix,
+    chorusDepth, chorusRate, chorusMix,
     delayDamping, reverbSize, reverbDamping, reverbMix, sReverbMod
 
 Before CV-030 every one of those lines read `getTargetValue()`. That is the
@@ -23,19 +23,18 @@ seeds, which are pinned here unchanged.
 
 Asserts (comment-stripped, brace-matched processBlock body):
   (a) the block-scope snapshot region (roster head .. `delay.beginBlock(`)
-      holds EXACTLY the ordered 9 `const float <x> = smooth<Y>.getCurrentValue();`
+       holds the ordered `const float <x> = smooth<Y>.getCurrentValue();`
       lines, each exactly once;
   (b) that region contains NO `.getNextValue()` (would consume one ramp step
       per block and desync the per-sample ramp) and NO `.getTargetValue()`
       (the CV-030 stale-ramp-target read), and no `.skip(` /
       `setCurrentAndTargetValue` (no ramp advance at block scope);
-  (c) the four per-sample smoother seeds that twin the block snapshot
-      (sFatness / sChorusDepth / sChorusRate / sReverbMix) are untouched:
+   (c) Drive and the per-sample chorus controls
+       (sFatness / sChorusDepth / sChorusRate / sChorusMix) advance:
       each is a `smooth<Y>.getNextValue()` read inside the per-sample loop,
       and each of those four smoothers is advanced by getNextValue() exactly
       ONCE in processBlock and nowhere before the loop;
   (d) every snapshot local is still consumed by the coefficient feeds:
-      `distortion.beginBlock(fatness)`,
       `chorus.beginBlock(chorusDepth, chorusMix, chorusRate)`,
       `delay.beginBlock(delayDamping)`,
       `upgradedReverb.beginBlock(reverbSize, reverbDamping, reverbMix,
@@ -43,7 +42,7 @@ Asserts (comment-stripped, brace-matched processBlock body):
 
 Self-probes (negative checks, sibling checker style) run on mutated in-memory
 TEMP texts — the real tree is never mutated:
-  - EVERY one of the 9 snapshot lines is reverted to getTargetValue() in
+  - EVERY snapshot line is reverted to getTargetValue() in
     turn; each revert must be rejected (the CV-030 regression);
   - a per-sample seed converted to getCurrentValue() must be rejected;
   - a stray getNextValue() / `.skip(` inserted into the snapshot region must
@@ -60,7 +59,6 @@ SRC = ROOT / "source" / "DrippyFX"
 
 # (local name, smoother member) in the pinned snapshot ORDER
 SNAPSHOT_ROSTER = [
-    ("fatness", "smoothFatness"),
     ("chorusDepth", "smoothChorusDepth"),
     ("chorusRate", "smoothChorusRate"),
     ("chorusMix", "smoothChorusMix"),
@@ -71,17 +69,15 @@ SNAPSHOT_ROSTER = [
     ("sReverbMod", "smoothReverbMod"),
 ]
 
-# The per-sample seeds whose smoothers are ALSO snapshotted at block scope:
-# exactly these four must keep advancing the ramp with getNextValue().
+# These controls advance once per sample, whether or not they have a block snapshot.
 PER_SAMPLE_TWINS = [
     ("sFatness", "smoothFatness"),
     ("sChorusDepth", "smoothChorusDepth"),
     ("sChorusRate", "smoothChorusRate"),
-    ("sReverbMix", "smoothReverbMix"),
+    ("sChorusMix", "smoothChorusMix"),
 ]
 
 CONSUMERS = [
-    "distortion.beginBlock(fatness)",
     "chorus.beginBlock(chorusDepth, chorusMix, chorusRate)",
     "delay.beginBlock(delayDamping)",
     "upgradedReverb.beginBlock(reverbSize, reverbDamping, reverbMix, sReverbMod,",
@@ -155,10 +151,10 @@ def loop_body_of(body):
 def snapshot_region(body):
     """(region, diagnostic) — roster head .. `delay.beginBlock(`."""
     first = re.search(
-        r"const float fatness\s*=\s*smoothFatness\.getCurrentValue\(\);", body)
+        r"const float chorusDepth\s*=\s*smoothChorusDepth\.getCurrentValue\(\);", body)
     if not first:
         return None, ("block snapshot roster head "
-                      "`const float fatness = smoothFatness.getCurrentValue();` "
+                      "`const float chorusDepth = smoothChorusDepth.getCurrentValue();` "
                       "not found in processBlock")
     begin_k = body.find("delay.beginBlock(", first.end())
     if begin_k == -1:
@@ -176,7 +172,7 @@ def check(full_text):
     if err:
         return err
 
-    # (a) ordered 9-line getCurrentValue roster, each exactly once.
+    # (a) ordered getCurrentValue roster, each exactly once.
     lines = [collapse_ws(l) for l in region.split("\n")]
     snap_re = re.compile(
         r"const float (\w+)\s*=\s*(\w+)\.getCurrentValue\(\);")
@@ -253,7 +249,7 @@ proc_c = proc_c_path.read_text(encoding="utf-8")
 err = check(proc_c)
 if err:
     fail(err + " (PluginProcessor.cpp processBlock)")
-print("cv030-block-coeffs: 9-line block snapshot reads getCurrentValue() "
+print("cv030-block-coeffs: block snapshots read getCurrentValue() "
       "(audible value), no ramp advance at block scope, 4 per-sample "
       "getNextValue seeds untouched, coefficient feeds intact")
 

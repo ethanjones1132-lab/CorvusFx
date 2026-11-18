@@ -244,9 +244,9 @@ def verify(cpp_text, effects_text):
     require(
         re.search(
             r"NormalisableRange<float>\s*\(\s*0\.0f\s*,\s*200\.0f\s*,"
-            r"\s*0\.1f\s*\)\s*,\s*100\.0f\s*,", region) is not None,
+            r"\s*0\.1f\s*\)\s*,\s*p\.mWid\s*,", region) is not None,
         "master_width must own NormalisableRange<float>(0.0f, 200.0f, 0.1f) "
-        "with default 100.0f — a 0..100 range clamps the stored preset widths")
+         "with the startup preset's width — a 0..100 range clamps the stored preset widths")
     require_count(region, '.withLabel("%")', 1,
                   "master_width must keep the percent label contract")
     require_count(region, 'juce::String(value, 1) + " %"', 1,
@@ -283,6 +283,7 @@ def verify(cpp_text, effects_text):
     require(
         len(widths) == 36,
         "expected 36 stored presets, parsed %d" % len(widths))
+    require(widths[0] == 100.0, "Clean Sparkle must start at unity stereo width")
     highest = max(widths)
     require(
         abs(highest - MAX_STORED_WIDTH) < 1e-6,
@@ -434,16 +435,16 @@ def main():
              "float width = 0.0f;", 1)),
         ("shrink the own range back to 0..100",
          "cpp", cpp_mutate(
-             "juce::NormalisableRange<float>(0.0f, 200.0f, 0.1f), 100.0f",
-             "juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 100.0f", 1)),
+              "juce::NormalisableRange<float>(0.0f, 200.0f, 0.1f), p.mWid",
+              "juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), p.mWid", 1)),
         ("change the own default 100.0f -> 50.0f",
          "cpp", cpp_mutate(
-             "juce::NormalisableRange<float>(0.0f, 200.0f, 0.1f), 100.0f",
+              "juce::NormalisableRange<float>(0.0f, 200.0f, 0.1f), p.mWid",
              "juce::NormalisableRange<float>(0.0f, 200.0f, 0.1f), 50.0f", 1)),
         ("change the own interval 0.1f -> 1.0f",
          "cpp", cpp_mutate(
-             "200.0f, 0.1f), 100.0f",
-             "200.0f, 1.0f), 100.0f", 1)),
+              "200.0f, 0.1f), p.mWid",
+              "200.0f, 1.0f), p.mWid", 1)),
         ("re-register master_width through the shared pctParam helper",
          "cpp", cpp_mutate(
              '    params.push_back(std::make_unique<juce::AudioParameterFloat>(\n'
@@ -457,8 +458,8 @@ def main():
              "juce::NormalisableRange<float>(0, 200, 0.1f)", 1)),
         ("rename another percentage registration",
          "cpp", cpp_mutate(
-             'pctParam("output_trim", "Output Trim", 100)',
-             'pctParam("output_trimx", "Output Trim", 100)', 1)),
+              'pctParam("output_trim", "Output Trim", p.oTrim)',
+              'pctParam("output_trimx", "Output Trim", p.oTrim)', 1)),
         ("change both smoothing reads to /200",
          "cpp", cpp_mutate(
              'getRawParameterValue("master_width")->load() / 100.0f',
