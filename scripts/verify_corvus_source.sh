@@ -62,6 +62,11 @@ test -f "$CORVUS_ROOT/scripts/check_cv064_chorus_depth_engage.py"
 # (scripts/check_cv067_ab_snapshots.py). Same auto-registration applies; this
 # explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv067_ab_snapshots.py"
+# CV-065: stealing a live voice fades the outgoing note across the existing
+# declick window before the reset, instead of cutting it to zero
+# (scripts/check_cv065_voice_steal_fade.py). Same auto-registration applies;
+# this explicit assertion keeps it from being lost silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv065_voice_steal_fade.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"

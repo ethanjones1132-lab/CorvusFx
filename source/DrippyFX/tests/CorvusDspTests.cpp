@@ -1208,6 +1208,95 @@ public:
         expect(oldestStealEngine.isNoteActive(21));
         expect(oldestStealEngine.isNoteActive(80));
         expect(oldestStealEngine.activeVoiceCount() == 16);
+
+        beginTest("stealing a voice fades the outgoing note over its declick window");
+        {
+            VoiceParameters steady = voiceParameters;
+            steady.releaseSeconds = 10.0f;
+
+            // Two identical voices: one is stolen, the other keeps running the
+            // same oscillator phase untouched. The stolen voice's tail must be
+            // the continuing note times a ramp from 1.0 down to nearly zero, so
+            // the first stolen sample continues the old note instead of being
+            // cut to zero by an immediate reset.
+            constexpr auto primeSamples = 512;
+            constexpr auto fadeWindow = 32; // CorvusVoice's declick window
+
+            CorvusVoice referenceVoice;
+            CorvusVoice stolenVoice;
+            referenceVoice.prepare(sampleRate);
+            stolenVoice.prepare(sampleRate);
+            referenceVoice.startNote(57, 1.0f, steady, 1);
+            stolenVoice.startNote(57, 1.0f, steady, 1);
+
+            std::array<float, primeSamples> referencePrimeLeft {};
+            std::array<float, primeSamples> referencePrimeRight {};
+            std::array<float, primeSamples> stolenPrimeLeft {};
+            std::array<float, primeSamples> stolenPrimeRight {};
+            referenceVoice.render(referencePrimeLeft.data(),
+                                  referencePrimeRight.data(), 0, primeSamples);
+            stolenVoice.render(stolenPrimeLeft.data(), stolenPrimeRight.data(),
+                               0, primeSamples);
+
+            std::array<float, fadeWindow> referenceTailLeft {};
+            std::array<float, fadeWindow> referenceTailRight {};
+            std::array<float, fadeWindow> stolenTailLeft {};
+            std::array<float, fadeWindow> stolenTailRight {};
+            referenceVoice.render(referenceTailLeft.data(),
+                                  referenceTailRight.data(), 0, fadeWindow);
+
+            stolenVoice.startNote(69, 1.0f, steady, 2);
+            expect(stolenVoice.isActive(),
+                   "the replacement note is active while the old one fades");
+            expect(stolenVoice.getNoteNumber() == 69,
+                   "the replacement note owns the stolen voice immediately");
+            stolenVoice.render(stolenTailLeft.data(), stolenTailRight.data(), 0,
+                               fadeWindow);
+
+            // Sample 0 of the tail is the old note's natural next sample: the
+            // outgoing gain starts at 1.0, so nothing jumps to zero.
+            expectWithinAbsoluteError(stolenTailLeft[0], referenceTailLeft[0],
+                                      1.0e-5f);
+            for (auto sample = 0; sample < fadeWindow; ++sample)
+            {
+                const auto fadeGain = static_cast<float>(fadeWindow - sample)
+                    / static_cast<float>(fadeWindow);
+                expectWithinAbsoluteError(stolenTailLeft[sample],
+                                          referenceTailLeft[sample] * fadeGain,
+                                          1.0e-5f);
+                expectWithinAbsoluteError(stolenTailRight[sample],
+                                          referenceTailRight[sample] * fadeGain,
+                                          1.0e-5f);
+            }
+
+            expect(std::abs(stolenTailLeft[0] - stolenPrimeLeft.back())
+                       <= std::abs(referenceTailLeft[0]
+                                   - stolenPrimeLeft.back()) + 1.0e-6f,
+                   "the steal must not introduce a discontinuity");
+            expect(std::abs(stolenTailLeft.back())
+                       < std::abs(referenceTailLeft.back()) * 0.25f + 1.0e-6f,
+                   "the outgoing note must fade across the declick window");
+            expect(std::abs(stolenTailLeft.back()) <= 0.05f,
+                   "the fade must end near silence before the reset");
+
+            // After the fade the voice has been reset and reused: the
+            // replacement note renders its own pitch with its own short
+            // declick fade-in.
+            std::vector<float> newNoteLeft(static_cast<std::size_t>(sampleRate),
+                                           0.0f);
+            std::vector<float> newNoteRight(newNoteLeft.size(), 0.0f);
+            stolenVoice.render(newNoteLeft.data(), newNoteRight.data(), 0,
+                               static_cast<int>(newNoteLeft.size()));
+            expectWithinAbsoluteError(newNoteLeft.front(), 0.0f, 1.0e-6f);
+            auto newNoteCrossings = 0;
+            for (std::size_t sample = 1; sample < newNoteLeft.size(); ++sample)
+                if (newNoteLeft[sample - 1] <= 0.0f && newNoteLeft[sample] > 0.0f)
+                    ++newNoteCrossings;
+            expectWithinAbsoluteError(static_cast<float>(newNoteCrossings),
+                                      440.0f, 1.0f);
+            expect(stolenVoice.isKeyDown(),
+                   "the replacement note keeps the voice after the fade");
+        }
     }
 };
 
