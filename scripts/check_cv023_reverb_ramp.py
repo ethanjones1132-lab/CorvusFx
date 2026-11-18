@@ -13,15 +13,17 @@ here because they meet in `UpgradedReverb::beginBlock()`:
          if (lastBlockSamples > 0)
          {
              const float blockSeconds = ... lastBlockSamples ... sampleRate;
-             const float roomSizeRate = std::fabs(roomSize - lastRoomSize)
-                                      / juce::jmax(blockSeconds, 1.0e-6f);
+             const float roomSizeRate = roomSizeValid
+                 ? std::fabs(roomSize - lastRoomSize)
+                       / juce::jmax(blockSeconds, 1.0e-6f)
+                 : 0.0f;
              if (roomSizeRate > ROOM_SIZE_RATE_LIMIT)
              {
                  earlyL.mute();
                  earlyR.mute();
              }
+             lastRoomSize = roomSize;  // CV-071: rendered blocks only
          }
-         lastRoomSize = roomSize;
          lastBlockSamples = 0;
          earlyL.setRoomSize(roomSize);
          earlyR.setRoomSize(roomSize);
@@ -34,7 +36,9 @@ here because they meet in `UpgradedReverb::beginBlock()`:
 Asserts on the real tree (comment-stripped, brace-matched UpgradedReverb):
   (a) beginBlock contains no memset and exactly two mute() calls (earlyL and
       earlyR), both inside the room-size rate guard; the applied size is
-      tracked every block (`lastRoomSize = roomSize;` outside the guard);
+      tracked (`lastRoomSize = roomSize;`) outside that rate guard - CV-071
+      keeps it inside the `lastBlockSamples > 0` gate, pinned by
+      check_cv071_silent_size_jump.py;
   (b) earlyL/earlyR are still retargeted every block (setRoomSize outside the
       guard) and `float lastRoomSize = 0.0f;` is declared on the struct;
   (c) beginBlock keeps the equal-power dry/wet targets from wetMix, arms a

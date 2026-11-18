@@ -23,9 +23,13 @@ Asserts on the real tree (comment-stripped, brace-matched UpgradedReverb):
       inside the `roomSizeRate > ROOM_SIZE_RATE_LIMIT` branch;
   (b) the guard really is a per-second rate: gated on lastBlockSamples > 0,
       blockSeconds = lastBlockSamples / sampleRate, roomSizeRate =
-      fabs(roomSize - lastRoomSize) / max(blockSeconds, ...), compared with >;
-  (c) lastRoomSize and lastBlockSamples are advanced/reset every block OUTSIDE
-      the guard (a slow move must never accumulate into a late mute);
+      fabs(roomSize - lastRoomSize) / max(blockSeconds, ...) once a rendered
+      block has established a baseline (roomSizeValid), compared with >;
+  (c) lastRoomSize is advanced exactly once and only INSIDE the
+      `lastBlockSamples > 0` gate (CV-071: a block that rendered no audio must
+      not move the baseline), outside the rate guard, so a slow move can never
+      accumulate into a late mute; lastBlockSamples is still reset every block
+      outside that gate;
   (d) ROOM_SIZE_RATE_LIMIT is declared and sits above the 50/s ceiling of the
       20 ms smoother (so travel can never trip it) but stays a real limit, and
       PluginProcessor still feeds reverb_size through that 20 ms smoother;
@@ -44,6 +48,7 @@ alarm, the real tree is never mutated):
     -> rejected;
   - lower ROOM_SIZE_RATE_LIMIT into ordinary travel -> rejected;
   - stop counting the rendered samples -> rejected;
+  - advance the baseline on a silent block too (CV-071) -> rejected;
   - benign comment edit naming the pinned members -> accepted.
 
 Exit 0 = ok, 1 = violation with a cited diagnostic, 2 = setup/read failure.
@@ -191,25 +196,44 @@ def verify(header_text):
             "beginBlock no longer derives blockSeconds from lastBlockSamples "
             "and sampleRate - a raw per-block delta is block-size dependent")
     require(begin,
-            r"const\s+float\s+roomSizeRate\s*=\s*std::fabs\s*\(\s*roomSize"
+            r"const\s+float\s+roomSizeRate\s*=\s*roomSizeValid\s*"
+            r"\?\s*std::fabs\s*\(\s*roomSize"
             r"\s*-\s*lastRoomSize\s*\)\s*/\s*juce::jmax\s*\(\s*blockSeconds"
             r"\s*,",
-            "beginBlock no longer divides the room-size delta by blockSeconds "
-            "- the guard must test a rate, not a block-sized delta")
+            "beginBlock no longer computes roomSizeRate as the room-size delta "
+            "over blockSeconds behind the roomSizeValid baseline check - the "
+            "guard must test a rate and must not read the initial 0 as a jump "
+            "(CV-071)")
     rate_at = begin.find("roomSizeRate =")
     if rate_at == -1 or rate_at > guard_match.start():
         raise Reject("the room-size rate is computed after the guard that "
                      "uses it - the comparison would read stale/zero state")
 
-    # --- (c) reference + counter advance every block, outside the guard ----
+    # --- (c) baseline advances only on a block that rendered audio ---------
+    require(begin, r"if\s*\(\s*lastBlockSamples\s*>\s*0\s*\)\s*\{",
+            "beginBlock no longer gates the size handling on "
+            "`lastBlockSamples > 0` - a block that rendered no audio would "
+            "advance the baseline and swallow a jump made while silent "
+            "(CV-071)")
+    gate_match = re.search(
+        r"if\s*\(\s*lastBlockSamples\s*>\s*0\s*\)\s*\{", begin)
+    gate_start, gate_end = brace_span(begin, gate_match.end() - 1)
+    if gate_start is None:
+        raise Reject("rendered-block gate body not brace-matched")
     require(begin, r"lastRoomSize\s*=\s*roomSize\s*;",
             "beginBlock never updates lastRoomSize - the guard would compare "
             "against a stale reference for the whole block")
     if begin.count("lastRoomSize = roomSize;") != 1:
         raise Reject("lastRoomSize = roomSize occurs %d times in beginBlock; "
-                     "it must be tracked exactly once per block"
+                     "it must be tracked exactly once, and only by a block "
+                     "that rendered audio"
                      % begin.count("lastRoomSize = roomSize;"))
     assign_at = begin.find("lastRoomSize = roomSize;")
+    if not (gate_start <= assign_at < gate_end):
+        raise Reject("lastRoomSize = roomSize runs outside the "
+                     "`lastBlockSamples > 0` gate - a silent block would move "
+                     "the baseline and the first audible block would miss the "
+                     "jump (CV-071)")
     if assign_at < gend:
         raise Reject("lastRoomSize = roomSize runs inside the rate guard - "
                      "smoothed travel would accumulate into a late mute")
@@ -221,9 +245,9 @@ def verify(header_text):
                      "must be reset exactly once per block"
                      % begin.count("lastBlockSamples = 0;"))
     reset_at = begin.find("lastBlockSamples = 0;")
-    if reset_at < gend:
-        raise Reject("lastBlockSamples = 0 runs inside the rate guard - only "
-                     "the jump branch would reset it")
+    if reset_at < gate_end:
+        raise Reject("lastBlockSamples = 0 runs inside the rendered-block gate "
+                     "- only a block that rendered would reset the counter")
 
     # --- (d) the threshold clears the smoother's travel ceiling ------------
     limit_match = re.search(
@@ -337,6 +361,15 @@ def main():
              "static constexpr float ROOM_SIZE_RATE_LIMIT = 10.0f;")),
         ("stop counting the rendered samples",
          lambda s: _replace_once(s, "        ++lastBlockSamples;\n", "")),
+        ("advance the baseline on a silent block too (CV-071)",
+         lambda s: _replace_once(
+             s,
+             "            lastRoomSize = roomSize;\n"
+             "            roomSizeValid = true;\n"
+             "        }",
+             "        }\n"
+             "        lastRoomSize = roomSize;\n"
+             "        roomSizeValid = true;")),
     ]
     for label, mutate in probes:
         mutated = mutate(text)
@@ -374,7 +407,7 @@ def main():
     if run(SRC.read_text(encoding="utf-8", errors="replace")) is not None:
         print("REVERB-SIZE-CLICK FAIL: final live-source re-verification failed")
         return 1
-    print("REVERB-SIZE-CLICK OK (6 negatives, comment edit accepted)")
+    print("REVERB-SIZE-CLICK OK (7 negatives, comment edit accepted)")
     return 0
 
 

@@ -67,6 +67,13 @@ test -f "$CORVUS_ROOT/scripts/check_cv067_ab_snapshots.py"
 # (scripts/check_cv065_voice_steal_fade.py). Same auto-registration applies;
 # this explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv065_voice_steal_fade.py"
+# CV-071: a reverb Size jump made while the module is silent (bypassed or mix
+# at zero, so no block renders) must still mute the early field on the first
+# audible block - the "value just applied" baseline advances only on a block
+# that rendered audio (scripts/check_cv071_silent_size_jump.py). Same
+# auto-registration applies; this explicit assertion keeps it from being lost
+# silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv071_silent_size_jump.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"

@@ -1379,6 +1379,12 @@ struct UpgradedReverb
     static constexpr float ROOM_SIZE_RATE_LIMIT = 60.0f;  // range-units/second
     float lastRoomSize = 0.0f;
     int lastBlockSamples = 0;   // samples processSample() rendered last block
+    // CV-071: whether lastRoomSize was set by a block that actually rendered
+    // audio. A block that renders nothing (reverb bypassed or mix at zero, so
+    // processSample() never runs) must not move the baseline; prepare() clears
+    // the flag so the first audible block establishes the baseline instead of
+    // reading the initial 0 as a jump across the room.
+    bool roomSizeValid = false;
     // Last mix handed to beginBlock() and whether one has been applied yet.
     // A mix change arms the per-sample applied-gain ramp; the first block
     // after prepare() snaps instead of ramping from the dry-only default.
@@ -1504,18 +1510,31 @@ struct UpgradedReverb
         {
             const float blockSeconds = static_cast<float>(lastBlockSamples)
                                      / static_cast<float>(sampleRate);
-            const float roomSizeRate = std::fabs(roomSize - lastRoomSize)
-                                     / juce::jmax(blockSeconds, 1.0e-6f);
+            // CV-071: a jump is only meaningful against a baseline that a
+            // rendered block established. Until then the taps are still the
+            // silent ones prepare() cleared, so the first audible block must
+            // not read the initial lastRoomSize (0) as a jump.
+            const float roomSizeRate = roomSizeValid
+                ? std::fabs(roomSize - lastRoomSize)
+                      / juce::jmax(blockSeconds, 1.0e-6f)
+                : 0.0f;
             if (roomSizeRate > ROOM_SIZE_RATE_LIMIT)
             {
                 earlyL.mute();
                 earlyR.mute();
             }
+            // CV-071: advance the "value just applied" baseline only on a
+            // block that actually rendered audio. A silent block (reverb
+            // bypassed or mix at zero, so processSample() never ran) leaves
+            // the tap history untouched; advancing the baseline there would
+            // swallow a size jump made while silent, and the first audible
+            // block would read the old room's history against taps already
+            // re-derived for the new one. Still a one-block rate over
+            // rendered time and never an accumulator: every rendered block
+            // moves the baseline, so smoothed travel cannot mute late.
+            lastRoomSize = roomSize;
+            roomSizeValid = true;
         }
-        // Track the value just applied every block: the guard above is a rate
-        // test over one block, not "has this ever changed", so a slow move can
-        // never accumulate into a late mute.
-        lastRoomSize = roomSize;
         lastBlockSamples = 0;
         earlyL.setRoomSize(roomSize);
         earlyR.setRoomSize(roomSize);
@@ -1598,6 +1617,7 @@ struct UpgradedReverb
         // with no history instead of comparing against the previous session.
         lastRoomSize = 0.0f;
         lastBlockSamples = 0;
+        roomSizeValid = false;
         double ratio = sr / 44100.0;
 
         for (int i = 0; i < NUM_COMBS; ++i)
