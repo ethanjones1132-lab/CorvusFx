@@ -852,6 +852,9 @@ public:
     bool keyPressed(const juce::KeyPress& key) override;
     void toggleTheme();
 private:
+    // CV-072: re-derive the SAVE button's target from the processor's active
+    // slot so the headstock and the button that banks into it can never disagree.
+    void refreshSaveTarget(bool activeSlotIsA);
     CorvusFXAudioProcessor& audioProcessor;
     CorvusLookAndFeel corvusLookAndFeel;
     AnimatedBackground animatedBackground;

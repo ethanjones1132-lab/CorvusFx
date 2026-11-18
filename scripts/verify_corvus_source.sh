@@ -62,6 +62,12 @@ test -f "$CORVUS_ROOT/scripts/check_cv064_chorus_depth_engage.py"
 # (scripts/check_cv067_ab_snapshots.py). Same auto-registration applies; this
 # explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv067_ab_snapshots.py"
+# CV-072: the editor's A/B slot indicator must follow the processor's slot -
+# timerCallback polls isSlotA(), re-points both toggles only on a disagreement,
+# and re-derives the SAVE target's colour/tooltip, including after a host state
+# restore (scripts/check_cv072_ab_slot_indicator.py). Same auto-registration
+# applies; this explicit assertion keeps it from being lost silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv072_ab_slot_indicator.py"
 # CV-065: stealing a live voice fades the outgoing note across the existing
 # declick window before the reset, instead of cutting it to zero
 # (scripts/check_cv065_voice_steal_fade.py). Same auto-registration applies;

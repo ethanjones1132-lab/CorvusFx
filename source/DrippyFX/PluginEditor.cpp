@@ -366,6 +366,9 @@ CorvusFXAudioProcessorEditor::CorvusFXAudioProcessorEditor(CorvusFXAudioProcesso
     // reports.
     btnSlotA.setToggleState(audioProcessor.isSlotA(), juce::dontSendNotification);
     btnSlotB.setToggleState(!audioProcessor.isSlotA(), juce::dontSendNotification);
+    // CV-072: seed the SAVE target from the same slot the toggles just showed;
+    // timerCallback re-derives it every tick, so this only covers the first frame.
+    refreshSaveTarget(audioProcessor.isSlotA());
 
     // Level meter
     addAndMakeVisible(levelMeter);
@@ -389,6 +392,24 @@ void CorvusFXAudioProcessorEditor::timerCallback()
     // and never inside a render callback.
     audioProcessor.drainPendingMidiHostNotifications();
 
+    // CV-072: the processor owns the active slot, and a host state restore
+    // (setStateInformation), a program change or an undo can flip it while this
+    // window is open. The constructor's one-shot reflect would then leave the
+    // wrong slot lit, so poll the processor's slot here and re-point the A/B
+    // toggles only when they disagree with it. CV-067 holds: this is a reflect,
+    // never a write of the compare pair.
+    const bool activeSlotIsA = audioProcessor.isSlotA();
+    if (btnSlotA.getToggleState() != activeSlotIsA
+        || btnSlotB.getToggleState() == activeSlotIsA)
+    {
+        btnSlotA.setToggleState(activeSlotIsA, juce::dontSendNotification);
+        btnSlotB.setToggleState(! activeSlotIsA, juce::dontSendNotification);
+    }
+    // The SAVE button banks into the processor's active slot, so its derived
+    // colour/tooltip has to move with the same poll: an undo or a preset load
+    // must never leave it pointing at the other slot.
+    refreshSaveTarget(activeSlotIsA);
+
     // Update level meter from processor (audio thread -> message thread via atomics).
     // Decay the processor-side atomics FIRST so the copies below are the
     // authoritative displayed values (a stale peak can't resurrect after silence).
@@ -402,6 +423,24 @@ void CorvusFXAudioProcessorEditor::timerCallback()
     levelMeter.setOutputPeakR(meters.outPeakR.load(std::memory_order_relaxed));
     levelMeter.setOutputRmsL(meters.outRmsL.load(std::memory_order_relaxed));
     levelMeter.setOutputRmsR(meters.outRmsR.load(std::memory_order_relaxed));
+}
+
+void CorvusFXAudioProcessorEditor::refreshSaveTarget(bool activeSlotIsA)
+{
+    // CV-072: SAVE writes to whichever slot the processor reports active, so
+    // the button's colour and tooltip are derived state, not constants. Both
+    // are refreshed from the same poll as the A/B toggles, so a host restore,
+    // an undo or a preset load that flipped the slot moves the SAVE target
+    // with it instead of leaving the button pointing at the other slot.
+    btnSaveAB.setColour(juce::TextButton::buttonColourId,
+                        activeSlotIsA ? juce::Colour(0xff2a2a50)
+                                      : juce::Colour(0xff3a2a50));
+    btnSaveAB.setColour(juce::TextButton::textColourOffId,
+                        activeSlotIsA ? juce::Colour(0xffb366ff)
+                                      : juce::Colour(0xff66b3ff));
+    btnSaveAB.setTooltip(activeSlotIsA
+                             ? "Save current knob positions to slot A"
+                             : "Save current knob positions to slot B");
 }
 
 bool CorvusFXAudioProcessorEditor::keyPressed(const juce::KeyPress& key)
