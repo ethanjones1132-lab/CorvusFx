@@ -2,7 +2,8 @@
 
 Status: **source tool and operator instructions only.** This document does not
 contain rendered WAVs, a listening pass, waveform measurements, or a release
-claim. The demo stems must be produced from the native binaries by the
+claim. One command (below) renders every stem and writes `manifest.json`; the
+stems themselves must be produced from the native binaries by the
 reviewer/operator on the machine that holds the build tree, then added to
 `ops/ship/corvus/demos/` with the evidence recorded below.
 
@@ -98,12 +99,11 @@ build. macOS ARM builds still need the SSE compatibility include path described
 in `AGENTS.md`; this change does not alter that setup.
 
 Windows sync note: `scripts/sync_corvus_source.ps1` uses an explicit file map
-that does not yet list `tools/CorvusOfflineRender.cpp` (this change is limited
-to the CMake file, the shared tool source and this document). If the Windows
-build relies on that script, copy the tool source explicitly or extend the map
-in a separate change; do not build the render targets from a tree that is
-missing the file. Building the clean default tree used by the reviewer needs
-no sync step.
+that does not yet list `tools/CorvusOfflineRender.cpp` or
+`tools/render_corvus_demos.py`. If the Windows build relies on that script,
+copy both tool files explicitly or extend the map in a separate change; do not
+build the render targets from a tree that is missing either file. Building the
+clean default tree used by the reviewer needs no sync step.
 
 The normal verification gate still applies: the reviewer must build the new
 targets **plus** the existing targets required by `AGENTS.md` (`DrippyFX`,
@@ -116,7 +116,11 @@ the two render targets alone is only the demo-render step.
 Use `--list-presets` for the authoritative roster of the binary you built.
 At the time of writing the FX roster has 36 programs and the instrument roster
 has 5; the four programs below are contrasting choices from that roster, not a
-replacement for the list.
+replacement for the list. The same eight choices, with their render lengths,
+are pinned in `source/DrippyFX/tools/render_corvus_demos.py` as `DEMO_SET`; the
+driver fails the whole run if the built binary reports a different program name
+for one of those indices, so a roster rename is reported instead of silently
+rendering some other sound.
 
 ### Corvus FX
 
@@ -140,95 +144,115 @@ Program names and indices come from the current product rosters. If
 `--list-presets` disagrees with this table, the binary wins; record the
 disagreement instead of renaming anything.
 
-The commands below pass indices. `--preset "Clean Sparkle"` is equivalent to
-`--preset 0`: a non-numeric value is matched case-insensitively against the same
-roster, and an unknown or ambiguous name exits with code 2 instead of falling
-back to program 0. Quote names that contain spaces.
+The driver and the one-off commands pass indices. `--preset "Clean Sparkle"` is
+equivalent to `--preset 0`: a non-numeric value is matched case-insensitively
+against the same roster, and an unknown or ambiguous name exits with code 2
+instead of falling back to program 0. Quote names that contain spaces.
 
-## Generate uniquely named demo WAVs
+## Render every stem in one command
 
-The following commands create eight uniquely named files. They deliberately
-omit `--overwrite`, so a second run fails instead of silently replacing stems.
-Create the directory first. The block below is PowerShell; on bash/macOS use
-forward-slash paths and the same flags.
+`source/DrippyFX/tools/render_corvus_demos.py` drives both consoles through the
+eight-program set above and writes `manifest.json` beside the stems. It is a
+stdlib-only Python 3 script: it shells out to the built binaries, checks each
+WAV header with its own RIFF reader, and never imports, rebuilds or copies the
+product DSP.
 
-```powershell
-Set-Location (git rev-parse --show-toplevel)
-New-Item -ItemType Directory -Force C:\Projects\ops\ship\corvus\demos | Out-Null
-
-$fx   = "build\corvus-render\CorvusRenderFX_artefacts\Release\CorvusRenderFX.exe"
-$inst = "build\corvus-render\CorvusRenderInstrument_artefacts\Release\CorvusRenderInstrument.exe"
-$rev  = git rev-parse HEAD
-
-# Capture the roster the built binary actually reports. If it disagrees with
-# the table above, use the binary's indices and record the disagreement.
-& $fx   --list-presets | Out-File -Encoding utf8 C:\Projects\ops\ship\corvus\demos\corvus-fx-presets.txt
-& $inst --list-presets | Out-File -Encoding utf8 C:\Projects\ops\ship\corvus\demos\corvus-instrument-presets.txt
-
-# Corvus FX
-& $fx --preset 0  --seconds 7.5 --provenance $rev `
-  --out C:\Projects\ops\ship\corvus\demos\corvus-fx-00-clean-sparkle.wav
-& $fx --preset 8  --seconds 7.5 --provenance $rev `
-  --out C:\Projects\ops\ship\corvus\demos\corvus-fx-08-thick-sauce.wav
-& $fx --preset 13 --seconds 7.5 --provenance $rev `
-  --out C:\Projects\ops\ship\corvus\demos\corvus-fx-13-cosmic-wide.wav
-& $fx --preset 21 --seconds 7.5 --provenance $rev `
-  --out C:\Projects\ops\ship\corvus\demos\corvus-fx-21-event-horizon.wav
-
-# Corvus Instrument
-& $inst --preset 0 --seconds 9.0 --provenance $rev `
-  --out C:\Projects\ops\ship\corvus\demos\corvus-instrument-00-dawn-choir.wav
-& $inst --preset 1 --seconds 7.5 --provenance $rev `
-  --out C:\Projects\ops\ship\corvus\demos\corvus-instrument-01-raven-glass.wav
-& $inst --preset 2 --seconds 7.5 --provenance $rev `
-  --out C:\Projects\ops\ship\corvus\demos\corvus-instrument-02-ashen-sky.wav
-& $inst --preset 4 --seconds 12.0 --provenance $rev `
-  --out C:\Projects\ops\ship\corvus\demos\corvus-instrument-04-cathedral-drift.wav
+```bash
+python3 source/DrippyFX/tools/render_corvus_demos.py \
+  --build-dir build/corvus-render \
+  --out-dir C:/Projects/ops/ship/corvus/demos
 ```
 
-`--seconds 7.5` gives 360000 frames (a partial final block of 64 samples) and
-leaves tail time after the instrument phrase. Dawn Choir uses 9.0 s (432000
-frames, a partial final block of 384 samples) and Cathedral Drift uses 12.0 s
-(576000 frames, a whole number of 512-sample blocks) so their long releases are
-not cut off. The tool's default is 6.0 s.
+On Windows the same line works as
+`py -3 source/DrippyFX/tools/render_corvus_demos.py ...`. `--out-dir` defaults
+to `build/corvus-demos` (already gitignored), so stems never land in the
+tracked tree by accident. `--build-dir` is searched for `CorvusRenderFX` and
+`CorvusRenderInstrument` (Release artefacts preferred, then the newest match);
+pass `--fx <path>` and `--instrument <path>` to name the executables
+explicitly, or set `CORVUS_RENDER_FX` / `CORVUS_RENDER_INSTRUMENT`.
+`--list-set` prints the pinned set, its file names, durations and frame counts
+without rendering.
 
-Each command prints the product, program, exact frame/sample counts, duration,
-peak and RMS (linear and dBFS), clipping count, **near_full_scale_samples** (samples at or above 0.99 linear magnitude per channel, including clipped samples), provenance and `status=ok`.
-Capture that stdout next to the WAV; it is part of the manifest.
+Before it renders anything the driver checks every output path: an existing
+stem, an existing `manifest.json` or a stale `.partial` file is refused unless
+`--overwrite` is passed, so a second run cannot silently replace evidence.
+During the run it stops at the first failure, removes the stems that run
+created, and writes no manifest. A success prints one line per stem, then a
+summary ending in `status: ok`; only a complete run writes the manifest (to
+`manifest.json.partial`, then moved into place).
+
+`--provenance` defaults to `git rev-parse HEAD` and is echoed in both the
+console reports and the manifest; the driver also records whether the worktree
+was dirty. Render lengths are 11.5 s for seven stems (552000 frames, a partial
+final block of 64 samples) and 15.5 s for Cathedral Drift (744000 frames, also a
+partial final block of 64 samples) so its long release is not cut off. Every
+stem is inside the 10-20 s demo band, 48 kHz, stereo, 24-bit PCM, and none is
+normalised: the level of each stem is the product's own factory-program gain.
+The consoles synthesise their input from a fixed formula, so there is no PRNG,
+seed or input file to pin - the same binary and the same arguments are the
+reproducibility check.
+
+The console tool still renders one program per run. A single one-off stem can
+be produced directly with `--preset`, `--seconds` and `--out`; the driver runs
+exactly that command once per entry below.
+
+Each console run prints the product, program, exact frame/sample counts,
+duration, peak and RMS (linear and dBFS), clipping count,
+**near_full_scale_samples** (samples at or above 0.99 linear magnitude per
+channel, including clipped samples), provenance and `status=ok`. The driver
+keeps that stdout in each stem's `report` object in the manifest.
 
 The **near_full_scale_samples** metric counts float samples whose absolute magnitude is at least 0.99, including samples also counted as clipped. It quantifies how often the signal approaches or exceeds 0 dBFS; a count of zero does not imply silence, so use the existing peak and RMS measurements to assess signal level.
 
 ## Manifest
 
-Fill this table from the actual tool output and file hashes. Do not fill it
-from this document.
+`manifest.json` is written by the driver and is the authoritative record. Do
+not retype it and do not fill it from this document. It carries:
 
-| File | Product | Preset | Program | Seconds | Format | Frames | Peak dBFS | RMS dBFS | Clipped | NearFullScale | SHA-256 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `corvus-fx-00-clean-sparkle.wav` | Corvus FX | 0 | Clean Sparkle | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
-| `corvus-fx-08-thick-sauce.wav` | Corvus FX | 8 | Thick Sauce | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
-| `corvus-fx-13-cosmic-wide.wav` | Corvus FX | 13 | Cosmic Wide | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
-| `corvus-fx-21-event-horizon.wav` | Corvus FX | 21 | Event Horizon | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
-| `corvus-instrument-00-dawn-choir.wav` | Corvus Instrument | 0 | Dawn Choir | 9.0 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
-| `corvus-instrument-01-raven-glass.wav` | Corvus Instrument | 1 | Raven Glass | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
-| `corvus-instrument-02-ashen-sky.wav` | Corvus Instrument | 2 | Ashen Sky | 7.5 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
-| `corvus-instrument-04-cathedral-drift.wav` | Corvus Instrument | 4 | Cathedral Drift | 12.0 | 48 kHz / 2 ch / 24-bit | to record | to record | to record | to record | to record | to record |
+- `schema` (`corvus-demo-manifest/1`), `driver`, `repo_commit`, `provenance`,
+  `provenance_source`, `repo_dirty`, `normalisation` and `input`.
+- `format`: WAV, 48000 Hz, 2 channels, 24-bit PCM.
+- `renderers`: both target names, their executable paths and their SHA-256.
+- `stem_count`, and `stems`: one entry per preset in `DEMO_SET` order, each
+  with `file`, `product`, `preset_index`, `program`, `seconds`, `frames`,
+  `sample_rate`, `channels`, `bits_per_sample`, `sample_format`, `bytes`,
+  `sha256`, `peak_dbfs`, `rms_dbfs`, `clipped_samples`,
+  `near_full_scale_samples`, `status`, `readback`, `input` and the console
+  tool's raw `report` key/values.
 
-Also record the source/build provenance:
+The pinned, deterministic part of the set (the driver fails if the built
+binary reports a different program name for one of these indices):
+
+| File | Product | Preset | Program | Seconds | Frames |
+| --- | --- | --- | --- | --- | --- |
+| `corvus-fx-00-clean-sparkle.wav` | Corvus FX | 0 | Clean Sparkle | 11.5 | 552000 |
+| `corvus-fx-08-thick-sauce.wav` | Corvus FX | 8 | Thick Sauce | 11.5 | 552000 |
+| `corvus-fx-13-cosmic-wide.wav` | Corvus FX | 13 | Cosmic Wide | 11.5 | 552000 |
+| `corvus-fx-21-event-horizon.wav` | Corvus FX | 21 | Event Horizon | 11.5 | 552000 |
+| `corvus-instrument-00-dawn-choir.wav` | Corvus Instrument | 0 | Dawn Choir | 11.5 | 552000 |
+| `corvus-instrument-01-raven-glass.wav` | Corvus Instrument | 1 | Raven Glass | 11.5 | 552000 |
+| `corvus-instrument-02-ashen-sky.wav` | Corvus Instrument | 2 | Ashen Sky | 11.5 | 552000 |
+| `corvus-instrument-04-cathedral-drift.wav` | Corvus Instrument | 4 | Cathedral Drift | 15.5 | 744000 |
+
+Per-stem format, byte count, peak/RMS, clipping, near-full-scale counts and
+SHA-256 come from `manifest.json`; copy them from there when the release notes
+or the README need a table. Also record the source/build provenance:
 
 | Item | Value |
 | --- | --- |
-| Git commit (`git rev-parse HEAD`) | to record |
-| Worktree status (`git status --short`) | to record (no uncommitted source edits before the evidence run) |
-| JUCE version (tool prints `juce=`) | to record |
+| Git commit (`repo_commit`) | from `manifest.json` |
+| Worktree status (`repo_dirty`) | from `manifest.json` |
+| JUCE version (tool prints `juce=`) | from each stem's `report` |
 | CMake generator / compiler / config | to record |
 | Configure and build commands | to record |
-| SHA-256 of `CorvusRenderFX` binary | to record |
-| SHA-256 of `CorvusRenderInstrument` binary | to record |
+| SHA-256 of `CorvusRenderFX` binary | from `manifest.json` `renderers` |
+| SHA-256 of `CorvusRenderInstrument` binary | from `manifest.json` `renderers` |
+| SHA-256 of every stem | from `manifest.json` `stems[].sha256` |
 
-`--provenance <text>` is echoed verbatim in the tool report. The tool cannot
-verify that a string is the real revision; the operator must capture the
-actual `git rev-parse HEAD` and the binary hashes alongside it.
+`--provenance <text>` is echoed verbatim in the tool report and the manifest.
+The tool cannot verify that a string is the real revision; `repo_commit` is
+recorded from `git rev-parse HEAD` by the driver, and `provenance_source` says
+whether that was the default or a supplied string.
 
 The renderer owns the real processor on the heap. Its fixed DSP buffers exceed
 the default Windows console stack; --help and --list-presets are startup
@@ -241,9 +265,11 @@ not close CV-033.
 
 ### 1. WAV duration, format and non-silence
 
-Save this stdlib-only Python helper outside the repository (for example as
-`check_demos.py`) and run it on each stem. It is a verification aid, not part
-of the shipped tool and not a new tool dependency.
+The driver has already checked every stem's header, frame count, byte size and
+SHA-256 against `manifest.json`; this helper adds peak/RMS and window
+measurements. Save it outside the repository (for example as `check_demos.py`)
+and run it on each stem. It is a verification aid, not part of the shipped tool
+and not a new tool dependency.
 
 ```python
 import hashlib, math, sys, wave
@@ -340,7 +366,7 @@ seed guarantee.
 
 ### 3. Instrument note-on / note-off and tail
 
-Use program 1 (Raven Glass, release 1.4 s) and the 7.5 s render. The MIDI
+Use program 1 (Raven Glass, release 1.4 s) and the 11.5 s render. The MIDI
 phrase is four triads: note-on at 0.0, 1.2, 2.4 and 3.6 s; note-off at 0.6,
 1.8, 3.0 and 4.2 s; the rest is release tail.
 
@@ -407,9 +433,16 @@ that `--overwrite` only affects the named output and its `.partial`.
   dither or mono mode. 24-bit PCM cannot carry samples above 0 dBFS, so the
   tool reports `clipped_samples` and warns; it does not lower the product's
   gain.
-- Render length is bounded to 0.25-30 s, and one program is rendered per run.
-  There is no automation, parameter sweep, MIDI file input or multi-program
-  batch in the tool.
+- Render length is bounded to 0.25-30 s, and the console tool renders one
+  program per run. The documented demo set is looped by
+  `source/DrippyFX/tools/render_corvus_demos.py`, which renders one console run
+  per entry and writes the manifest; there is still no automation, parameter
+  sweep or MIDI file input.
+- `--fx` and `--instrument` also accept a `.py` stand-in so the source gate can
+  exercise the driver without a product build. The manifest records
+  `stand_in: true` for such a renderer; a published stem must come from the
+  real `CorvusRenderFX` / `CorvusRenderInstrument` binary, and the manifest
+  records that binary's path and SHA-256.
 - The FX input is a synthetic tone/transient bed, not a song. The instrument
   input is a fixed four-chord phrase; renders shorter than the phrase truncate
   it, so use at least ~4.5 s to hear the last note-off and tail.
@@ -433,8 +466,8 @@ that `--overwrite` only affects the named output and its `.partial`.
   plug-in. The tool adds no random source and invents no seed guarantee.
   Same-binary repeat renders are the relevant reproducibility check; record
   any differences.
-- This patch adds the two CMake console targets, the shared tool source and
-  this document only. It does not render stems, listen to them, measure the
-  real waveforms, tag a release, or publish anything. The reviewer/operator
-  phase must build the native targets, run the checks above, and record the
-  evidence in the manifest.
+- This patch adds the two CMake console targets, the shared tool source, the
+  demo-set driver (stems plus manifest) and this document. It does not render
+  stems, listen to them, measure the real waveforms, tag a release, or publish
+  anything. The reviewer/operator phase must build the native targets, run the
+  one-command render, check the stems, and keep `manifest.json` as the evidence.
