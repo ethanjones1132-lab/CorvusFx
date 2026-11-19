@@ -7,6 +7,48 @@
 
 namespace
 {
+// CV-089: product identity marker written into (and demanded from) the FX
+// state chunk. Every AudioProcessorValueTreeState serializes the same
+// "Parameters" root tag, so the tag alone cannot tell this chunk from a
+// foreign plugin's. The restore path requires this attribute, and the value is
+// the chunk's own product tag rather than the product/bundle name, so a
+// rename cannot change the state format.
+constexpr auto stateProductIdAttribute = "productId";
+constexpr auto stateProductId = "CorvusFXState";
+
+// CV-089: a restore replaces the whole parameter tree, so a truncated chunk
+// would silently reset every parameter it omits to its default in the live
+// session. Require one child per registered parameter before anything is
+// applied. The roster comes from the live processor, so adding or removing a
+// parameter moves this check with it instead of leaving a stale count.
+bool stateCarriesEveryParameter (const juce::XmlElement& state,
+                                 juce::AudioProcessor& processor)
+{
+    juce::StringArray parameterIds;
+
+    for (auto* parameter : processor.getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter))
+            parameterIds.add(ranged->getParameterID());
+
+    for (int i = 0; i < parameterIds.size(); ++i)
+        if (state.getChildByAttribute("id", parameterIds[i]) == nullptr)
+            return false;
+
+    // Count too: the per-id probes above cannot see a duplicate child, and an
+    // extra PARAM entry means the chunk is not the set this plugin writes.
+    int found = 0;
+    for (int i = 0; i < state.getNumChildElements(); ++i)
+    {
+        const auto* child = state.getChildElement(i);
+
+        if (child != nullptr && child->hasAttribute("id")
+            && parameterIds.contains(child->getStringAttribute("id")))
+            ++found;
+    }
+
+    return ! parameterIds.isEmpty() && found == parameterIds.size();
+}
+
 // CV-028: marks a multi-parameter recall as one batch. The epoch is bumped when
 // the batch opens and closes, so a block-header capture that overlapped the
 // writes — including one that starts and finishes entirely inside the capture —
@@ -1734,6 +1776,8 @@ void CorvusFXAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 
     // Version tag keeps session loading forward-compatible.
     xml->setAttribute("schemaVersion", 1);
+    // CV-089: identity marker every restore demands before it applies a chunk.
+    xml->setAttribute(stateProductIdAttribute, stateProductId);
     // Save the A/B-compare snapshots with the state (abSlots child below).
     // Without this the two float[24] snapshots and the active slot live only
     // in memory, so reloading a project silently loses both saved snapshots.
@@ -1786,6 +1830,18 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
     if (xml && xml->hasTagName(apvts.state.getType()))
     {
         if (xml->hasAttribute("schemaVersion") && xml->getIntAttribute("schemaVersion") != 1)
+            return;
+
+        // CV-089: the "Parameters" root tag above is the APVTS default, so a
+        // foreign plugin's chunk passes it. Demand the product identity marker
+        // this plugin writes in getStateInformation and the complete parameter
+        // roster before anything below mutates the live session. A legacy chunk
+        // with no schemaVersion is still accepted, but only when it carries the
+        // marker; a partial or foreign chunk returns here with the current
+        // session untouched.
+        if (! xml->hasAttribute(stateProductIdAttribute)
+            || xml->getStringAttribute(stateProductIdAttribute) != stateProductId
+            || ! stateCarriesEveryParameter(*xml, *this))
             return;
 
         // Transport metadata is decoded below from the original XML. Keep

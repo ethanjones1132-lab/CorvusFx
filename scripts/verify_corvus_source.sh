@@ -108,6 +108,12 @@ test -f "$CORVUS_ROOT/scripts/check_cv075_instrument_preset_gestures.py"
 # (scripts/check_cv087_instrument_output_guard.py). Same auto-registration
 # applies; this explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv087_instrument_output_guard.py"
+# CV-089: a restore demands the product identity marker plus every parameter
+# child before replaceState, and a partial or foreign chunk leaves the live
+# session untouched (scripts/check_cv089_state_restore_identity.py). Same
+# auto-registration applies; this explicit assertion keeps it from being lost
+# silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv089_state_restore_identity.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"

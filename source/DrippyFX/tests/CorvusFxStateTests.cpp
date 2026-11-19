@@ -387,6 +387,61 @@ public:
         juce::AudioProcessor::copyXmlToBinary(*xml, unsupported);
         restored->setStateInformation(unsupported.getData(), static_cast<int>(unsupported.getSize()));
         expectWithinAbsoluteError(getFatness(*restored), 0.35f, 0.0001f);
+
+        beginTest("CV-089: partial, foreign and unmarked chunks leave the live parameters untouched");
+        {
+            auto victim = std::make_unique<CorvusFXAudioProcessor>();
+            setFatness(*victim, 0.35f);
+
+            const auto expectRejected = [&](const juce::MemoryBlock& chunk,
+                                            const juce::String& label)
+            {
+                victim->setStateInformation(chunk.getData(),
+                                            static_cast<int>(chunk.getSize()));
+                expect(std::abs(getFatness(*victim) - 0.35f) < 0.0001f,
+                       label + ": live parameters changed");
+            };
+
+            const auto chunkAfter = [&](auto&& mutation)
+            {
+                std::unique_ptr<juce::XmlElement> copy(
+                    juce::AudioProcessor::getXmlFromBinary(
+                        saved.getData(), static_cast<int>(saved.getSize())));
+                juce::MemoryBlock chunk;
+                if (copy != nullptr)
+                {
+                    mutation(*copy);
+                    juce::AudioProcessor::copyXmlToBinary(*copy, chunk);
+                }
+                return chunk;
+            };
+
+            // One parameter child missing: applying the chunk would reset that
+            // parameter to its layout default in the live session.
+            expectRejected(chunkAfter([](juce::XmlElement& root)
+            {
+                if (auto* child = root.getChildByAttribute("id", "fatness"))
+                    root.removeChildElement(child, true);
+            }), "truncated parameter set");
+
+            expectRejected(chunkAfter([](juce::XmlElement& root)
+            {
+                root.setTagName("ForeignPluginState");
+            }), "foreign root tag");
+
+            // The legacy shape: no schemaVersion and no identity marker.
+            expectRejected(chunkAfter([](juce::XmlElement& root)
+            {
+                root.removeAttribute("schemaVersion");
+                root.removeAttribute("productId");
+            }), "marker-less legacy chunk");
+
+            // The marker is required even when the schema tag is current.
+            expectRejected(chunkAfter([](juce::XmlElement& root)
+            {
+                root.removeAttribute("productId");
+            }), "marker-less versioned chunk");
+        }
     }
 };
 
