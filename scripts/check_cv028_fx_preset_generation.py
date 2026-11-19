@@ -379,6 +379,7 @@ def check(cpp_raw, hdr_raw):
         ("loadSlotA", "apvts.getParameter(abParamIds[i])"),
         ("loadSlotB", "apvts.getParameter(abParamIds[i])"),
         ("setStateInformation", "apvts.replaceState("),
+        ("randomizePreset", "setValueNotifyingHost"),
     )
     for fn, first_write in recalls:
         body = block_after(cpp, f"CorvusFXAudioProcessor::{fn}(")
@@ -391,8 +392,13 @@ def check(cpp_raw, hdr_raw):
                     "ParameterGenerationBatch(presetBatchSequence) - without "
                     "it its parameters are written one-by-one and a block can "
                     "render a mix of two presets")
-        if first_write not in body:
-            return f"{fn} no longer contains its pinned first write `{first_write}`"
+        # For randomizePreset, check that setValueNotifyingHost appears somewhere
+        if fn == "randomizePreset":
+            if first_write not in flat_body:
+                return f"{fn} no longer contains its pinned first write `{first_write}`"
+        else:
+            if first_write not in body:
+                return f"{fn} no longer contains its pinned first write `{first_write}`"
         opens = body.find("ParameterGenerationBatch batch(presetBatchSequence);")
         write = body.find(first_write)
         close = body.find("batch.close();")
@@ -407,6 +413,10 @@ def check(cpp_raw, hdr_raw):
             return (f"{fn} must write every parameter between the batch open "
                     "and `batch.close();`, then publish - otherwise the "
                     "committed generation is still partial")
+        if fn == "randomizePreset" and body.rfind("setValueNotifyingHost") > close:
+            return (f"{fn} writes a parameter after `batch.close();` - that "
+                    "write commits in the next generation, so a render block "
+                    "can still read a mix of two sets")
 
     # ── 8. the constructor seeds the first block's fallback ────────────────
     ctor = block_after(cpp, "CorvusFXAudioProcessor::CorvusFXAudioProcessor(")
@@ -436,7 +446,7 @@ if err:
     fail(err + " [PluginProcessor.cpp / PluginProcessor.h]")
 print(f"cv028-fx-generation: {len(ROSTER)} parameters publish as one "
       "epoch-guarded generation; loadPreset / loadSlotA / loadSlotB / "
-      "setStateInformation batch their writes; processBlock restores "
+      "setStateInformation / randomizePreset batch their writes; processBlock restores "
       "lastGoodGeneration on a torn epoch")
 
 # ---------------------------------------------------------------------------
@@ -503,6 +513,29 @@ probe("setStateInformation batch dropped",
       "        ParameterGenerationBatch batch(presetBatchSequence);\n"
       "        restoringPresetState.store(true);",
       "        restoringPresetState.store(true);")
+
+# 10. randomize batch dropped (parameters written one-by-one again)
+probe("randomize batch dropped",
+      "    // CV-084: publish the random recall as one coherent parameter generation.\n"
+      "    ParameterGenerationBatch batch(presetBatchSequence);\n",
+      "")
+
+# 11. randomize publishes before batch.close() (anchored to randomize's own tail
+#     so the mutation cannot land on loadPreset's identical close/publish pair)
+probe("randomize publishes before batch.close()",
+      "    batch.close();\n    publishParameterGeneration();\n"
+      "}\n\nvoid CorvusFXAudioProcessor::setParameterLocked(",
+      "    publishParameterGeneration();\n    batch.close();\n"
+      "}\n\nvoid CorvusFXAudioProcessor::setParameterLocked(")
+
+# 12. a randomize write lands after the batch closed (it would commit in the
+#     next generation, so the block still renders a mix)
+probe("randomize writes a parameter after batch.close()",
+      "    batch.close();\n    publishParameterGeneration();\n"
+      "}\n\nvoid CorvusFXAudioProcessor::setParameterLocked(",
+      "    batch.close();\n    publishParameterGeneration();\n"
+      "    ranged->setValueNotifyingHost(0.5f);\n"
+      "}\n\nvoid CorvusFXAudioProcessor::setParameterLocked(")
 
 # no-op guard: a benign comment inside the guarded processBlock region stays
 # accepted (the checker pins shape, not text)

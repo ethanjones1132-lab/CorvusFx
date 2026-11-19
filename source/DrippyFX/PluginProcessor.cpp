@@ -301,6 +301,9 @@ void CorvusFXAudioProcessor::randomizePreset()
     // Bypass buttons have ~15% chance of being active; continuous params get full-range random.
     juce::Random rng;
     undoManager.beginNewTransaction("Randomize");
+
+    // CV-084: publish the random recall as one coherent parameter generation.
+    ParameterGenerationBatch batch(presetBatchSequence);
     auto& params = getParameters();
     for (auto* param : params)
     {
@@ -331,6 +334,11 @@ void CorvusFXAudioProcessor::randomizePreset()
         }
         ranged->endChangeGesture();
     }
+
+    // CV-084: the whole random set is in place now — close the batch and commit it
+    // as one generation, so the next block adopts all 23 values together.
+    batch.close();
+    publishParameterGeneration();
 }
 
 void CorvusFXAudioProcessor::setParameterLocked(const juce::String& paramID, bool locked)
