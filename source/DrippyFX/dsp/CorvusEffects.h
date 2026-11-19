@@ -1487,6 +1487,8 @@ struct UpgradedReverb
     static constexpr int PREDELAY_MAX = 9600;
     float preDelayBuf[2][PREDELAY_MAX] = {};
     int preDelayPos = 0;
+    float currentPreDelaySmp = 0.0f;
+    bool preDelayInitialized = false;
 
     DCBlocker dcL, dcR;
     // Master modulation LFO state — using sin/cos recurrence instead of phase + sin/cos per sample
@@ -1613,6 +1615,11 @@ struct UpgradedReverb
         // Cache pre-delay and width per block
         blockCoeffs.preDelaySmp = juce::jlimit(0, PREDELAY_MAX - 1,
             (int)(preDelayMs * 0.001f * sampleRate));
+        if (!preDelayInitialized)
+        {
+            currentPreDelaySmp = static_cast<float>(blockCoeffs.preDelaySmp);
+            preDelayInitialized = true;
+        }
         blockCoeffs.width = width_;
 
         // ── Early reflections scale with room size ──
@@ -1755,6 +1762,8 @@ struct UpgradedReverb
         earlyL.mute(); earlyR.mute();
         std::memset(preDelayBuf, 0, sizeof(preDelayBuf));
         preDelayPos = 0;
+        currentPreDelaySmp = 0.0f;
+        preDelayInitialized = false;
         // Initialize master modulation LFO state: sin(0)=0, cos(0)=1
         modSin = 0.0f;
         modCos = 1.0f;
@@ -1803,13 +1812,37 @@ struct UpgradedReverb
         if ((++modTick & 255) == 0)
             renormModLFO();
         float modDepth = blockCoeffs.modDepth;  // cached from beginBlock
-        int pdSmp = blockCoeffs.preDelaySmp;    // cached from beginBlock
         preDelayBuf[0][preDelayPos] = inL;
         preDelayBuf[1][preDelayPos] = inR;
-        int pdRead = preDelayPos - pdSmp;
-        if (pdRead < 0) pdRead += PREDELAY_MAX;
-        float pdL = preDelayBuf[0][pdRead];
-        float pdR = preDelayBuf[1][pdRead];
+        // Slew the read head at the fastest rate the upstream 20 ms room-size
+        // smoother can request (40 ms of delay over 20 ms = 2 samples/sample).
+        // Carrying the read position across blocks avoids the integer splice
+        // that used to jump the reverb feed on each block's new delay target.
+        const float delayDelta = static_cast<float>(blockCoeffs.preDelaySmp)
+                               - currentPreDelaySmp;
+        currentPreDelaySmp += juce::jlimit(-2.0f, 2.0f, delayDelta);
+        float pdRead = static_cast<float>(preDelayPos) - currentPreDelaySmp;
+        if (pdRead < 0.0f) pdRead += static_cast<float>(PREDELAY_MAX);
+        else if (pdRead >= static_cast<float>(PREDELAY_MAX))
+            pdRead -= static_cast<float>(PREDELAY_MAX);
+        // The normal pre-delay is well beyond two samples, so use the existing
+        // Hermite read. Keep the zero/one-sample edge causal and exact.
+        float pdL, pdR;
+        if (currentPreDelaySmp < 2.0f)
+        {
+            const int pdIndex = static_cast<int>(std::floor(pdRead));
+            const float fraction = pdRead - static_cast<float>(pdIndex);
+            const int pdNext = (pdIndex + 1) % PREDELAY_MAX;
+            pdL = preDelayBuf[0][pdIndex] * (1.0f - fraction)
+                + preDelayBuf[0][pdNext] * fraction;
+            pdR = preDelayBuf[1][pdIndex] * (1.0f - fraction)
+                + preDelayBuf[1][pdNext] * fraction;
+        }
+        else
+        {
+            pdL = hermiteInterp(preDelayBuf[0], PREDELAY_MAX, pdRead);
+            pdR = hermiteInterp(preDelayBuf[1], PREDELAY_MAX, pdRead);
+        }
         if (++preDelayPos >= PREDELAY_MAX) preDelayPos = 0;
 
         // Early reflections
