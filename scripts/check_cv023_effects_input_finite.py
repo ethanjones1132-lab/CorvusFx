@@ -17,15 +17,17 @@ clamp, before ANY DSP (distortion/chorus/delay/reverb/master) reads smpL/smpR.
 Asserts (comment-stripped, per-sample loop body):
   (a) the input read/seed pair and the +/-2.0f jlimit clamp survive unchanged.
   (b) an input finiteness guard exists for BOTH channels:
-        smpL = std::isfinite(smpL) ? smpL : 0.0f;
-        smpR = std::isfinite(smpR) ? smpR : 0.0f;
+        smpL = isFiniteFloat(smpL) ? smpL : 0.0f;
+        smpR = isFiniteFloat(smpR) ? smpR : 0.0f;
       (the R guard keeps the mono duplicate consistent: for a mono bus smpR
       mirrors smpL, so both fold together; no extra branch is allowed).
+      CV-082: the guard calls the file-local bit-test helper `isFiniteFloat`
+      instead of std::isfinite, which /fp:fast makes always-true.
   (c) the guards sit BETWEEN the input read (seed lines) and the first
       processSample/reverb call in the chain
       (seedL < seedR < guardL < guardR < distortion < delay < reverb).
   (d) the POST-chain output guard still exists exactly once per channel
-      (`chData[0][s] = std::isfinite(smpL) ? ...` and the `if (!isMono)` R
+      (`chData[0][s] = isFiniteFloat(smpL) ? ...` and the `if (!isMono)` R
       line) and still sits AFTER the reverb call — the last line of defence
       must not be dropped or moved in favour of the input guard.
 
@@ -48,10 +50,10 @@ SRC = ROOT / "source" / "DrippyFX" / "PluginProcessor.cpp"
 
 SEED_L = "float smpL = juce::jlimit(-2.0f, 2.0f, chData[0][s]);"
 SEED_R = "float smpR = juce::jlimit(-2.0f, 2.0f, isMono ? smpL : chData[1][s]);"
-GUARD_L = "smpL = std::isfinite(smpL) ? smpL : 0.0f;"
-GUARD_R = "smpR = std::isfinite(smpR) ? smpR : 0.0f;"
-POST_L = "chData[0][s] = std::isfinite(smpL) ? smpL : 0.0f;"
-POST_R = "if (!isMono) chData[1][s] = std::isfinite(smpR) ? smpR : 0.0f;"
+GUARD_L = "smpL = isFiniteFloat(smpL) ? smpL : 0.0f;"
+GUARD_R = "smpR = isFiniteFloat(smpR) ? smpR : 0.0f;"
+POST_L = "chData[0][s] = isFiniteFloat(smpL) ? smpL : 0.0f;"
+POST_R = "if (!isMono) chData[1][s] = isFiniteFloat(smpR) ? smpR : 0.0f;"
 DSP_DIST = "distortion.process("
 DSP_DELAY = "delay.processSample("
 DSP_REVERB = "upgradedReverb.processSample("
@@ -179,8 +181,8 @@ if verdict is not None:
 
 # ---- negative probes (in-memory mutations; each must be REJECTED) ----
 GUARD_BLOCK = (
-    "        smpL = std::isfinite(smpL) ? smpL : 0.0f;\n"
-    "        smpR = std::isfinite(smpR) ? smpR : 0.0f;\n")
+    "        smpL = isFiniteFloat(smpL) ? smpL : 0.0f;\n"
+    "        smpR = isFiniteFloat(smpR) ? smpR : 0.0f;\n")
 
 probes = [
     ("input finiteness guard removed (pre-CV-023 shape)",
@@ -195,17 +197,17 @@ probes = [
          "                pingPong, sDelayMod);\n" + GUARD_BLOCK)),
     ("post-chain output guard removed",
      lambda s: s.replace(
-         "        chData[0][s] = std::isfinite(smpL) ? smpL : 0.0f;\n"
-         "        if (!isMono) chData[1][s] = std::isfinite(smpR) ? smpR : 0.0f;\n",
+         "        chData[0][s] = isFiniteFloat(smpL) ? smpL : 0.0f;\n"
+         "        if (!isMono) chData[1][s] = isFiniteFloat(smpR) ? smpR : 0.0f;\n",
          "")),
     ("post-chain output guard moved before the reverb call",
      lambda s: s.replace(
-         "        chData[0][s] = std::isfinite(smpL) ? smpL : 0.0f;\n"
-         "        if (!isMono) chData[1][s] = std::isfinite(smpR) ? smpR : 0.0f;\n",
+         "        chData[0][s] = isFiniteFloat(smpL) ? smpL : 0.0f;\n"
+         "        if (!isMono) chData[1][s] = isFiniteFloat(smpR) ? smpR : 0.0f;\n",
          "").replace(
          "        // 1. DISTORTION (click-free bypass crossfade)\n",
-         "        chData[0][s] = std::isfinite(smpL) ? smpL : 0.0f;\n"
-         "        if (!isMono) chData[1][s] = std::isfinite(smpR) ? smpR : 0.0f;\n"
+         "        chData[0][s] = isFiniteFloat(smpL) ? smpL : 0.0f;\n"
+         "        if (!isMono) chData[1][s] = isFiniteFloat(smpR) ? smpR : 0.0f;\n"
          "        // 1. DISTORTION (click-free bypass crossfade)\n")),
 ]
 

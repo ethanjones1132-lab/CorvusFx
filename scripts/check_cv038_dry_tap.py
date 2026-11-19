@@ -24,7 +24,7 @@ METER_R = "float inVR_ = std::abs(dryR);"
 LOOP = re.compile(r"for\s*\(\s*int\s+s\s*=\s*0\s*;\s*s\s*<\s*numSamples\s*;\s*\+\+\s*s\s*\)")
 HELPER = re.compile(
     r"inline\s+void\s+foldNonFiniteSamples\s*\([^)]*\)\s*noexcept\s*\{"
-    r"[^{}]*!\s*std::isfinite\s*\(\s*samples\s*\[\s*i\s*\]\s*\)"
+    r"[^{}]*!\s*isFiniteFloat\s*\(\s*samples\s*\[\s*i\s*\]\s*\)"
     r"[^{}]*samples\s*\[\s*i\s*\]\s*=\s*0\.0f\s*;[^{}]*\}")
 
 

@@ -196,7 +196,7 @@ def prep_fallback_local(camel, pid, family):
 
 
 def proc_fallback_local(camel, pid, family):
-    return ("const float fallback%s = std::isfinite(smooth%s.getTargetValue())"
+    return ("const float fallback%s = isFiniteFloat(smooth%s.getTargetValue())"
             " ? smooth%s.getTargetValue() : %s;"
             % (camel, camel, camel, declared_expr(pid, family)))
 
@@ -381,8 +381,8 @@ def _verify(cpp_text):
                         "site")
 
     hb = helper_body(flat, "finiteSmoothingTarget")
-    order = ["std::isfinite(mapped)", "return mapped;",
-             "std::isfinite(fallback)", "return fallback;", "return 0.0f;"]
+    order = ["isFiniteFloat(mapped)", "return mapped;",
+             "isFiniteFloat(fallback)", "return fallback;", "return 0.0f;"]
     last = -1
     for anchor in order:
         if hb.count(anchor) != 1:
@@ -490,7 +490,7 @@ def raw_prep_local(camel, pid, family):
 
 
 def raw_proc_local(camel, pid, family):
-    return ("    const float fallback%s = std::isfinite(smooth%s.getTargetValue())\n"
+    return ("    const float fallback%s = isFiniteFloat(smooth%s.getTargetValue())\n"
             "        ? smooth%s.getTargetValue() : %s;\n"
             % (camel, camel, camel, declared_expr(pid, family)))
 

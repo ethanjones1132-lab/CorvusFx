@@ -192,8 +192,8 @@ if dry_r_off > seedL_off:
          "could read a clamped or processed sample instead of the raw input")
 
 # (d) chData writes AFTER the crossfade body
-writeL_off = offset_of("chData[0][s] = std::isfinite(smpL) ? smpL : 0.0f;")
-writeR_off = offset_of("chData[1][s] = std::isfinite(smpR) ? smpR : 0.0f;")
+writeL_off = offset_of("chData[0][s] = isFiniteFloat(smpL) ? smpL : 0.0f;")
+writeR_off = offset_of("chData[1][s] = isFiniteFloat(smpR) ? smpR : 0.0f;")
 xtf_body_end = body.find("if (sOverall < 0.999f)", xtf_off)
 if xtf_body_end != -1:
     k2 = brace_span(body, xtf_body_end)
@@ -214,7 +214,7 @@ if out_m_off < writeL_off:
 
 # (checks sizes) chData must be written for both channels and only here.
 # chData must be WRITTEN exactly once per channel (reads via jlimit aren't writes)
-if body.count("chData[0][s] = std::isfinite(smpL) ? smpL : 0.0f") != 1 or body.count("chData[1][s] = std::isfinite(smpR) ? smpR : 0.0f") != 1:
+if body.count("chData[0][s] = isFiniteFloat(smpL) ? smpL : 0.0f") != 1 or body.count("chData[1][s] = isFiniteFloat(smpR) ? smpR : 0.0f") != 1:
     fail("chData writes in the per-sample body unexpected — each channel must "
          "be written exactly once to avoid double-apply of the trimmed value")
 
@@ -289,9 +289,9 @@ def _verify(cpp_text, allow_legacy=False):
                 "audio thread")
     else:
         raise _Rejected("crossfade dry source missing or math modified")
-    need("chData[0][s] = std::isfinite(smpL) ? smpL : 0.0f;")
-    need("chData[1][s] = std::isfinite(smpR) ? smpR : 0.0f;")
-    wL = b.find("chData[0][s] = std::isfinite(smpL) ? smpL : 0.0f;")
+    need("chData[0][s] = isFiniteFloat(smpL) ? smpL : 0.0f;")
+    need("chData[1][s] = isFiniteFloat(smpR) ? smpR : 0.0f;")
+    wL = b.find("chData[0][s] = isFiniteFloat(smpL) ? smpL : 0.0f;")
     if wL != -1 and wL < b.find("smpL *= sOutputTrim;"):
         raise _Rejected("write before trim accepted")
     if wL != -1:
@@ -379,8 +379,8 @@ probes = [
     (
         "chData write moved inside the overall crossfade",
         lambda s: s.replace(
-            "chData[0][s] = std::isfinite(smpL) ? smpL : 0.0f;\n        if (!isMono) chData[1][s] = std::isfinite(smpR) ? smpR : 0.0f;",
-            "// writes moved inside the crossfade\n        if (sOverall < 0.999f) { chData[0][s] = std::isfinite(smpL) ? smpL : 0.0f; if (!isMono) chData[1][s] = std::isfinite(smpR) ? smpR : 0.0f; }"),
+            "chData[0][s] = isFiniteFloat(smpL) ? smpL : 0.0f;\n        if (!isMono) chData[1][s] = isFiniteFloat(smpR) ? smpR : 0.0f;",
+            "// writes moved inside the crossfade\n        if (sOverall < 0.999f) { chData[0][s] = isFiniteFloat(smpL) ? smpL : 0.0f; if (!isMono) chData[1][s] = isFiniteFloat(smpR) ? smpR : 0.0f; }"),
     ),
     ("legacy crossfade reads chData instead of dryBuffer",
      lambda s: legacy_output_chain(s).replace(

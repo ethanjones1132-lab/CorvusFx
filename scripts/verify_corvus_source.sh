@@ -85,6 +85,12 @@ test -f "$CORVUS_ROOT/scripts/check_cv071_silent_size_jump.py"
 # (scripts/check_cv069_release_strings.py). Same auto-registration applies; this
 # explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv069_release_strings.py"
+# CV-082: every FX finiteness guard routes through the file-local IEEE-754
+# bit-test helper, because /fp:fast folds std::isfinite on arithmetic to true
+# and would leave the shipped binary unguarded
+# (scripts/check_cv082_finite_guards.py). Same auto-registration applies; this
+# explicit assertion keeps it from being lost silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv082_finite_guards.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"

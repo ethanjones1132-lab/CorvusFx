@@ -90,7 +90,7 @@ PREP_FALLBACK = (
 
 PROC_FALLBACK = (
     'const float fallbackMasterWidth = '
-    'std::isfinite(smoothMasterWidth.getTargetValue()) ? '
+    'isFiniteFloat(smoothMasterWidth.getTargetValue()) ? '
     'smoothMasterWidth.getTargetValue() : '
     'declaredPercentTarget(apvts, "master_width");')
 

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 
 namespace
 {
@@ -833,6 +834,23 @@ void CorvusFXAudioProcessor::loadSlotB()
 
 namespace
 {
+// CV-082: bit-level finiteness test. The product targets compile with MSVC
+// /fp:fast, where the compiler may assume every float is finite and fold an
+// isfinite() test on a value produced by arithmetic to `true` - every guard
+// written that way is unreachable in the shipped binary. Inspecting the
+// IEEE-754 exponent bits keeps each guard value-dependent, and it is the same
+// test the render harness (isNormalOrZero) and the offline render tool already
+// use. Finite and non-finite answers are exactly std::isfinite's; only the
+// vehicle changes.
+inline bool isFiniteFloat(float value) noexcept
+{
+    static_assert(sizeof(float) == sizeof(std::uint32_t), "IEEE-754 float expected");
+
+    std::uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return (bits & 0x7f800000u) != 0x7f800000u;
+}
+
 // CV-023: a NaN, an infinity, or an overflowed parameter mapping must never
 // become a smoothing target. `mapped` is the raw read carried through its
 // target units; a non-finite mapping falls back to the caller's declared
@@ -840,8 +858,8 @@ namespace
 // smoother (for delay_feedback that smoother also feeds the feedback curve).
 inline float finiteSmoothingTarget(float mapped, float fallback)
 {
-    if (std::isfinite(mapped))   return mapped;
-    if (std::isfinite(fallback)) return fallback;
+    if (isFiniteFloat(mapped))   return mapped;
+    if (isFiniteFloat(fallback)) return fallback;
     return 0.0f;
 }
 
@@ -851,7 +869,7 @@ inline float finiteSmoothingTarget(float mapped, float fallback)
 inline void foldNonFiniteSamples(float* samples, int numSamples) noexcept
 {
     for (int i = 0; i < numSamples; ++i)
-        if (!std::isfinite(samples[i]))
+        if (!isFiniteFloat(samples[i]))
             samples[i] = 0.0f;
 }
 
@@ -1233,43 +1251,43 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     // finite, otherwise the same declared default the prepare path uses. The
     // ternary is lazy, so the declared-default lookup runs only on a bad read;
     // valid finite mappings pass through finiteSmoothingTarget unchanged.
-    const float fallbackOverall = std::isfinite(smoothOverall.getTargetValue())
+    const float fallbackOverall = isFiniteFloat(smoothOverall.getTargetValue())
         ? smoothOverall.getTargetValue() : declaredPercentTarget(apvts, "overall");
-    const float fallbackFatness = std::isfinite(smoothFatness.getTargetValue())
+    const float fallbackFatness = isFiniteFloat(smoothFatness.getTargetValue())
         ? smoothFatness.getTargetValue() : declaredPercentTarget(apvts, "fatness");
-    const float fallbackChorusDepth = std::isfinite(smoothChorusDepth.getTargetValue())
+    const float fallbackChorusDepth = isFiniteFloat(smoothChorusDepth.getTargetValue())
         ? smoothChorusDepth.getTargetValue() : declaredPercentTarget(apvts, "chorus_depth");
-    const float fallbackChorusRate = std::isfinite(smoothChorusRate.getTargetValue())
+    const float fallbackChorusRate = isFiniteFloat(smoothChorusRate.getTargetValue())
         ? smoothChorusRate.getTargetValue() : declaredTarget(apvts, "chorus_rate");
-    const float fallbackChorusMix = std::isfinite(smoothChorusMix.getTargetValue())
+    const float fallbackChorusMix = isFiniteFloat(smoothChorusMix.getTargetValue())
         ? smoothChorusMix.getTargetValue() : declaredPercentTarget(apvts, "chorus_mix");
-    const float fallbackDelayTime = std::isfinite(smoothDelayTime.getTargetValue())
+    const float fallbackDelayTime = isFiniteFloat(smoothDelayTime.getTargetValue())
         ? smoothDelayTime.getTargetValue() : declaredTarget(apvts, "delay_time");
-    const float fallbackDelayFeedback = std::isfinite(smoothDelayFeedback.getTargetValue())
+    const float fallbackDelayFeedback = isFiniteFloat(smoothDelayFeedback.getTargetValue())
         ? smoothDelayFeedback.getTargetValue() : feedbackTarget(declaredPercentTarget(apvts, "delay_feedback"));
-    const float fallbackDelayMix = std::isfinite(smoothDelayMix.getTargetValue())
+    const float fallbackDelayMix = isFiniteFloat(smoothDelayMix.getTargetValue())
         ? smoothDelayMix.getTargetValue() : declaredPercentTarget(apvts, "delay_mix");
-    const float fallbackDelayDamping = std::isfinite(smoothDelayDamping.getTargetValue())
+    const float fallbackDelayDamping = isFiniteFloat(smoothDelayDamping.getTargetValue())
         ? smoothDelayDamping.getTargetValue() : declaredPercentTarget(apvts, "delay_damping");
-    const float fallbackDelayMod = std::isfinite(smoothDelayMod.getTargetValue())
+    const float fallbackDelayMod = isFiniteFloat(smoothDelayMod.getTargetValue())
         ? smoothDelayMod.getTargetValue() : declaredPercentTarget(apvts, "delay_mod");
-    const float fallbackReverbSize = std::isfinite(smoothReverbSize.getTargetValue())
+    const float fallbackReverbSize = isFiniteFloat(smoothReverbSize.getTargetValue())
         ? smoothReverbSize.getTargetValue() : declaredPercentTarget(apvts, "reverb_size");
-    const float fallbackReverbDamping = std::isfinite(smoothReverbDamping.getTargetValue())
+    const float fallbackReverbDamping = isFiniteFloat(smoothReverbDamping.getTargetValue())
         ? smoothReverbDamping.getTargetValue() : declaredPercentTarget(apvts, "reverb_damping");
-    const float fallbackReverbMix = std::isfinite(smoothReverbMix.getTargetValue())
+    const float fallbackReverbMix = isFiniteFloat(smoothReverbMix.getTargetValue())
         ? smoothReverbMix.getTargetValue() : declaredPercentTarget(apvts, "reverb_mix");
-    const float fallbackReverbMod = std::isfinite(smoothReverbMod.getTargetValue())
+    const float fallbackReverbMod = isFiniteFloat(smoothReverbMod.getTargetValue())
         ? smoothReverbMod.getTargetValue() : declaredPercentTarget(apvts, "reverb_mod");
-    const float fallbackMasterDrive = std::isfinite(smoothMasterDrive.getTargetValue())
+    const float fallbackMasterDrive = isFiniteFloat(smoothMasterDrive.getTargetValue())
         ? smoothMasterDrive.getTargetValue() : declaredPercentTarget(apvts, "master_drive");
-    const float fallbackMasterWidth = std::isfinite(smoothMasterWidth.getTargetValue())
+    const float fallbackMasterWidth = isFiniteFloat(smoothMasterWidth.getTargetValue())
         ? smoothMasterWidth.getTargetValue() : declaredPercentTarget(apvts, "master_width");
-    const float fallbackMasterMidDrive = std::isfinite(smoothMasterMidDrive.getTargetValue())
+    const float fallbackMasterMidDrive = isFiniteFloat(smoothMasterMidDrive.getTargetValue())
         ? smoothMasterMidDrive.getTargetValue() : declaredPercentTarget(apvts, "master_mid_drive");
-    const float fallbackMasterSideDrive = std::isfinite(smoothMasterSideDrive.getTargetValue())
+    const float fallbackMasterSideDrive = isFiniteFloat(smoothMasterSideDrive.getTargetValue())
         ? smoothMasterSideDrive.getTargetValue() : declaredPercentTarget(apvts, "master_side_drive");
-    const float fallbackOutputTrim = std::isfinite(smoothOutputTrim.getTargetValue())
+    const float fallbackOutputTrim = isFiniteFloat(smoothOutputTrim.getTargetValue())
         ? smoothOutputTrim.getTargetValue() : declaredPercentTarget(apvts, "output_trim");
 
     smoothOverall.setTargetValue(finiteSmoothingTarget(apvts.getRawParameterValue("overall")->load() / 100.0f, fallbackOverall));
@@ -1537,8 +1555,8 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // session. Fold the chain input to 0 before any DSP sees it (the mono
         // duplicate in smpR folds together with smpL), keeping the existing
         // output guard below as the last line of defence.
-        smpL = std::isfinite(smpL) ? smpL : 0.0f;
-        smpR = std::isfinite(smpR) ? smpR : 0.0f;
+        smpL = isFiniteFloat(smpL) ? smpL : 0.0f;
+        smpR = isFiniteFloat(smpR) ? smpR : 0.0f;
 
         // 1. DISTORTION (click-free bypass crossfade)
         if (gDist > 0.0f && sFatness > 0.0f)
@@ -1631,8 +1649,8 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 smpR = dryR * (1.0f - sOverall) + smpR * sOverall;
         }
 
-        chData[0][s] = std::isfinite(smpL) ? smpL : 0.0f;
-        if (!isMono) chData[1][s] = std::isfinite(smpR) ? smpR : 0.0f;
+        chData[0][s] = isFiniteFloat(smpL) ? smpL : 0.0f;
+        if (!isMono) chData[1][s] = isFiniteFloat(smpR) ? smpR : 0.0f;
 
         // ── Output level meter (read processed samples) ──
         {
