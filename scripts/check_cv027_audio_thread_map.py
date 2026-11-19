@@ -34,12 +34,23 @@ Pinned shape (CV-027):
     publishes map edits/folds while the test thread drives processBlock with a
     thread-local allocation probe that must read zero.
 
+CV-083 pins the way those two callback loops READ a message:
+
+  * Both midiMessages loops (learn capture and CC apply) skip any event whose
+    `metadata.numBytes` is not 3 before touching it, and then read the three
+    controller bytes straight out of `metadata.data` (status & 0xf0 == 0xb0,
+    number = data[1], value = data[2]).
+  * Neither loop calls `metadata.getMessage()`: a MidiMessage owns its storage
+    and can heap-allocate for a long (e.g. SysEx) event, inside the render
+    callback, even when the loop would then skip it.
+
 Negative probes mutate in-memory copies of the LIVE tree (the real tree is
 never written) and must be rejected: a ScopedLock(midiMapLock) re-added to the
 callback, a live midiMap read re-added, the view refresh dropped, the pending
 learn record dropped, the fold lock removed, the fold map write removed, the
 fold republish removed. A probe whose pattern is absent fails as NO-OP, and a
-benign comment edit must still pass (probe specificity).
+benign comment edit (one of them inside a callback MIDI loop) must still pass
+(probe specificity).
 
 Exit 0 = ok, 1 = violation with a cited diagnostic.
 """
@@ -94,6 +105,18 @@ def method_body(code, name):
         return None
     found = block_at(code, m.end())
     return found[2] if found else None
+
+
+def midi_loop_bodies(body):
+    """Bodies of every `for (... : midiMessages)` loop inside processBlock."""
+    bodies = []
+    for m in re.finditer(r"for\s*\([^)]*:\s*midiMessages\s*\)", body):
+        found = block_at(body, m.end())
+        if found is None:
+            raise Reject("PluginProcessor.cpp:processBlock: a midiMessages loop is "
+                         "not brace-matched")
+        bodies.append(found[2])
+    return bodies
 
 
 def _require(body, pattern, where, why):
@@ -274,6 +297,30 @@ def check(raw_cpp, raw_header, raw_tests):
             raise Reject(f"CorvusFxStateTests.cpp is missing {why} — the CV-027 "
                          f"concurrency/allocation regression is not present")
 
+    # ---- (8) CV-083: the callback MIDI loops read raw bytes, never a MidiMessage
+    loops = midi_loop_bodies(pb)
+    if len(loops) < 2:
+        raise Reject("processBlock no longer carries both midiMessages loops — the "
+                     "learn capture and the CC apply path must read the raw "
+                     "3-byte controller events directly (CV-083)")
+    for index, loop in enumerate(loops, start=1):
+        where = f"PluginProcessor.cpp:processBlock midiMessages loop {index}"
+        if re.search(r"\bgetMessage\s*\(", loop):
+            raise Reject(f"{where} calls getMessage() — a MidiMessage owns its "
+                         f"storage and can heap-allocate for a long event; read "
+                         f"metadata.data[0..2] instead (CV-083)")
+        _require(loop, r"metadata\s*\.\s*numBytes\s*!=\s*3\s*\)\s*continue\s*;",
+                 where,
+                 "the loop no longer skips non-3-byte events before touching them "
+                 "— a long event would be examined instead of ignored (CV-083)")
+        _require(loop, r"\b(?:metadata\s*\.\s*data|bytes)\s*\[",
+                 where,
+                 "the loop no longer reads the raw MIDI bytes — the 3-byte "
+                 "controller path must come from metadata.data (CV-083)")
+        _require(loop, r"0xb0", where,
+                 "the loop no longer identifies a controller by its status nibble "
+                 "(status & 0xf0 == 0xb0) (CV-083)")
+
     return True
 
 
@@ -299,6 +346,8 @@ def main():
     print("cv027: the concurrent publisher + allocation-probe regression is "
           "present in CorvusFxStateTests.cpp")
     print("cv027: real tree OK")
+    print("cv083: both callback MIDI loops skip non-3-byte events and read "
+          "metadata.data[0..2]; no MidiMessage is built on the audio thread")
 
     # ------------------------------------------------------------------
     # Negative probes on in-memory copies of the live tree.
@@ -355,6 +404,46 @@ def main():
     probe("fold republish removed", drop_republish,
           "the audio thread would never see the learned mapping")
 
+    # CV-083: the loops must read the raw bytes, not build a MidiMessage.
+    def getmessage_in_apply_loop(t):
+        needle = ("            const auto* bytes = metadata.data;\n"
+                  "            if ((bytes[0] & 0xf0) != 0xb0)\n"
+                  "                continue;")
+        return t.replace(
+            needle,
+            "            auto msg = metadata.getMessage();\n"
+            "            if (! msg.isController())\n"
+            "                continue;", 1)
+
+    probe("MidiMessage built inside the CC apply loop",
+          getmessage_in_apply_loop,
+          "a long event would construct a MidiMessage (and may heap-allocate) "
+          "inside the render callback")
+
+    def getmessage_in_learn_loop(t):
+        needle = ("                if (metadata.numBytes != 3)\n"
+                  "                    continue;\n"
+                  "                const auto* bytes = metadata.data;\n")
+        return t.replace(
+            needle,
+            "                auto msg = metadata.getMessage();\n"
+            "                if (! msg.isController())\n"
+            "                    continue;\n"
+            "                const auto* bytes = metadata.data;\n", 1)
+
+    probe("MidiMessage built inside the learn-capture loop",
+          getmessage_in_learn_loop,
+          "a long event would construct a MidiMessage between the numBytes guard "
+          "and the controller test")
+
+    def drop_learn_numbytes_guard(t):
+        return t.replace(
+            "                if (metadata.numBytes != 3)\n"
+            "                    continue;\n", "", 1)
+
+    probe("learn-capture 3-byte guard removed", drop_learn_numbytes_guard,
+          "a non-controller long event would be examined instead of skipped")
+
     # Non-C++ probe surfaces: the header and test pins must also reject drift.
     def probe_text(label, mutate, why):
         mutated = mutate(hdr_text)
@@ -385,6 +474,21 @@ def main():
     except Reject as exc:
         fail(f"a benign comment edit was REJECTED — the checker over-fires: {exc}")
     print("cv027: benign no-op edit passes (probe specificity proven)")
+
+    # CV-083: a benign comment inside a callback MIDI loop must also pass, so the
+    # loop pins fire on structure, not on any text edit near the raw-byte reads.
+    benign_loop = cpp_text.replace(
+        "            const float normValue = (float) bytes[2] / 127.0f;",
+        "            // CV-083: value is the third byte of a 3-byte controller event\n"
+        "            const float normValue = (float) bytes[2] / 127.0f;", 1)
+    if benign_loop == cpp_text:
+        fail("benign loop-comment guard: anchor pattern absent")
+    try:
+        check(benign_loop, hdr_text, tests_text)
+    except Reject as exc:
+        fail(f"a benign comment inside a MIDI loop was REJECTED — the checker "
+             f"over-fires: {exc}")
+    print("cv083: benign comment inside a MIDI loop passes (probe specificity proven)")
 
     # Final live re-verification (the real tree was never written to).
     try:

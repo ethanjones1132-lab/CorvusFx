@@ -364,7 +364,7 @@ def check(raw_cpp, raw_header, raw_editor):
                      'already be staged (CV-027/029)')
 
     # ---- (D) existing CC semantics preserved ------------------------------
-    _require(pb, r"getControllerValue\s*\(\s*\)\s*/\s*127\.0f",
+    _require(pb, r"(?:getControllerValue\s*\(\s*\)|\(float\)\s*bytes\s*\[\s*2\s*\])\s*/\s*127\.0f",
              "PluginProcessor.cpp:processBlock",
              "the CC → normalised value mapping (getControllerValue() / 127.0f) "
              "changed — the parameter's own rounding must stay untouched")
@@ -521,8 +521,8 @@ probe("apply-site slot gate removed",
 # (D) semantics preserved (a stale gate must not pass vacuously)
 probe("CC value scaling changed",
       "the cc/127 semantics (and the parameter's own rounding) must survive",
-      cpp_mut=[(r"msg\.getControllerValue\(\)\s*/\s*127\.0f",
-                "msg.getControllerValue() / 128.0f")])
+      cpp_mut=[(r"\(float\)\s*bytes\s*\[\s*2\s*\]\s*/\s*127\.0f",
+                "(float) bytes[2] / 128.0f")])
 probe("learn capture no longer clears midiLearnActive",
       "an armed learn would capture every later CC",
       cpp_mut=[(r"midiLearnActive\s*=\s*false\s*;", "midiLearnActive = true;")])

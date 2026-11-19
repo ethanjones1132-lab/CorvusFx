@@ -1374,10 +1374,16 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
                 midiLearnParamSlot.load(std::memory_order_relaxed);
             for (const auto& metadata : midiMessages)
             {
-                auto msg = metadata.getMessage();
-                if (msg.isController() && capturedCc == -1)
+                // CV-083: this loop only needs the controller number, which is
+                // byte 1 of a 3-byte controller event. Skip every other event
+                // before touching it, so nothing constructs a MidiMessage (whose
+                // storage may be heap-allocated) inside the render callback.
+                if (metadata.numBytes != 3)
+                    continue;
+                const auto* bytes = metadata.data;
+                if ((bytes[0] & 0xf0) == 0xb0 && capturedCc == -1)
                 {
-                    const int cc = msg.getControllerNumber();
+                    const int cc = (int) bytes[1];
                     if (cc < 0 || cc >= MAX_MIDI_CCS)
                         continue;
                     if (armedSlot < 0
@@ -1413,15 +1419,21 @@ void CorvusFXAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         // dropped here.
         for (const auto& metadata : midiMessages)
         {
-            auto msg = metadata.getMessage();
-            if (!msg.isController())
+            // CV-083: read the three controller bytes straight out of the buffer
+            // — status, number, value. Any event that is not a 3-byte controller
+            // is skipped before it is touched, so this loop never constructs a
+            // MidiMessage (and never allocates) on the audio thread.
+            if (metadata.numBytes != 3)
                 continue;
-            int cc = msg.getControllerNumber();
+            const auto* bytes = metadata.data;
+            if ((bytes[0] & 0xf0) != 0xb0)
+                continue;
+            const int cc = (int) bytes[1];
             if (cc < 0 || cc >= MAX_MIDI_CCS)
                 continue;
             if (cc == capturedCc)
                 continue;
-            float normValue = msg.getControllerValue() / 127.0f;
+            const float normValue = (float) bytes[2] / 127.0f;
             const int slot = midiMapView[(size_t) cc];
             if (slot < 0 || slot >= numMidiHostNotifySlots)
                 continue;
