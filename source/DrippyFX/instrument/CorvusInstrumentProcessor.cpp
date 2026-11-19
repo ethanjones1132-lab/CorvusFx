@@ -90,8 +90,25 @@ void CorvusInstrumentProcessor::setCurrentProgram(int index)
     const auto& preset = corvusInstrumentPresets[static_cast<std::size_t>(index)];
     auto setPhysicalValue = [this](const juce::String& parameterId, float value)
     {
-        if (auto* parameter = apvts.getParameter(parameterId))
+        auto* parameter = apvts.getParameter(parameterId);
+        if (parameter == nullptr)
+            return;
+        // CV-075: bracket every recalled value in its own begin/end gesture
+        // pair, mirroring the FX recall and A/B pattern, so automation lanes
+        // and the host's undo capture one coherent edit per parameter instead
+        // of a silent jump. Only the recall path opens gestures; real-time
+        // writes and per-block smoothing stay untouched.
+        parameter->beginChangeGesture();
+        try
+        {
             parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+        }
+        catch (...)
+        {
+            parameter->endChangeGesture();
+            throw;
+        }
+        parameter->endChangeGesture();
     };
 
     {

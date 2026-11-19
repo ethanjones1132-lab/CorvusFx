@@ -96,6 +96,12 @@ test -f "$CORVUS_ROOT/scripts/check_cv082_finite_guards.py"
 # (scripts/check_cv074_offline_tail.py). Same auto-registration applies; this
 # explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv074_offline_tail.py"
+# CV-075: an instrument preset recall brackets every parameter write in a
+# begin/end gesture pair, the FX recall shape, so the host records one coherent
+# automation/undo edit instead of a silent jump per parameter
+# (scripts/check_cv075_instrument_preset_gestures.py). Same auto-registration
+# applies; this explicit assertion keeps it from being lost silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv075_instrument_preset_gestures.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"
