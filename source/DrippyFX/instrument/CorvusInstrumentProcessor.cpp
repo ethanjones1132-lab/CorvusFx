@@ -5,6 +5,8 @@
 
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -20,6 +22,23 @@ constexpr int fxParameterChunkSize = 32;
 // Measured peak emitted activity over the 8,192-sample 0.8-velocity Dawn
 // Choir signature window.
 constexpr float dawnTriadUnityActivity = 1.17023f;
+
+// CV-087: bit-level finiteness test for the instrument output guard. The
+// product targets compile with MSVC /fp:fast, where the compiler may assume
+// every float is finite and fold an isfinite() test on a value produced by
+// arithmetic to `true` - the guard would then be unreachable in the shipped
+// binary while the source still reads as safe. Inspecting the IEEE-754
+// exponent bits keeps the guard value-dependent; the answers are exactly
+// std::isfinite's (NaN and both infinities false, everything else true), only
+// the vehicle changes. Same test the FX processor's CV-082 helper uses.
+inline bool isFiniteFloat(float value) noexcept
+{
+    static_assert(sizeof(float) == sizeof(std::uint32_t), "IEEE-754 float expected");
+
+    std::uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return (bits & 0x7f800000u) != 0x7f800000u;
+}
 
 // Marks multi-parameter writes so a publisher can discard any snapshot that
 // overlaps a preset or state restore, even if the whole batch starts and ends
@@ -417,7 +436,11 @@ void CorvusInstrumentProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         for (auto channel = 0; channel < 2; ++channel)
         {
             auto value = buffer.getSample(channel, sample) * gain;
-            if (!std::isfinite(value))
+            // CV-087: a non-finite sample must be contained before it reaches
+            // the host, and the guard must be a bit test: /fp:fast folds
+            // isfinite() on a value produced by arithmetic to `true`, which
+            // leaves this containment unreachable in the shipped binary.
+            if (!isFiniteFloat(value))
                 value = 0.0f;
             lastPreClampPeak = juce::jmax(lastPreClampPeak, std::abs(value));
             buffer.setSample(channel, sample, juce::jlimit(-1.0f, 1.0f, value));

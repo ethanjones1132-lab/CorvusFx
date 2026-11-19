@@ -102,6 +102,12 @@ test -f "$CORVUS_ROOT/scripts/check_cv074_offline_tail.py"
 # (scripts/check_cv075_instrument_preset_gestures.py). Same auto-registration
 # applies; this explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv075_instrument_preset_gestures.py"
+# CV-087: a non-finite instrument output sample is contained before it reaches
+# the host, through the CV-082 IEEE-754 bit test rather than a std::isfinite
+# guard that /fp:fast folds away
+# (scripts/check_cv087_instrument_output_guard.py). Same auto-registration
+# applies; this explicit assertion keeps it from being lost silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv087_instrument_output_guard.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"
