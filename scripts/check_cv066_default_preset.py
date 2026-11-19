@@ -37,10 +37,24 @@ def verify(text):
         return "the layout must initialize from factory program zero"
 
     live = body(text, "setCurrentProgram")
-    if not re.search(r"hostProgramRecall\.store\(-1\);\s*loadPreset\(i\);\s*"
+    if not re.search(r"hostProgramRecall\.store\(-1\);\s*loadPreset\(i\);"
+                     r".*?presetWriteWillNotify\s*=\s*p\s*&&\s*"
+                     r"apvts\.getRawParameterValue\(\"preset\"\)->load\(\)\s*"
+                     r"!=\s*static_cast<float>\(targetId\);"
+                     r".*?if\s*\(presetWriteWillNotify\)\s*"
                      r"hostProgramRecall\.store\(i\);.*?setValueNotifyingHost\(",
                      live, re.S):
-        return "the host recall must apply the program before arming the listener echo skip"
+        return ("the host recall must always load first and arm the echo skip "
+                "only when the preset parameter value will change")
+    write = live.index("setValueNotifyingHost(")
+    if "hostProgramRecall.store(-1);" not in live[write:]:
+        return "an unconsumed host recall echo marker must be cleared after the write"
+    if not re.search(r"catch\s*\(\.\.\.\)\s*\{\s*hostProgramRecall\.store\(-1\);",
+                     live):
+        return "a failed preset write must not leave the host recall echo marker armed"
+    state = body(text, "setStateInformation")
+    if not re.match(r"\s*hostProgramRecall\.store\(-1\);", state):
+        return "state restore must clear any pending host recall echo marker first"
     if not re.search(r"if\s*\(hostProgramRecall\.exchange\(-1\)\s*==\s*index\)"
                      r"\s*return;\s*undoManager\.beginNewTransaction\(",
                      body(text, "loadPreset")):

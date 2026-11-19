@@ -545,12 +545,15 @@ void CorvusFXAudioProcessor::setCurrentProgram(int i) {
         // CV-066: load the selected preset directly, then tell the "preset"
         // listener below not to echo that same preset back through
         // parameterChanged() -> loadPreset() a second time. The marker is armed
-        // for the preset write below and consumed (reset to -1) by the echo it
-        // raises, so a later, unrelated change can never consume it.
+        // only when the parameter value will change and raise an echo.
         hostProgramRecall.store(-1);
         loadPreset(i);
-        hostProgramRecall.store(i);
         auto* p = apvts.getParameter("preset");
+        const auto targetId = presetToId[i];
+        const bool presetWriteWillNotify =
+            p && apvts.getRawParameterValue("preset")->load() != static_cast<float>(targetId);
+        if (presetWriteWillNotify)
+            hostProgramRecall.store(i);
         if (p) p->beginChangeGesture();
         try
         {
@@ -558,10 +561,15 @@ void CorvusFXAudioProcessor::setCurrentProgram(int i) {
         }
         catch (...)
         {
+            hostProgramRecall.store(-1);
             if (p) p->endChangeGesture();
             throw;
         }
         if (p) p->endChangeGesture();
+        // Some parameter implementations do not emit a listener callback for
+        // the write. Do not let an unconsumed echo marker suppress a later
+        // explicit recall of the same program.
+        hostProgramRecall.store(-1);
     }
 }
 const juce::String CorvusFXAudioProcessor::getProgramName(int i) {
@@ -1826,6 +1834,7 @@ void CorvusFXAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 
 void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
+    hostProgramRecall.store(-1);
     std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(data, sizeInBytes));
     if (xml && xml->hasTagName(apvts.state.getType()))
     {
