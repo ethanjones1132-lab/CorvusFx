@@ -47,7 +47,13 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 10.0; }
+    // CV-074: the offline-render tail, derived from the worst configured
+    // settings by scripts/check_cv074_offline_tail.py: the 10.0 s maximum
+    // release envelope, then the Flight=1 effects chain (500 ms delay at 0.48
+    // feedback = 4.71 s to -60 dB, Size 0.92 reverb RT60 = 4.78 s, 41.8 ms
+    // pre-delay) which is serial after it = 19.53 s required. A bare constant:
+    // the override reads nothing, so realtime processing is untouched.
+    double getTailLengthSeconds() const override { return 20.0; }
 
     int getNumPrograms() override;
     int getCurrentProgram() override;

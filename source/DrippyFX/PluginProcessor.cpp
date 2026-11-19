@@ -459,7 +459,15 @@ const juce::String CorvusFXAudioProcessor::getName() const
 bool CorvusFXAudioProcessor::acceptsMidi() const { return true; }
 bool CorvusFXAudioProcessor::producesMidi() const { return false; }
 bool CorvusFXAudioProcessor::isMidiEffect() const { return false; }
-double CorvusFXAudioProcessor::getTailLengthSeconds() const { return 8.0; }
+// CV-074: the offline-render tail an offline host keeps rendering after the
+// input stops, computed from the worst configured settings (see
+// scripts/check_cv074_offline_tail.py, which re-derives this number from the
+// parameter bounds and rejects anything shorter): 2000 ms delay time at the
+// 0.92 feedback ceiling (165.69 s to -60 dB) fed serially into the reverb's
+// 8.32 s RT60 at Size 100% plus its 45 ms pre-delay = 174.05 s required.
+// A bare constant: the override reads nothing, so realtime processing is
+// untouched.
+double CorvusFXAudioProcessor::getTailLengthSeconds() const { return 180.0; }
 int CorvusFXAudioProcessor::getNumPrograms() { return 36; }
 int CorvusFXAudioProcessor::getCurrentProgram() {
     // Convert combo box item ID (0-35) to preset index (0-29) via reverse lookup.

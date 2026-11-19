@@ -91,6 +91,11 @@ test -f "$CORVUS_ROOT/scripts/check_cv069_release_strings.py"
 # (scripts/check_cv082_finite_guards.py). Same auto-registration applies; this
 # explicit assertion keeps it from being lost silently too.
 test -f "$CORVUS_ROOT/scripts/check_cv082_finite_guards.py"
+# CV-074: both products declare an offline-render tail that covers the longest
+# delay/reverb decay their configured settings can produce, as bare constants
+# (scripts/check_cv074_offline_tail.py). Same auto-registration applies; this
+# explicit assertion keeps it from being lost silently too.
+test -f "$CORVUS_ROOT/scripts/check_cv074_offline_tail.py"
 CORVUS_CHECK_COUNT=0
 for check in "$CORVUS_ROOT"/scripts/check_*.py; do
     test -f "$check"
