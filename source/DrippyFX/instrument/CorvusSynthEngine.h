@@ -44,7 +44,8 @@ public:
             const auto eventPosition = juce::jlimit(
                 renderedUntil, buffer.getNumSamples(), metadata.samplePosition);
             renderSpan(buffer, renderedUntil, eventPosition - renderedUntil);
-            handleMidiMessage(metadata.getMessage(), parameters);
+            // CV-094: dispatch on the raw event bytes; see handleMidiMetadata().
+            handleMidiMetadata(metadata, parameters);
             renderedUntil = eventPosition;
         }
 
@@ -67,7 +68,8 @@ public:
                 renderedUntil, buffer.getNumSamples(), metadata.samplePosition);
             renderDawnSpan(buffer, renderedUntil, eventPosition - renderedUntil,
                            dawnActivityUnity);
-            handleMidiMessage(metadata.getMessage(), parameters);
+            // CV-094: dispatch on the raw event bytes; see handleMidiMetadata().
+            handleMidiMetadata(metadata, parameters);
             renderedUntil = eventPosition;
         }
 
@@ -175,6 +177,47 @@ private:
         for (auto& voice : voices)
             if (voice.isActive())
                 voice.setPitchBendSemitones(pitchBendSemitones);
+    }
+
+    // CV-094: turn a host event into the engine's note/controller handling
+    // without ever constructing a MidiMessage from the buffer's
+    // MidiMessageMetadata::getMessage(). A MidiMessage owns its storage and that
+    // accessor can heap-allocate for a long event (SysEx, meta, a long system
+    // message) inside the render callback - even though handleMidiMessage() would
+    // then ignore it. Only a well-formed 2- or 3-byte channel message reaches
+    // handleMidiMessage(); everything else is skipped whole and never partially
+    // applied.
+    void handleMidiMetadata(const juce::MidiBuffer::MidiMessageMetadata& metadata,
+                           const VoiceParameters& parameters)
+    {
+        if (metadata.numBytes < 2 || metadata.numBytes > 3)
+            return;
+
+        const auto status = static_cast<int>(metadata.data[0]);
+        if (status < 0x80 || status > 0xef)
+            return;
+
+        const auto* bytes = metadata.data;
+        if (metadata.numBytes == 3)
+        {
+            // The 3-argument constructor copies the bytes into the message's
+            // inline short-message storage: no heap, and nothing borrowed from
+            // the host's buffer.
+            handleMidiMessage(juce::MidiMessage(bytes[0], bytes[1], bytes[2]),
+                              parameters);
+            return;
+        }
+
+        // A 2-byte channel message is only program change (0xc_) or channel
+        // pressure (0xd_). Any other 2-byte event is truncated: handleMidiMessage
+        // ignored it before this dispatch, so it is skipped here rather than
+        // being completed with an invented third byte (which would turn a
+        // truncated note-on into a note-off, or a truncated CC into a sustain /
+        // panic).
+        if ((status & 0xf0) != 0xc0 && (status & 0xf0) != 0xd0)
+            return;
+
+        handleMidiMessage(juce::MidiMessage(bytes[0], bytes[1], 0), parameters);
     }
 
     void handleMidiMessage(const juce::MidiMessage& message,

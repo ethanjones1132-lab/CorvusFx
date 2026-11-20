@@ -44,13 +44,28 @@ CV-083 pins the way those two callback loops READ a message:
     and can heap-allocate for a long (e.g. SysEx) event, inside the render
     callback, even when the loop would then skip it.
 
+CV-094 pins the instrument render loops (CorvusSynthEngine.h):
+
+  * render() and renderWithDawnActivityGain() hand every host event to
+    handleMidiMetadata(), which reads metadata.data[0..2] directly.
+  * handleMidiMetadata() skips any event whose numBytes is not 2 or 3, and any
+    event whose status byte is not a channel message (0x80..0xef), BEFORE
+    touching the bytes — so a SysEx, meta or other long event is skipped whole
+    and never partially applied.
+  * Neither render loop (nor the dispatcher) may call metadata.getMessage(): a
+    MidiMessage owns its storage and can heap-allocate for a long event inside
+    the render callback. The message is constructed on the stack from the raw
+    bytes instead, which stores a short message inline.
+
 Negative probes mutate in-memory copies of the LIVE tree (the real tree is
 never written) and must be rejected: a ScopedLock(midiMapLock) re-added to the
 callback, a live midiMap read re-added, the view refresh dropped, the pending
 learn record dropped, the fold lock removed, the fold map write removed, the
-fold republish removed. A probe whose pattern is absent fails as NO-OP, and a
-benign comment edit (one of them inside a callback MIDI loop) must still pass
-(probe specificity).
+fold republish removed, a getMessage() call re-added to either instrument
+render loop, the instrument raw-byte dispatcher dropped or its 2/3-byte guard
+removed. A probe whose pattern is absent fails as NO-OP, and a benign comment
+edit (one of them inside a callback MIDI loop) must still pass (probe
+specificity).
 
 Exit 0 = ok, 1 = violation with a cited diagnostic.
 """
@@ -68,6 +83,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CPP = ROOT / "source" / "DrippyFX" / "PluginProcessor.cpp"
 HDR = ROOT / "source" / "DrippyFX" / "PluginProcessor.h"
 TESTS = ROOT / "source" / "DrippyFX" / "tests" / "CorvusFxStateTests.cpp"
+INSTRUMENT = ROOT / "source" / "DrippyFX" / "instrument" / "CorvusSynthEngine.h"
 
 
 class Reject(Exception):
@@ -137,10 +153,97 @@ ALLOCATION_TOKENS = (
 )
 
 
-def check(raw_cpp, raw_header, raw_tests):
+INSTRUMENT_LOOPS = ("render", "renderWithDawnActivityGain")
+INSTRUMENT_DISPATCH = "handleMidiMetadata"
+
+
+def synth_member_body(header, name):
+    """Body of an inline member function of CorvusSynthEngine.h."""
+    m = re.search(r"\bvoid\s+" + re.escape(name) + r"\s*\(", header)
+    if not m:
+        return None
+    found = block_at(header, m.end())
+    return found[2] if found else None
+
+
+def check_instrument(synth):
+    """CV-094: both instrument render loops dispatch on raw event bytes.
+
+    `synth` is CorvusSynthEngine.h with comments already stripped.
+    """
+    loop_bodies = []
+    for name in INSTRUMENT_LOOPS:
+        body = synth_member_body(synth, name)
+        if body is None:
+            raise Reject(f"CorvusSynthEngine.h:{name} body not found/brace-matched "
+                         f"— the instrument render loop must dispatch host MIDI "
+                         f"itself (CV-094)")
+        loop_bodies.append((name, body))
+
+    for name, body in loop_bodies:
+        where = f"CorvusSynthEngine.h:{name}"
+        if re.search(r"\bgetMessage\s*\(", body):
+            raise Reject(f"{where} calls getMessage() — a MidiMessage owns its "
+                         f"storage and can heap-allocate for a long event; read "
+                         f"metadata.data[0..2] instead (CV-094)")
+        _require(body, r"\bfor\s*\([^)]*:\s*midi\s*\)", where,
+                 "the render loop no longer iterates the host MidiBuffer")
+        _require(body, r"\b" + INSTRUMENT_DISPATCH + r"\s*\(\s*metadata\b", where,
+                 "the render loop no longer hands each host event to the "
+                 "raw-byte dispatcher — it would have to build a MidiMessage "
+                 "(CV-094)")
+        for token in ("juce::String", "std::string", "std::vector",
+                      ".push_back(", ".reserve(", ".resize("):
+            if token in body:
+                raise Reject(f"{where} contains {token!r} — the render callback "
+                             f"must not allocate (CV-094)")
+
+    dispatch = synth_member_body(synth, INSTRUMENT_DISPATCH)
+    if dispatch is None:
+        raise Reject(f"CorvusSynthEngine.h:{INSTRUMENT_DISPATCH} body missing — "
+                     f"the render loops must dispatch on the raw event bytes "
+                     f"(CV-094)")
+    where = f"CorvusSynthEngine.h:{INSTRUMENT_DISPATCH}"
+    if re.search(r"\bgetMessage\s*\(", dispatch):
+        raise Reject(f"{where} calls getMessage() — a MidiMessage owns its "
+                     f"storage and can heap-allocate for a long event; read "
+                     f"metadata.data[0..2] instead (CV-094)")
+    _require(dispatch, r"metadata\s*\.\s*data\s*\[\s*0\s*\]", where,
+             "the dispatcher no longer reads the raw status byte from "
+             "metadata.data")
+    _require(dispatch, r"metadata\s*\.\s*numBytes\s*<\s*2", where,
+             "the dispatcher no longer rejects sub-2-byte events before "
+             "touching them (CV-094)")
+    _require(dispatch, r"metadata\s*\.\s*numBytes\s*>\s*3", where,
+             "the dispatcher no longer rejects events longer than 3 bytes — a "
+             "SysEx or meta event would be partly applied instead of skipped "
+             "whole (CV-094)")
+    _require(dispatch, r"\bstatus\s*<\s*0x80", where,
+             "the dispatcher no longer requires a channel-message status byte "
+             "(CV-094)")
+    _require(dispatch, r"\bstatus\s*>\s*0xef", where,
+             "the dispatcher no longer rejects system (0xf0..) events — a SysEx "
+             "would reach handleMidiMessage() (CV-094)")
+    _require(dispatch, r"juce::MidiMessage\s*\([^;]*bytes\s*\[\s*0\s*\][^;]*"
+                       r"bytes\s*\[\s*1\s*\]", where,
+             "the dispatcher no longer builds the message on the stack from the "
+             "raw bytes (CV-094)")
+    _require(dispatch, r"\bhandleMidiMessage\s*\(", where,
+             "the dispatcher no longer routes accepted events to "
+             "handleMidiMessage() — note on/off, pitch wheel, sustain, panic "
+             "and all-notes-off would be lost (CV-094)")
+
+    if re.search(r"\bgetMessage\s*\(", synth):
+        raise Reject("CorvusSynthEngine.h calls getMessage() outside a pinned "
+                     "render loop — no instrument path may build a MidiMessage "
+                     "from a host event's owned storage (CV-094)")
+
+
+def check(raw_cpp, raw_header, raw_tests, raw_instrument):
     code = strip_comments(raw_cpp)
     header = strip_comments(raw_header)
     tests = strip_comments(raw_tests)
+    synth = strip_comments(raw_instrument)
 
     pb = method_body(code, "processBlock")
     if pb is None:
@@ -321,20 +424,24 @@ def check(raw_cpp, raw_header, raw_tests):
                  "the loop no longer identifies a controller by its status nibble "
                  "(status & 0xf0 == 0xb0) (CV-083)")
 
+    # ---- (9) CV-094: the instrument render loops dispatch on the raw bytes
+    check_instrument(synth)
+
     return True
 
 
 def main():
-    for required in (CPP, HDR, TESTS):
+    for required in (CPP, HDR, TESTS, INSTRUMENT):
         if not required.exists():
             fail(f"missing source file {required}")
 
     cpp_text = CPP.read_text(encoding="utf-8")
     hdr_text = HDR.read_text(encoding="utf-8")
     tests_text = TESTS.read_text(encoding="utf-8")
+    synth_text = INSTRUMENT.read_text(encoding="utf-8")
 
     try:
-        check(cpp_text, hdr_text, tests_text)
+        check(cpp_text, hdr_text, tests_text, synth_text)
     except Reject as exc:
         fail(str(exc))
 
@@ -348,6 +455,9 @@ def main():
     print("cv027: real tree OK")
     print("cv083: both callback MIDI loops skip non-3-byte events and read "
           "metadata.data[0..2]; no MidiMessage is built on the audio thread")
+    print("cv094: both instrument render loops hand host events to "
+          "handleMidiMetadata(), which skips every non-2/3-byte and non-channel "
+          "event and builds the message inline from metadata.data")
 
     # ------------------------------------------------------------------
     # Negative probes on in-memory copies of the live tree.
@@ -358,7 +468,7 @@ def main():
             fail(f"probe '{label}': NO-OP MUTATION (pattern absent from the live "
                  f"source) — the negative probe is stale")
         try:
-            check(mutated, hdr_text, tests_text)
+            check(mutated, hdr_text, tests_text, synth_text)
         except Reject as exc:
             print(f"cv027 probe '{label}': rejected as expected ({exc})")
             return
@@ -444,13 +554,93 @@ def main():
     probe("learn-capture 3-byte guard removed", drop_learn_numbytes_guard,
           "a non-controller long event would be examined instead of skipped")
 
+    # CV-094: the instrument render loops must dispatch on raw bytes, not build
+    # a MidiMessage from the host event's owned storage.
+    def probe_instrument(label, mutate, why):
+        mutated = mutate(synth_text)
+        if mutated == synth_text:
+            fail(f"probe '{label}': NO-OP MUTATION (pattern absent from the live "
+                 f"source) — the negative probe is stale")
+        try:
+            check(cpp_text, hdr_text, tests_text, mutated)
+        except Reject as exc:
+            print(f"cv094 probe '{label}': rejected as expected ({exc})")
+            return
+        fail(f"probe '{label}' was NOT rejected — {why}")
+
+    NOTE_LOOP_TAIL = ("            handleMidiMetadata(metadata, parameters);\n"
+                      "            renderedUntil = eventPosition;\n"
+                      "        }\n"
+                      "\n"
+                      "        renderSpan(buffer, renderedUntil, ")
+    DAWN_LOOP_TAIL = ("            handleMidiMetadata(metadata, parameters);\n"
+                      "            renderedUntil = eventPosition;\n"
+                      "        }\n"
+                      "\n"
+                      "        renderDawnSpan(buffer, renderedUntil,")
+
+    def getmessage_in_note_loop(t):
+        return t.replace(
+            NOTE_LOOP_TAIL,
+            "            const auto legacyEvent = metadata.getMessage();\n"
+            "            juce::ignoreUnused(legacyEvent);\n" + NOTE_LOOP_TAIL, 1)
+
+    probe_instrument("MidiMessage built inside the instrument render() loop",
+                     getmessage_in_note_loop,
+                     "a long event would construct a MidiMessage (and may "
+                     "heap-allocate) inside the instrument render callback")
+
+    def getmessage_in_dawn_loop(t):
+        return t.replace(
+            DAWN_LOOP_TAIL,
+            "            const auto legacyEvent = metadata.getMessage();\n"
+            "            juce::ignoreUnused(legacyEvent);\n" + DAWN_LOOP_TAIL, 1)
+
+    probe_instrument("MidiMessage built inside renderWithDawnActivityGain()",
+                     getmessage_in_dawn_loop,
+                     "a long event would construct a MidiMessage (and may "
+                     "heap-allocate) inside the Dawn render callback")
+
+    def drop_instrument_dispatch(t):
+        return t.replace(
+            NOTE_LOOP_TAIL,
+            "            renderedUntil = eventPosition;\n"
+            "        }\n"
+            "\n"
+            "        renderSpan(buffer, renderedUntil, ", 1)
+
+    probe_instrument("raw-byte dispatcher dropped from a render loop",
+                     drop_instrument_dispatch,
+                     "the loop would have to build a MidiMessage again, or drop "
+                     "host MIDI entirely")
+
+    def drop_instrument_length_guard(t):
+        return t.replace(
+            "        if (metadata.numBytes < 2 || metadata.numBytes > 3)\n"
+            "            return;\n", "", 1)
+
+    probe_instrument("instrument 2/3-byte length guard removed",
+                     drop_instrument_length_guard,
+                     "a SysEx or meta event would be partly applied instead of "
+                     "skipped whole")
+
+    def drop_instrument_channel_guard(t):
+        return t.replace(
+            "        if (status < 0x80 || status > 0xef)\n"
+            "            return;\n", "", 1)
+
+    probe_instrument("instrument channel-status guard removed",
+                     drop_instrument_channel_guard,
+                     "a system (0xf0..) or malformed event would reach "
+                     "handleMidiMessage()")
+
     # Non-C++ probe surfaces: the header and test pins must also reject drift.
     def probe_text(label, mutate, why):
         mutated = mutate(hdr_text)
         if mutated == hdr_text:
             fail(f"probe '{label}': NO-OP MUTATION — the negative probe is stale")
         try:
-            check(cpp_text, mutated, tests_text)
+            check(cpp_text, mutated, tests_text, synth_text)
         except Reject:
             print(f"cv027 probe '{label}': rejected as expected")
             return
@@ -470,7 +660,7 @@ def main():
     if benign == cpp_text:
         fail("benign no-op guard: anchor pattern absent")
     try:
-        check(benign, hdr_text, tests_text)
+        check(benign, hdr_text, tests_text, synth_text)
     except Reject as exc:
         fail(f"a benign comment edit was REJECTED — the checker over-fires: {exc}")
     print("cv027: benign no-op edit passes (probe specificity proven)")
@@ -484,16 +674,33 @@ def main():
     if benign_loop == cpp_text:
         fail("benign loop-comment guard: anchor pattern absent")
     try:
-        check(benign_loop, hdr_text, tests_text)
+        check(benign_loop, hdr_text, tests_text, synth_text)
     except Reject as exc:
         fail(f"a benign comment inside a MIDI loop was REJECTED — the checker "
              f"over-fires: {exc}")
     print("cv083: benign comment inside a MIDI loop passes (probe specificity proven)")
 
+    # CV-094: a benign comment edit inside an instrument render loop must also
+    # pass, so the new pins fire on structure, not on any text near the dispatch.
+    benign_synth = synth_text.replace(
+        NOTE_LOOP_TAIL,
+        "            // CV-094 benign probe: a comment inside the render loop.\n"
+        + NOTE_LOOP_TAIL, 1)
+    if benign_synth == synth_text:
+        fail("benign instrument-comment guard: anchor pattern absent")
+    try:
+        check(cpp_text, hdr_text, tests_text, benign_synth)
+    except Reject as exc:
+        fail(f"a benign comment inside an instrument render loop was REJECTED — "
+             f"the checker over-fires: {exc}")
+    print("cv094: benign comment inside an instrument render loop passes "
+          "(probe specificity proven)")
+
     # Final live re-verification (the real tree was never written to).
     try:
         check(CPP.read_text(encoding="utf-8"), HDR.read_text(encoding="utf-8"),
-              TESTS.read_text(encoding="utf-8"))
+              TESTS.read_text(encoding="utf-8"),
+              INSTRUMENT.read_text(encoding="utf-8"))
     except Reject as exc:
         fail(f"final source re-verification failed: {exc}")
     print("CV-027 OK")
