@@ -7,8 +7,13 @@ Two remaining optimizations identified:
 2. UpgradedReverb modPhase increment (this script) — 0.37f / sampleRate computed per-sample
 """
 import sys
+from pathlib import Path
 
-SRC = "C:/Projects/Corvus VST/source/DrippyFX/PluginProcessor.h"
+# CV-011: derive the file from this checkout instead of a machine-specific
+# Windows build tree, so the script is readable anywhere (it stays a
+# banner-guarded one-shot; see check_win_migration_scripts_flagged.py).
+ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "source" / "DrippyFX" / "PluginProcessor.h"
 
 with open(SRC, 'rb') as f:
     content = f.read().decode('utf-8')

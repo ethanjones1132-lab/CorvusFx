@@ -6,10 +6,11 @@ their effects are already applied in the current SoT:
 1. source/DrippyFX/scripts/ — 5 migration scripts targeting the Windows build
    tree (CRLF paths), effects already applied, kept in-tree as a record.
 2. scripts/ (repo-root one-shots) — fix_chorus_rate_cache.py and
-   fix_reverb_modphase_cache.py are the same hazard class: they read/write
-   SRC = "C:/Projects/Corvus VST/..." in write mode (open rb -> str.replace ->
-   write back) against already-applied migrations, but historically lived
-   OUTSIDE the checker's jurisdiction.
+   fix_reverb_modphase_cache.py are the same hazard class: they rewrite the
+   FX processor header in write mode (open rb -> str.replace -> write back)
+   against already-applied migrations, but historically lived OUTSIDE the
+   checker's jurisdiction. Their source path now comes from this checkout
+   (CV-011), so a rerun would target a real file rather than a missing one.
 
 Each script must always carry an "ALREADY APPLIED — DO NOT RERUN" banner so a
 future agent never reruns it.

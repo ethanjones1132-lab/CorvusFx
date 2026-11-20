@@ -20,10 +20,14 @@ Restore the original file to pass again.
 """
 import re
 import sys
+from pathlib import Path
 
-SRC = "source/DrippyFX/PluginProcessor.cpp"
+# CV-011: resolve the checkout from this file, not from the caller's working
+# directory, so the checker runs from any cwd on any machine.
+ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "source" / "DrippyFX" / "PluginProcessor.cpp"
 
-src = open(SRC, encoding="utf-8").read()
+src = SRC.read_text(encoding="utf-8")
 
 # Strip comments so a comment mentioning "break" can't fake anything,
 # and so commented-out code can't satisfy checks either.
