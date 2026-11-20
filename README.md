@@ -168,7 +168,7 @@ The Drive knob smoothly morphs from transparent tape-style warmth (clean, musica
 
 | Control | Range | Description |
 |---------|-------|-------------|
-| **Preset** | 0–35 | Factory preset selection (36 presets in 6 categories) |
+| **Preset** | 0–42 (default 2) | Factory preset selection — 36 presets in 6 categories. 7 of the 43 steps in this range are inert (six category separators plus one unused slot), not presets: the value is a parameter ID saved with your session, not a preset index, so it is not re-ranged (doing so would break saved-session identity). |
 
 ### Performance & Workflow Controls
 
@@ -382,19 +382,9 @@ v1.0.0 artifact set.
 - [JUCE 8.0.12](https://juce.com/get-juce) extracted to your system
 - Visual Studio 2026 (v18) or later with C++ desktop workload
 
-### Quick Build (MSBuild — Fast)
+> **Out-of-tree historical note:** the legacy MSBuild/VS solution that built the old `DrippyMk1.vst3` bundle lives outside this repository and is not a build path here.
 
-```bash
-# Build using the existing VS solution
-MSBuild.exe "path/to/NewProject_VST3.vcxproj" -p:Configuration=Release -p:Platform=x64 -m
-```
-
-> ⚠️ **Historical path.** The legacy VS solution builds the old
-> `DrippyMk1.vst3` binary from the original NewProject project; it is kept here
-> as a historical convenience and is not the v1.0.0 release artifact. The
-> buyer-facing `Corvus FX.vst3` naming comes from the CMake build below.
-
-### CMake Build (Alternative)
+### CMake Build (Supported)
 
 The CMake project configures the **`DrippyFX`** plugin (VST3/AU/Standalone), **`CorvusInstrument`** plugin (VST3/Standalone), regression-test executables (`CorvusDSPTests`, `CorvusFXStateTests`), and offline-render executables (`CorvusRenderFX`, `CorvusRenderInstrument`). The FX VST3 uses product name **"Corvus FX"** and target `DrippyFX`; the Instrument product name is **"Corvus Instrument"**. Configured targets do not imply that their outputs have been built or packaged.
 
@@ -494,7 +484,7 @@ These are targets, not release measurements. `docs/release/v1.0.0-notes.md` reco
 | 2026-06-29 | All audio parameters: LinearSmoothedValue for zipper-free automation |
 | 2026-06-28 | EnhancedDelay: 2x oversampling for tape saturation in feedback loop |
 | 2026-06-27 | ProfessionalDistortion: smooth tape→tube crossfade via Hermite smoothstep |
-| 2026-06-27 | Distortion + Master: 2x oversampling for zero aliasing |
+| 2026-06-27 | Distortion + Master: 2x oversampling added as the anti-aliasing measure (aliasing is not measured for v1.0.0) |
 | 2026-06-26 | UpgradedReverb: Hermite cubic interpolation on all CombFilters |
 | 2026-06-26 | MasterOutputStage: push-pull asymmetrical saturation (even harmonics) |
 | 2026-06-26 | processBlock: merged master + limiter into single per-sample pass (4→2 buffer passes) |
