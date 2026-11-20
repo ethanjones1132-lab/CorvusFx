@@ -1956,6 +1956,18 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
         // the rebuilt table so the next processBlock adopts it without a lock.
         pendingLearnCc.store(-1, std::memory_order_relaxed);
         pendingLearnSlot.store(-1, std::memory_order_relaxed);
+        // CV-095: and from the saved parameter values only. A CC the previous
+        // session's audio thread staged but the message-thread timer had not
+        // drained yet must not fire setValueNotifyingHost after this restore
+        // and rewrite a freshly restored parameter. Clear every mailbox slot's
+        // pending flag; the roster, its parameter pointers and its last values
+        // stay untouched, so an ordinary CC after the restore still notifies
+        // the host exactly once per drain tick.
+        for (int i = 0; i < numMidiHostNotifySlots; ++i)
+        {
+            midiHostNotifySlots[(size_t) i].pending.store(
+                false, std::memory_order_relaxed);
+        }
         publishMidiMap();
 
         // Clear locked parameters unconditionally: a saved state from an
