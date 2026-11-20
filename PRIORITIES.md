@@ -69,12 +69,12 @@
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Native Windows CMake Release build + test binaries | ⬜ Pending | `scripts/verify_corvus_source.sh`, `cmake --preset windows-vs2026-release`, `CorvusDSPTests.exe`, `CorvusFXStateTests.exe` · src: backlogs/corvus.md CV-001 |
-| pluginval strictness 5 on Windows VST3 bundles | ⬜ Pending | Both `CorvusFX` and `CorvusInstrument` · src: backlogs/corvus.md CV-002 |
-| Vertical-slice verification report | ⬜ Pending | `docs/reports/2026-08-08-corvus-instrument-vertical-slice.md` · src: backlogs/corvus.md CV-003 |
-| Source sync verification before build | ⬜ Pending | `pwsh scripts/sync_corvus_source.ps1 -VerifyOnly` · src: backlogs/corvus.md CV-005, AGENTS.md |
-| **Capture final Corvus FX editor screenshot** | ⬜ Ethan-only | Replace README screenshot TODO · src: README.md, backlogs/corvus.md Ethan-only |
-| **Record and publish audio demos** | ⬜ Ethan-only | Replace README demo-link TODO · src: README.md, backlogs/corvus.md Ethan-only |
-| **Run Windows DAW VST3 load/play/save/reopen smoke** | ⬜ Ethan-only | Both bundles · src: docs/integration/2026-10-14-clean-baseline.md, backlogs/corvus.md Ethan-only |
-| **Create and publish GitHub v1.0.0 release** | ⬜ Ethan-only | With verified binaries · src: README.md, backlogs/corvus.md Ethan-only |
-| **Run PGO training profile on Windows workstation** | ⬜ Ethan-only | · src: ROADMAP.md, backlogs/corvus.md Ethan-only |
+| Native Windows CMake Release build + test binaries | ⬜ Pending | `scripts/verify_corvus_source.sh`, `cmake --preset windows-vs2026-release`, `CorvusDSPTests.exe`, `CorvusFXStateTests.exe` · src: `docs/release/v1.0.0-notes.md` → "Next steps before publishing" (item 2) |
+| pluginval strictness 5 on Windows VST3 bundles | ⬜ Pending | Both `CorvusFX` and `CorvusInstrument` · src: `docs/release/v1.0.0-notes.md` → "Next steps before publishing" (item 3) |
+| Vertical-slice verification report | ⬜ Pending | `docs/reports/2026-08-08-corvus-instrument-vertical-slice.md` · src: `docs/reports/2026-08-08-corvus-instrument-vertical-slice.md`, `docs/superpowers/plans/2026-08-08-corvus-instrument-vertical-slice.md` |
+| Source sync verification before build | ⬜ Pending | `pwsh scripts/sync_corvus_source.ps1 -VerifyOnly` · src: `docs/release/v1.0.0-notes.md` → "Next steps before publishing" (item 1), AGENTS.md |
+| **Capture final Corvus FX editor screenshot** | ⬜ Ethan-only | Replace README screenshot TODO · src: `README.md` → "Screenshots", `docs/release/v1.0.0-notes.md` → "Next steps before publishing" (item 5) |
+| **Record and publish audio demos** | ⬜ Ethan-only | Replace README demo-link TODO · src: `README.md` → "Audio Demos", `docs/release/v1.0.0-notes.md` → "Next steps before publishing" (item 5) |
+| **Run Windows DAW VST3 load/play/save/reopen smoke** | ⬜ Ethan-only | Both bundles · src: `docs/integration/2026-10-14-clean-baseline.md`, `docs/release/v1.0.0-notes.md` → "Not claimed" |
+| **Create and publish GitHub v1.0.0 release** | ⬜ Ethan-only | With verified binaries · src: `README.md` → "Build targets and availability", `docs/release/v1.0.0-notes.md` → "Next steps before publishing" (item 6) |
+| **Run PGO training profile on Windows workstation** | ⬜ Ethan-only | · src: `ROADMAP.md` → Phase 5, `README.md` → "CMake Build (Supported)" |
