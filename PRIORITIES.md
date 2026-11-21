@@ -7,7 +7,7 @@
 
 | Priority | Item | Status | Notes |
 |----------|------|--------|-------|
-| P1 | **Corvus Instrument vertical slice** | ✅ Implemented and locally verified | Design + plan landed 2026-08-08 (`docs/superpowers/specs/2026-08-08-corvus-instrument-design.md`, `docs/superpowers/plans/2026-08-08-corvus-instrument-vertical-slice.md`). Implementation exists at `source/DrippyFX/dsp/CorvusEffects.h`, `source/DrippyFX/instrument/*`, and CMake targets `DrippyFX`, `CorvusInstrument`, `CorvusDSPTests`, `CorvusFXStateTests`; plugin codes are Crvs/Cvi1 with five signature patches. Verified through the portable Mac gate (75 source checkers, portable Release build, CorvusDSPTests / CorvusFXStateTests, both AU validators, shared-effects fingerprint 0xe8dffa927c566497). Windows DAW runtime smoke and signed distribution are not claimed. · src: 1727ed9, 4a73450, docs/integration/2026-10-14-clean-baseline.md |
+| P1 | **Corvus Instrument vertical slice** | ✅ Implemented and locally verified | Design + plan landed 2026-08-08 (`docs/superpowers/specs/2026-08-08-corvus-instrument-design.md`, `docs/superpowers/plans/2026-08-08-corvus-instrument-vertical-slice.md`). Implementation exists at `source/DrippyFX/dsp/CorvusEffects.h`, `source/DrippyFX/instrument/*`, and CMake targets `DrippyFX`, `CorvusInstrument`, `CorvusDSPTests`, `CorvusFXStateTests`; plugin codes are Crvs/Cvi1 with five signature patches. Verified through the portable Mac gate (75 source checkers, portable Release build, CorvusDSPTests / CorvusFXStateTests, both AU validators, shared-effects fingerprint 0xe8dffa927c566497 printed by that run, not asserted by the test). Windows DAW runtime smoke and signed distribution are not claimed. · src: 1727ed9, 4a73450, docs/integration/2026-10-14-clean-baseline.md |
 | P2 | **Dark/light theme toggle** | ✅ Implemented | Ctrl+T toggle, persisted preference across launches, theme-aware look-and-feel for all panels and animated background, visible THEME button in editor. Implemented in `source/DrippyFX/PluginEditor.*` · src: c5c7a8f, 7fc4bbb, fde17c2, 0549f69, 31e1e71, bb2e6b6, ea0fbd1, 82995c8, cc881e2 |
 | P3 | **Profile-guided optimization (PGO) build** | ⬜ Backlog | ~1% CPU savings; requires build infrastructure · src: 4959538, ROADMAP.md |
 | P3 | **Planning docs dual-tree cleanup** | 🔶 In progress | Root SoT refreshed this cycle. Optional later: archive or clearly banner `docs/{PRIORITIES,ROADMAP,AGENTS}.md` so agents stop reading stale copies. · src: 3b445e4 |
@@ -65,7 +65,7 @@
 | `docs/superpowers/plans/2026-08-08-corvus-instrument-vertical-slice.md` | Task-level implementation plan (open checkboxes) |
 | `docs/PRIORITIES.md`, `docs/ROADMAP.md`, `docs/AGENTS.md` | Historical archives — prefer root |
 
-## Next Milestone: v1.0.0 Release (Corvus FX + Instrument)
+## Next Milestone: v1.0.0 Release (Corvus FX)
 
 | Item | Status | Notes |
 |------|--------|-------|

@@ -69,10 +69,12 @@ by both the split histories and sprint chorus/reverb changes (`751a3d2`,
 | Final normalized integration | `e8dffa927c566497` | 0.329923 | 0.0229678 |
 
 The former Windows digest `144377379d3ea850` is preserved as historical evidence,
-not applied to a changed waveform or falsely claimed as validated. The final
-raw digest is enforced only for the measured macOS ARM/AppleClang 14 toolchain;
-all toolchains enforce exact repeated-render equality, finite samples, and
-waveform level bounds. Windows build and reference capture remain unverified.
+not applied to a changed waveform or falsely claimed as validated. The
+`e8dffa927c566497` value above was printed by the measured macOS
+ARM/AppleClang 14 run and is recorded here; the current harness does not assert
+any digest. Every toolchain enforces exact repeated-render equality within one
+run, finite samples, and waveform level bounds. Windows build and reference
+capture remain unverified.
 
 Restored passband gain made Ashen Sky and Cathedral Drift louder than the
 original 0.07–0.13 RMS musical-level window. Following the instrument plan's

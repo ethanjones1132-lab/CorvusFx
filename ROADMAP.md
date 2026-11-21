@@ -54,12 +54,12 @@
 
 ## Phase 6: Corvus Instrument (vertical slice implemented; future product expansion separate) ✅ Locally verified
 
-**Status:** Design approved 2026-08-08; vertical-slice plan executed and implemented in `source/DrippyFX` on 2026-09-20. The implemented slice is verified through the portable Mac gate: 75 source checkers, portable Release build, `CorvusDSPTests` / `CorvusFXStateTests`, both AU validators, and shared-effects fingerprint `0xe8dffa927c566497`. Windows DAW runtime smoke, signed distribution, and runtime acceptance beyond the Mac portable gate are not claimed. · src: `1727ed9`, `4a73450`, `docs/integration/2026-10-14-clean-baseline.md`
+**Status:** Design approved 2026-08-08; vertical-slice plan executed and implemented in `source/DrippyFX` on 2026-09-20. The implemented slice is verified through the portable Mac gate: 75 source checkers, portable Release build, `CorvusDSPTests` / `CorvusFXStateTests`, both AU validators, and shared-effects fingerprint `0xe8dffa927c566497` printed by that run (not asserted by the test). Windows DAW runtime smoke, signed distribution, and runtime acceptance beyond the Mac portable gate are not claimed. · src: `1727ed9`, `4a73450`, `docs/integration/2026-10-14-clean-baseline.md`
 
 | Track | Target | Status |
 |-------|--------|--------|
-| Shared DSP extraction | `source/DrippyFX/dsp/CorvusEffects.h` behavior-preserving within `1.0e-6f` fixture tolerance | ✅ Implemented and locked (`CorvusDSPTests`) · src: 1727ed9, 4a73450 |
-| FX regression lock | Deterministic JUCE unit fixture + fingerprint for existing Corvus FX | ✅ Implemented and locked (fingerprint `0xe8dffa927c566497`) · src: 1727ed9, 4a73450 |
+| Shared DSP extraction | `source/DrippyFX/dsp/CorvusEffects.h` behavior-preserving within `1.0e-6f` fixture tolerance | ✅ Implemented and checked (`CorvusDSPTests`) · src: 1727ed9, 4a73450 |
+| FX regression baseline | Deterministic JUCE unit fixture for existing Corvus FX, compared bit-for-bit within one run | ✅ Implemented (`CorvusDSPTests`: in-run repeat, finite samples, level bounds; `0xe8dffa927c566497` is printed, not asserted) · src: 1727ed9, 4a73450 |
 | Instrument target | Separate VST3/Standalone synth; unique plugin codes `Crvs`/`Cvi1`; MIDI polyphony | ✅ Implemented (`CorvusInstrument`, `IS_SYNTH TRUE`) · src: 1727ed9, 4a73450 |
 | First voice engine | 16-voice, band-limited oscillator, amp envelope, global Corvus FX chain | ✅ Implemented · src: 1727ed9, 4a73450 |
 | Signature patches | Five atmospheric factory patches for the vertical slice | ✅ Implemented · src: 1727ed9, 4a73450 |
@@ -72,7 +72,7 @@
 
 **Hard constraints (from plan):** edit git SoT under `source/DrippyFX` first; explicit sync to Downloads build tree; never replace Corvus FX host identity with the instrument; effects stay global after voice mix.
 
-## Next Milestone: v1.0.0 Release (Corvus FX + Instrument)
+## Next Milestone: v1.0.0 Release (Corvus FX)
 
 | Item | Status | Notes |
 |------|--------|-------|

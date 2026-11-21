@@ -318,7 +318,7 @@ The Reverb wet/dry control uses an **equal-power crossfade** so perceived loudne
 
 ### Shared DSP Core
 
-The effects DSP (distortion, chorus, delay, reverb, master output, oversampling, interpolation, smoothing, and safety utilities) lives in a single shared header, `source/DrippyFX/dsp/CorvusEffects.h`. Corvus FX and the companion Corvus Instrument both build against it, and a deterministic regression harness locks the shared effects baseline against drift.
+The effects DSP (distortion, chorus, delay, reverb, master output, oversampling, interpolation, smoothing, and safety utilities) lives in a single shared header, `source/DrippyFX/dsp/CorvusEffects.h`. Corvus FX and the companion Corvus Instrument both build against it, and a deterministic regression harness checks that the shared effects fixture repeats bit-for-bit within one run, alongside finite-sample and measured-level assertions.
 
 ---
 
@@ -438,7 +438,7 @@ These are targets, not release measurements. `docs/release/v1.0.0-notes.md` reco
 | Date | Change |
 |------|--------|
 | 2026-09-20 | **Corvus Instrument vertical slice** — band-limited wavetable oscillator, 16-voice engine, distinct synth target, shared DSP core extraction, 5 signature patches, deterministic DSP test harness |
-| 2026-08-08 | Corvus DSP core extracted to `dsp/CorvusEffects.h`; `CorvusDSPTests` console harness locks a deterministic effects fingerprint |
+| 2026-08-08 | Corvus DSP core extracted to `dsp/CorvusEffects.h`; `CorvusDSPTests` console harness checks a deterministic effects fixture for bit-exact repeatability |
 | 2026-07-30 | **Output Trim** parameter for final gain staging; `NEEDS_MIDI_INPUT` enabled so MIDI Learn works in VST3 |
 | 2026-07-29 | Delay wow/flutter LFO rate bugfix; sr-only `std::exp()` hoisted from `beginBlock()` to `prepare()`; Chorus `msToSamples` cached in block coefficients; removed unused delay DC state |
 | 2026-07-28 | **Randomize Preset** button; **Undo/Redo** (`UndoManager` wired to APVTS, `Ctrl+Z`/`Ctrl+Shift+Z`/`Ctrl+Y`) |
@@ -533,7 +533,7 @@ A: Yes! Corvus FX is free and open-source under the MIT license.
 A: Not currently, but the JUCE framework supports macOS builds. If there's demand, a Mac build can be added.
 
 **Q: Can I use Corvus FX in commercial productions?**
-A: Yes. The MIT license permits commercial use — no attribution required.
+A: Yes. The MIT license permits commercial use; if you distribute copies or substantial portions of the Software, keep the copyright and permission notice with them.
 
 **Q: Why "Corvus"?**
 A: Corvus (Latin: crow/raven) — intelligent, adaptable birds known for their tool use and problem-solving. The name reflects the plugin's flexible signal chain and thoughtful DSP design.
