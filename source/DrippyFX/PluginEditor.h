@@ -907,5 +907,8 @@ private:
     // Theme state (plumbed in this slice; palette lands later)
     std::unique_ptr<juce::PropertiesFile> themeProperties;
     bool themeDark = true;
+    // The bottom band resized() reserves out of the content area; paint() stamps
+    // the build version into it.
+    juce::Rectangle<int> footerBand;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CorvusFXAudioProcessorEditor)
 };

@@ -512,6 +512,15 @@ void CorvusFXAudioProcessorEditor::paint(juce::Graphics& g)
     g.setFont(juce::Font(juce::FontOptions(9.0f)));
     g.drawText("Corvus FX v1.0 | Professional Multi-FX Suite",
         getLocalBounds().removeFromBottom(15), juce::Justification::centred, true);
+
+    // Build version stamp: the CMake project VERSION is generated into
+    // ProjectInfo::versionString for every target that builds this editor, so a
+    // released binary names the build it actually is. Drawn inside the footer
+    // band reserved in resized(), reusing the footer's colour and font above.
+    if (!footerBand.isEmpty())
+        g.drawText(juce::String("v") + juce::String(ProjectInfo::versionString),
+                   footerBand.reduced(6, 0), juce::Justification::centredRight,
+                   true);
 }
 
 void CorvusFXAudioProcessorEditor::resized()
@@ -605,7 +614,7 @@ void CorvusFXAudioProcessorEditor::resized()
     auto meterArea = area.removeFromTop(sc(kMeterRef)).reduced(area.getWidth() / 4, 0);
     levelMeter.setBounds(meterArea);
 
-    area.removeFromBottom(sc(kFooterRef)); // version text space
+    footerBand = area.removeFromBottom(sc(kFooterRef)); // version text space
     area.reduce(sc(kContentInsetXRef), sc(kContentInsetYRef));
 
     // Carve the FX grid out of the right-hand side FIRST, then let the
