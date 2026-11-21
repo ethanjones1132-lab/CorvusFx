@@ -1853,6 +1853,21 @@ void CorvusFXAudioProcessor::setStateInformation(const void* data, int sizeInByt
             || ! stateCarriesEveryParameter(*xml, *this))
             return;
 
+        // CV-101: cancel any learn the previous session armed before the
+        // restore rewrites the session. midiLearnActive is live processor
+        // state, not part of the saved chunk, so without this a learn armed
+        // before the load stays armed and the next CC silently becomes a new
+        // mapping for the pre-load target instead of moving the restored knob.
+        // This is the same cancel the editor's close path performs; message
+        // thread only, and it touches neither the roster nor its pointers. The
+        // two pending atomics are also reset here (the CV-027 clears after the
+        // map rebuild stay) so a capture the audio thread staged just before
+        // this load cannot be folded into the restored session by the 30 Hz
+        // drain.
+        stopMidiLearn();
+        pendingLearnCc.store(-1, std::memory_order_relaxed);
+        pendingLearnSlot.store(-1, std::memory_order_relaxed);
+
         // Transport metadata is decoded below from the original XML. Keep
         // it out of the parameter ValueTree: XML text children are discarded
         // by ValueTree::fromXml, and retaining their wrappers would serialize
