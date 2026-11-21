@@ -187,7 +187,7 @@ private:
     // then ignore it. Only a well-formed 2- or 3-byte channel message reaches
     // handleMidiMessage(); everything else is skipped whole and never partially
     // applied.
-    void handleMidiMetadata(const juce::MidiBuffer::MidiMessageMetadata& metadata,
+    void handleMidiMetadata(const juce::MidiMessageMetadata& metadata,
                            const VoiceParameters& parameters)
     {
         if (metadata.numBytes < 2 || metadata.numBytes > 3)
