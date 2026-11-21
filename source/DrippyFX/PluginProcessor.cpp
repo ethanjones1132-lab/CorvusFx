@@ -795,6 +795,29 @@ int CorvusFXAudioProcessor::drainPendingMidiHostNotifications()
             continue;
         if (slot.param == nullptr)
             continue;
+        // CV-102: a CC held at the value the knob already reports is not a
+        // change. Notifying anyway opens a gesture, calls the host and — in
+        // automation-write mode — stamps a point every tick (plus an undo
+        // entry) for a knob that never moved. Compare what the host would be
+        // told against what the parameter reports now, and skip the whole
+        // gesture/notify block when they agree.
+        //
+        // The staged value is mapped through the parameter's own conversion
+        // AND its own legal-value rounding (the same snapToLegalValue its
+        // setValue applies), so the comparison is in the parameter's units and
+        // resolution, not ours: a repeat CC snaps back onto the value already
+        // stored and is always inside the tolerance, while a CC that reaches a
+        // different legal value is at least a full step away and still
+        // notifies exactly once, as before. 1.0e-6f only absorbs float
+        // round-trip error.
+        const float stagedNormalised =
+            slot.value.load(std::memory_order_relaxed);
+        const auto hostRange = slot.param->getNormalisableRange();
+        const float stagedWouldReport = hostRange.convertTo0to1(
+            hostRange.snapToLegalValue(
+                hostRange.convertFrom0to1(stagedNormalised)));
+        if (std::abs(stagedWouldReport - slot.param->getValue()) <= 1.0e-6f)
+            continue;
         slot.param->beginChangeGesture();
         try
         {
