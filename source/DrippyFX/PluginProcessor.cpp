@@ -284,6 +284,29 @@ const P& factoryPreset(int index)
 }
 }
 
+namespace
+{
+// CV-100: a recall rewrites parameters, so it must first drop every CC the
+// audio thread staged from the render block that was still open when the
+// recall arrived. Left armed, the message-thread drain fires
+// setValueNotifyingHost with the OLD value after the recall already rewrote
+// that parameter: the host records a spurious automation write and the knob
+// snaps back to the pre-recall value (the FL Studio bug). Only the pending
+// flag is cleared - the roster, its parameter pointers and its last values
+// stay untouched, so an ordinary CC after the recall still notifies the host
+// exactly once per drain tick (CV-029). Same clear as the restore point in
+// setStateInformation (CV-095): pending.store(false), nothing else.
+template <typename SlotArray>
+void clearPendingMidiHostNotifications(SlotArray& slots, int count) noexcept
+{
+    for (int i = 0; i < count; ++i)
+    {
+        slots[static_cast<std::size_t> (i)].pending.store(
+            false, std::memory_order_relaxed);
+    }
+}
+}
+
 void CorvusFXAudioProcessor::loadPreset(int index)
 {
     // index is the preset array index (0-35), mapped from combo item ID
@@ -297,6 +320,12 @@ void CorvusFXAudioProcessor::loadPreset(int index)
         return;
 
     undoManager.beginNewTransaction("Load Preset");
+
+    // CV-100: drop any CC staged by the block that was rendering when this
+    // recall arrived, before the batch opens and the first write below. It
+    // sits after the CV-066 echo guard, so the no-op echo path (the preset
+    // was already loaded) never discards a live CC.
+    clearPendingMidiHostNotifications(midiHostNotifySlots, numMidiHostNotifySlots);
 
     // CV-028: publish the recall as one coherent parameter generation.
     ParameterGenerationBatch batch(presetBatchSequence);
@@ -342,6 +371,9 @@ void CorvusFXAudioProcessor::randomizePreset()
     // Skips the preset parameter (factory preset index stays unchanged).
     // Bypass buttons have ~15% chance of being active; continuous params get full-range random.
     juce::Random rng;
+    // CV-100: no CC staged before this recall may republish its old value after
+    // the random set is in place.
+    clearPendingMidiHostNotifications(midiHostNotifySlots, numMidiHostNotifySlots);
     undoManager.beginNewTransaction("Randomize");
 
     // CV-084: publish the random recall as one coherent parameter generation.
@@ -833,6 +865,9 @@ void CorvusFXAudioProcessor::saveSlotB()
 
 void CorvusFXAudioProcessor::loadSlotA()
 {
+    // CV-100: a CC the previous block staged must not publish its old value
+    // after slot A is restored.
+    clearPendingMidiHostNotifications(midiHostNotifySlots, numMidiHostNotifySlots);
     undoManager.beginNewTransaction("A/B Compare");
     // CV-028: an A/B recall rewrites all 24 snapshot parameters; bracket it as
     // one batch so no block can render half of slot A and half of slot B.
@@ -867,6 +902,8 @@ void CorvusFXAudioProcessor::loadSlotA()
 
 void CorvusFXAudioProcessor::loadSlotB()
 {
+    // CV-100: see loadSlotA — no staged CC survives the recall.
+    clearPendingMidiHostNotifications(midiHostNotifySlots, numMidiHostNotifySlots);
     undoManager.beginNewTransaction("A/B Compare");
     // CV-028: see loadSlotA — one batch, one published generation.
     ParameterGenerationBatch batch(presetBatchSequence);
